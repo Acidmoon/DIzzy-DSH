@@ -56,7 +56,18 @@ dsh plugin --profile web add file:<仓库绝对路径>
    (pnpm v11 会自动生成占位 `node-pty: set this to true or false`)
 
 **卸载**:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
-**更新**:`cd <仓库> && git pull` 后重新执行 `dsh plugin --profile web add file:<仓库绝对路径>`(`file:` 是安装时快照,内容变化需重新 add),重启生效
+**更新**:`cd <仓库> && git pull` 后**强制同步** file: 快照 —— pnpm 对
+`file:` 依赖只检测 `package.json` 是否变化,仓库内其他文件(如
+`prompts/agent-instructions.md`)改了不会同步到 `node_modules` 的安装副本
+(已实测复现:改 prompt 文件后 `dsh plugin add` 报 "Already up to date",
+system 里仍是旧内容)。强制同步:
+
+```powershell
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh -Recurse -Force
+dsh plugin --profile web add file:<仓库绝对路径>
+```
+
+注入内容动态读取,同步后下一轮对话即生效;改了 `index.js` 等代码才需重启
 
 ---
 

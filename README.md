@@ -33,7 +33,17 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > `node-pty` 与 `protobufjs` 设为 `true`(pnpm 会自动生成占位),重新 add。
 
 卸载:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
-更新:`cd <仓库> && git pull` 后重新执行 `dsh plugin --profile web add file:<仓库绝对路径>`(`file:` 是安装时快照,内容变化需重新 add)
+更新:`cd <仓库> && git pull` 后**强制同步** file: 快照(pnpm 对 `file:` 依赖只
+检测 `package.json` 是否变化,仓库内其他文件(如 `prompts/`)改了不会自动
+同步到 `node_modules` 里的安装副本,必须删除副本重装):
+
+```powershell
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh -Recurse -Force
+dsh plugin --profile web add file:<仓库绝对路径>
+```
+
+注入内容(`prompts/agent-instructions.md`)是每次组装动态读取的,同步后
+**下一轮对话即生效,无需重启**;改动了 `index.js` 等代码才需要重启 web。
 
 ## 原理
 
