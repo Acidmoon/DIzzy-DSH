@@ -6,6 +6,7 @@
  *   2. 注册 webServer 路由 GET /dizzy/balance —— Client 半区通过同源 fetch 读取余额
  *      (浏览器拿不到 API key,数据必须经 host 中转)
  *   3. 注册模型可见工具 balance_check,agent 可随时查询余额
+ *   4. 注入系统提示词 section(prompts/agent-instructions.md,源自 DSH 的 AGENTS.md)
  *
  * 本插件经 dsh plugin add 安装为 bundle 层,运行在完整 Node 环境:
  *   - 直接用全局 fetch 调 API(不需要 curl/subprocess 绕行)
@@ -14,9 +15,14 @@
  *
  * Client 半区见 client.js:注册输入栏余额徽章(conversation.input.right)。
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const PROMPT_FILE = fileURLToPath(new URL('./prompts/agent-instructions.md', import.meta.url))
+
 export default {
   name: 'dizzy-dsh',
-  inject: ['credentials', 'timer', 'tools', 'webServer'],
+  inject: ['credentials', 'timer', 'tools', 'webServer', 'systemPrompt'],
   apply(ctx) {
     let cache = {
       balanceCny: null,
@@ -24,6 +30,22 @@ export default {
       error: null,
       at: 0,
     }
+
+    // ── 系统提示词注入 ────────────────────────────────────────────────
+    // 每次模型步骤组装时重新读取 prompts/agent-instructions.md,
+    // 用户编辑文件后无需重启即可生效。order -50 在 persona(0)之前渲染,
+    // 与 harness 身份(-100)之后。
+    const disposePrompt = ctx.systemPrompt.section({
+      name: 'dizzy-dsh:agent-instructions',
+      order: -50,
+      text: () => {
+        try {
+          return readFileSync(PROMPT_FILE, 'utf8')
+        } catch (err) {
+          return 'Dizzy-DSH: 无法读取 prompts/agent-instructions.md(' + String(err.code ?? err) + ')'
+        }
+      },
+    })
 
     const refresh = async () => {
       try {
@@ -99,6 +121,7 @@ export default {
     })
 
     return () => {
+      disposePrompt()
       stopTimer()
       stopRoute()
       disposeTool()

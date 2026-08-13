@@ -126,8 +126,15 @@ export default {
       async execute() { return '结果' },
     })
 
+    // ── 系统提示词注入(可选)────────────────────────────
+    const disposePrompt = ctx.systemPrompt.section({
+      name: 'dizzy-dsh:agent-instructions',   // 唯一名,重复注册抛错
+      order: -50,                              // 负数 → 在 persona(0)之前渲染
+      text: () => readFileSync(PROMPT_FILE, 'utf8'),  // 每次组装动态读取
+    })
+
     // ── 清理:停止/卸载时执行 ─────────────────────────
-    return () => { stopTimer(); stopRoute(); disposeTool() }
+    return () => { disposePrompt(); stopTimer(); stopRoute(); disposeTool() }
   },
 }
 ```
@@ -160,6 +167,54 @@ settings / agentDefaultModel / llm。
 
 ---
 
+## 4.5 系统提示词注入(systemPrompt)
+
+对 DSH 系统提示词动手脚的正规入口是 `ctx.systemPrompt` 服务(bundle 层注册
+= 全局生效,所有会话、所有工作区都包含):
+
+| 方法 | 作用 | 本仓库用法 |
+|---|---|---|
+| `section({ name, order, text })` | 注册系统提示词段落,按 order 升序拼接 | `dizzy-dsh:agent-instructions`,order -50 |
+| `context({ name, order, text })` | 注册动态上下文(user-role 快照) | 暂未用 |
+| `variable(name, provider)` | 注册 `{{variable}}` 插值变量 | 暂未用 |
+| `suppressRuntimeContext()` | 抑制动态运行时上下文 | 慎用,勿全局抑制 |
+| `tools(provider)` | 注册工具 schema 提供者 | 见 tools.register |
+
+### order 约定(查证 dsh-system-prompt 源码)
+
+```
+-100   harness 身份(最先)
+-50    ← 本仓库注入的 Agent 规则
+ 0     persona(部署人格 / agent preset 覆盖)
+100+   工具指南
+```
+
+负数段在 persona 之前渲染,适合"规则/约束"类内容;`complete: true`
+会独占整个系统提示词,绝不用于注入(会覆盖 harness 身份)。
+
+### 内容动态读取
+
+`text` 支持函数,每次模型步骤组装时求值 → 编辑 `prompts/agent-instructions.md`
+无需重启,下一个模型步骤即生效:
+
+```js
+const disposePrompt = ctx.systemPrompt.section({
+  name: 'dizzy-dsh:agent-instructions',
+  order: -50,
+  text: () => readFileSync(PROMPT_FILE, 'utf8'),
+})
+```
+
+### 与 DSH 内置 agent-instructions 的分工
+
+| | DSH 内置 agent-instructions | 本仓库注入 |
+|---|---|---|
+| 注入路径 | user-message(会话历史) | system-prompt section |
+| 内容来源 | 工作区的 AGENTS.md/CLAUDE.md | 仓库 prompts/agent-instructions.md |
+| 依赖 | 工作区存在该文件 | 全局,不依赖工作区 |
+| 优先级 | 作为用户消息 | 系统提示词,模型最先读取 |
+
+两者名字不同、注入路径不同,同时存在不冲突,互补使用。
 ## 5. Client 半区开发(client.js)
 
 ### 免构建 ModuleLoader bundle 骨架
@@ -305,6 +360,8 @@ git add -A && git commit -m "feat: ..." && git push
       `window.__ModuleLoader__.load` 且 id 等于包名
 - [ ] 浏览器:目标 Slot 出现 UI,数据路由返回正确 JSON
 - [ ] 重启 dsh web 后功能仍在(验证持久化)
+- [ ] 提示词注入:新会话中系统提示词包含注入规则(可在对话中询问 agent
+      是否遵循 First-Principles 等规则验证)
 
 ---
 

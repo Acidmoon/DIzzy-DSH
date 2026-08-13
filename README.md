@@ -43,11 +43,42 @@ dsh plugin --profile web add link:<仓库绝对路径>
 Dizzy-DSH/
 ├── package.json          # name + main + exports["./client"] + dsh.bundle/client 声明
 ├── cordis.patch.yml      # 插件层:insert 条目列表(entry name = 包名)
-├── index.js              # Host 主插件:数据/工具/定时任务/HTTP 路由
+├── index.js              # Host 主插件:数据/工具/定时任务/HTTP 路由/系统提示词注入
 ├── client.js             # Client 半区:浏览器 UI(手写 ModuleLoader bundle,免构建)
+├── prompts/
+│   └── agent-instructions.md  # 注入系统提示词的 Agent 规则(源自 DSH 的 AGENTS.md)
 ├── plugins/_template.js  # 参考模板(多插件时拆分子模块)
 └── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
 ```
+
+## 系统提示词注入(Agent 规则)
+
+Dizzy-DSH 会向 DSH 的系统提示词注入一段 Agent 规则(源自 DeepSeek Harness
+项目的 AGENTS.md):First-Principles Coding、No Reinventing The Wheel、
+核心 Conventions(注册即副作用 / 判别联合 / waterfall 必须 next() /
+模型可见即日志可重建 / 显式优于隐式 / 配置不硬编码)、Adversarial
+Self-Review 等。
+
+**注入机制**(已查证 DSH 源码):
+
+| 层 | 机制 |
+|---|---|
+| 入口 | Host 半区 `index.js` 调用 `ctx.systemPrompt.section({...})` |
+| 名称 | `dizzy-dsh:agent-instructions`(唯一,无冲突) |
+| 顺序 | `order: -50` —— 在 harness 身份(`-100`)之后、persona(`0`)之前渲染 |
+| 内容 | 每次模型步骤组装时**动态读取** `prompts/agent-instructions.md` |
+| 生效 | 编辑该文件后**无需重启**,下一次模型步骤即生效 |
+| 范围 | bundle 层注册 = 全局 section,所有会话、所有工作区生效 |
+
+系统提示词 sections 按 `order` 升序拼接;负数段在 persona 之前渲染,
+因此注入的规则排在模型最优先读取的位置。其他注入点(`context()` 动态
+user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `section()`
+最直接。
+
+> 与 DSH 内置 `agent-instructions` 的分工:DSH 会自动读取**工作区**的
+> AGENTS.md 作为 user-message 注入(仅当工作区存在该文件);
+> Dizzy-DSH 注入的是**全局系统提示词段**,不依赖工作区文件 ——
+> 两者互补,同时存在也不会冲突(名字不同、注入路径不同)。
 
 ## 双半区架构(本仓库的插件形态)
 
@@ -77,7 +108,7 @@ Dizzy-DSH/
 
 | 能力 | 放哪 |
 |---|---|
-| 模型工具 / 定时任务 / 数据服务 / HTTP 路由 | 本仓库 bundle 层(Host,全会话共享) |
+| 模型工具 / 定时任务 / 数据服务 / HTTP 路由 / **系统提示词注入** | 本仓库 bundle 层(Host,全会话共享) |
 | 每会话独立的配置(prompt、persona) | agent preset(`~/.dsh/.agent-presets/`) |
 | 浏览器 UI(徽章、设置页) | 本仓库 client.js(`dsh.client` 声明) |
 
@@ -89,3 +120,4 @@ Dizzy-DSH/
 | 功能 | Host | Client |
 |---|---|---|
 | DeepSeek 余额查询 | `index.js`:每分钟刷新,`GET /dizzy/balance`,`balance_check` 工具 | `client.js`:`conversation.input.right` 徽章(仅 deepseek-official 显示) |
+| Agent 规则注入 | `index.js`:`systemPrompt.section` 注入 `prompts/agent-instructions.md`(源自 DSH 的 AGENTS.md) | — |
