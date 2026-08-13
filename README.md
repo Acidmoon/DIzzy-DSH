@@ -40,14 +40,18 @@ dsh plugin --profile web add file:<仓库绝对路径>
 `dsh plugin add` 是 DSH 官方的插件安装命令(转发给 pnpm 在 profile 目录安装):
 
 1. `package.json` 声明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`
-2. 安装后 DSH 自动把包加入 profile 的 `dsh.profile.bundles` 层列表
-3. 启动时 loader 读取 `cordis.patch.yml`,entry(name = 包名)被挂载:
+2. 安装后 reconcile 自动把包加入 profile 的 `dsh.profile.bundles` 层列表
+   (只遍历 profile 顶层 `dependencies`,见 `plugin-9h8shc4d.js`)
+3. 启动时 loader 读取 bundle 的 `cordis.patch.yml`,entry(name = 包名)被挂载:
    - **Host 半区**:按包名 import 包的 `main`(`index.js`)挂载插件
    - **Client 半区**:`client-modules` 按包名扫描 `dsh.client` 声明 +
      `exports["./client"]`,把 `client.js` 注入浏览器
 
-这与 profile 里已有的
-`@dsh-external/dsh-vision-toolkit` 完全同构(先例可查)。
+**安装必须用 `file:` 而非 `link:`**:`link:` 协议下 pnpm 不解析目标包的
+`dependencies`(依赖树完全不装,插件实际无法加载);`file:` 会递归安装
+完整依赖树。本仓库因此把两个收录的第三方插件声明为主包 `dependencies`
+(`dsh-better-sidebar@0.10.3` registry、`@dsh-external/dsh-vision-toolkit`
+仓库快照),`file:` 安装时自动带上,由主包 patch 统一挂载。
 
 ## 目录结构
 
@@ -115,7 +119,7 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
    `cordis_inspect_query` 确认签名)
 2. **Client UI**:在 `client.js` 的 `apply` 里注册对应 Slot(`slots.inject`),
    数据一律经 host 路由(`ctx.webServer.register`)获取
-3. 改动即提交,`git pull` + 重启生效
+3. 改动即提交,`git pull` 后重新 `dsh plugin add file:<仓库>` 同步(file: 快照语义)再重启
 
 ## 平面规则(重要)
 
@@ -136,7 +140,7 @@ README 明确标注来源。快照存放在 `third-party/<包名>/`,每个目录
 
 | 插件 | 上游仓库 | 版本 | 收录位置 | 说明 |
 |---|---|---|---|---|
-| dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),本机已安装(link 指向本地 checkout) |
+| dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),经主包 `file:` 依赖安装仓库快照 |
 | dsh-better-sidebar | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) | 0.10.3(`efb2e2b`) | `third-party/DSH-better-sidebar/` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 |
 
 **安装收录的第三方插件**:无需单独安装 —— 「安装」一节的单条

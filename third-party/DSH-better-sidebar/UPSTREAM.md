@@ -27,8 +27,14 @@ tar -xzf dsh-better-sidebar-<版本>.tgz -C third-party/DSH-better-sidebar --str
 
 ## 本地安装
 
+本插件**无需单独安装**:它是主插件 `dizzy-dsh` 的
+`package.json` `dependencies` 声明(`"dsh-better-sidebar": "0.10.3"`,
+npm registry),安装主插件时随依赖自动装入:
+
 ```bash
-dsh plugin --profile web add link:<仓库绝对路径>/third-party/DSH-better-sidebar
+dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
-安装后重启 `dsh web`,侧边栏出现在对话右侧;插件自带 `cordis.patch.yml`(entry id `better-sidebar`),无需手改 profile。
+重启 `dsh web` 后侧边栏出现在对话右侧;挂载由主插件 `cordis.patch.yml`
+的 entry(id `better-sidebar`)完成,无需手改 profile。卸载随主插件
+`remove dizzy-dsh` 一起移除。

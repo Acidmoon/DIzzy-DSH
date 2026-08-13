@@ -15,9 +15,9 @@ Dizzy-DSH 是一个 **DSH bundle 层插件仓库**:"克隆即装",无需 npm 发
 用户机器
 ├── DSH 安装(dsh CLI / web 服务)
 ├── profile: ~/.dsh/profiles/web/
-│   ├── package.json          # dependencies 含 dizzy-dsh(link: 仓库路径)
+│   ├── package.json          # dependencies 含 dizzy-dsh(file: 仓库路径)
 │   │                         # bundles 列表含 dizzy-dsh(自动加入)
-│   └── node_modules/dizzy-dsh → Junction → 你的仓库目录
+│   └── node_modules/dizzy-dsh → Junction → store 快照(file: 安装时生成)
 └── 仓库(本目录)
     ├── package.json          # 包声明:main + exports + dsh.bundle + dsh.client
     ├── cordis.patch.yml      # bundle 插件层(insert 条目)
@@ -101,7 +101,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 2. **Client 免构建**:`client.js` 是 `window.__ModuleLoader__.load({ id, factory })`
    工厂格式,`factory` 内的 `require("react")` 由平台 seed 提供,
    **不需要** TypeScript 编译或 bundler 打包,改完即生效。
-3. **改动即提交**:link: 安装方式下仓库即线上代码,`git pull` + 重启即更新。
+3. **改动即提交**:`file:` 是安装时快照语义,仓库即线上代码;`git pull` 后重新执行 `dsh plugin add file:<仓库>` 同步,再重启。
 
 ---
 
@@ -368,9 +368,14 @@ git add -A && git commit -m "feat: ..." && git push
 
 ### 验证清单
 
-- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 与 entry 行
+- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现三个
+      entry(dizzy-dsh / better-sidebar / dsh-vision-toolkit)
 - [ ] Host:`node --input-type=module -e "import('dizzy-dsh')"` 可加载,
       name/inject 正确
+- [ ] 收录的第三方可加载(依赖齐全):
+      `import('dsh-better-sidebar')` 与
+      `import('@dsh-external/dsh-vision-toolkit')` 均不报
+      `Cannot find package ...`(link: 安装的典型症状)
 - [ ] Client:`exports["./client"]` 指向的文件存在,含
       `window.__ModuleLoader__.load` 且 id 等于包名
 - [ ] 浏览器:目标 Slot 出现 UI,数据路由返回正确 JSON

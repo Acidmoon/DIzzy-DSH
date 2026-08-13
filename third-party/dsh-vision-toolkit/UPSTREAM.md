@@ -1,7 +1,8 @@
 # dsh-vision-toolkit —— 收录的第三方插件
 
-> 本目录是**本机已安装副本**(`~/.dsh/profiles/web` 中 `@dsh-external/dsh-vision-toolkit: link:` 指向的
-> `E:\vibecoding\dsh-vision-toolkit`)的快照,由 Dizzy-DSH 收录以便"克隆即装"。
+> 本目录是 **dsh-vision-toolkit 上游发布包快照**(源自本机本地 checkout
+> `E:\vibecoding\dsh-vision-toolkit`),由 Dizzy-DSH 收录以便"克隆即装",
+> 并以主插件 `dependencies` 的 `file:./third-party/...` 依赖形式随主插件安装。
 > 对上游的修改请到上游仓库提交,本目录只做同步,不做修改。
 
 ## 上游信息
@@ -33,8 +34,14 @@ robocopy <dsh-vision-toolkit 本地路径> third-party/dsh-vision-toolkit /E /XD
 
 ## 本地安装
 
+本插件**无需单独安装**:它是主插件 `dizzy-dsh` 的 `package.json`
+`dependencies` 声明(`"@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit"`),
+安装主插件时随依赖自动装入:
+
 ```bash
-dsh plugin --profile web add link:<仓库绝对路径>/third-party/dsh-vision-toolkit
+dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
-安装后重启 `dsh web` 生效;插件自带 `cordis.patch.yml`,无需手改 profile。
+重启 `dsh web` 生效;挂载由主插件 `cordis.patch.yml` 的 entry
+(id `dsh-vision-toolkit`)完成,无需手改 profile。卸载随主插件
+`remove dizzy-dsh` 一起移除。
