@@ -70,11 +70,10 @@ Dizzy-DSH/
 
 ## 系统提示词注入(Agent 规则)
 
-Dizzy-DSH 会向 DSH 的系统提示词注入一段 Agent 规则(源自 DeepSeek Harness
-项目的 AGENTS.md):First-Principles Coding、No Reinventing The Wheel、
-核心 Conventions(注册即副作用 / 判别联合 / waterfall 必须 next() /
-模型可见即日志可重建 / 显式优于隐式 / 配置不硬编码)、Adversarial
-Self-Review 等。
+Dizzy-DSH 会向 DSH 的系统提示词注入一段 Agent 规则(全中文,源自 DeepSeek
+Harness 项目的 AGENTS.md 与用户要求):**用户哨兵规则**(第一性原理思考 /
+对抗式审查 / 子代理优先 / 喵字开头,最高优先级)+ 开发规范(不重复造轮子 /
+核心约定 / 防御性模式 / 类型安全与文档)。
 
 **注入机制**(已查证 DSH 源码):
 

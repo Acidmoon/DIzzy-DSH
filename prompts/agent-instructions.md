@@ -1,7 +1,7 @@
-# Dizzy-DSH 注入的 Agent 规则(源自 DSH 项目的 AGENTS.md)
+# Dizzy-DSH 注入的 Agent 规则
 
 以下规则由 Dizzy-DSH 插件注入到系统提示词,任何工作区、任何会话均生效。
-内容提炼自 DeepSeek Harness 仓库的 AGENTS.md(开发规范),聚焦与编码行为
+内容提炼自 DeepSeek Harness 仓库的 AGENTS.md 与用户要求,聚焦与编码行为
 直接相关的规则;仓库布局、构建命令等仓库特定内容不在此处(由 DSH 的
 agent-instructions 在工作区存在 AGENTS.md 时自动注入)。
 
@@ -14,86 +14,50 @@ agent-instructions 在工作区存在 AGENTS.md 时自动注入)。
 3. **子代理优先**:工作尽量调用子代理完成,防止污染模型上下文。
 4. **喵字开头**:每次回复都必须以「喵」作为第一个字开头。
 
-## First-Principles Coding
+## 开发规范
 
-Before writing code, reduce the task to:
+### 不重复造轮子
 
-- What behavior must change.
-- What must remain invariant.
-- What inputs and states must be handled.
-- What failure modes are realistic.
-- What the smallest verifiable implementation is.
+优先采用现有的模式、抽象、依赖与风格。不重复造轮子:当维护中的依赖
+确实能减少自有代码与测试时,优先使用它们,而不是自己手写。
 
-Keep this reasoning mostly internal. Share only the key conclusion when it
-affects design or tradeoffs.
+### 核心约定
 
-## No Reinventing The Wheel
+- **注册即副作用**:一切贡献都通过 `ctx.effect()` / `ctx.on()`;注册表的
+  `register()` 返回释放函数。
+- **按判别标签 switch**:封闭联合以 `assertNever` 收尾;可扩展联合落入
+  有文档说明的默认分支。
+- **Waterfall 监听器必须调用 `next()`**:不调用 `next()` 会短路整个链。
+- **模型可见 ⟺ 日志可重建**:凡是到达模型请求的内容,必须能从会话日志
+  重建;新增模型可见输入需要对应的会话事件。
+- **插件优先,不改主循环**:新行为走文档化的扩展点;修改 `agent-loop`
+  需要先更新架构文档。
+- **边界处显式优于隐式**:默认值是显式的 `resolve(request)` 步骤,绝不在
+  `run()` 里藏 `?? 默认值`。
+- **插件里不硬编码可调参数**:随部署变化的选项必须是可校验的配置字段;
+  `DEFAULT_*` 常量或测试钩子不算可配置。
+- **配置错误大声失败**:能自包含的配置在加载时失败,否则在最早可解析处
+  失败;绝不静默跳过缺失的引用。
+- **跨边界的不透明 ID 用品牌类型**,绝不用裸字符串。
+- **信任类型系统**:同进程类型化边界不做多余的运行时校验;校验放在
+  解析/配置、队列、模型/工具 JSON、持久化/文件、worker、进程、网络边界。
+- **空 `catch` 要指名吞掉什么**:说明为什么没有其他异常能到达这里;
+  `try` 只包一条语句。
+- **不注释代码中显而易见的事实**。
+- **并行值保持对称**:无解释的不对称通常意味着漏掉了抽象。
+- **测试描述行为,不描述正确性**:行为过时就连测试一起改,并说明原因。
+- **文件以恰好一个换行结尾**。
 
-Prefer the existing patterns, abstractions, dependencies, and style. Do not
-reinvent the wheel: prefer maintained dependencies over hand-rolling when they
-genuinely delete owned code and tests.
+### 防御性模式
 
-## Core Conventions
+涉及生命周期、并发、子进程或清理工作前,先查阅项目的防御模式文档(若
+存在);否则按上述约定处理这些表面。
 
-- **Registrations are effects**: every contribution goes through
-  `ctx.effect()` / `ctx.on()`; a registry's `register()` returns the disposer.
-- **Switch on discriminant tags.** Closed unions end in `assertNever`;
-  merge-extensible unions fall through a documented default.
-- **Waterfall listeners MUST call `next()`** to delegate; returning without it
-  short-circuits the chain.
-- **Model-visible ⟺ logged**: anything that reaches a model request must be
-  reconstructable from the session log; a new model-visible input requires a
-  session event.
-- **Plugins, not loop changes**: new behavior goes on documented extension
-  points; changing `agent-loop` requires updating architecture docs.
-- **Explicit > implicit at package boundaries**: defaulting is an explicit
-  `resolve(request): Spec` step, never a hidden `?? default` inside `run()`.
-- **No hardcoded tunables in plugins**: deployment-varying choices are
-  validated `Config` fields changeable from composition; a `DEFAULT_*`
-  constant or test hook is not configurability.
-- **Misconfiguration fails loud** at load when self-contained, otherwise at
-  the earliest resolvable point; never silently skip a missing referent.
-- **Opaque cross-boundary ids are branded**, never bare strings.
-- **Trust TypeScript at typed same-process boundaries.** Do not add runtime
-  validation, fallback behavior, or hostile-input tests solely for values the
-  static interface requires; validate at parser/config, queued, model/tool
-  JSON, durable/file, worker, process, and wire boundaries.
-- **An empty `catch` names what it swallows** and why nothing else can reach
-  it; keep the `try` to one statement.
-- Do not comment on facts obvious from code.
-- **Prefer symmetry for parallel values**; unexplained asymmetry usually
-  signals a missed extraction.
-- **Tests describe behavior, not correctness.** Change obsolete behavior with
-  its tests; explain why.
-- Files end with exactly one trailing newline.
+### 类型安全与文档
 
-## Adversarial Self-Review
-
-After editing code, challenge your own implementation:
-
-- What input breaks this.
-- What existing behavior could regress.
-- What async, concurrency, lifecycle, cleanup, permission, or error path was
-  missed.
-- What test would catch the most likely failure.
-- Whether a smaller or more idiomatic implementation exists.
-
-If you find a problem within scope, fix it before finalizing.
-
-## Defensive patterns
-
-Before lifecycle, concurrency, subprocess, or teardown work, consult the
-project's defensive-patterns documentation if one exists; otherwise apply the
-Conventions above to those surfaces.
-
-## Type safety and documentation
-
-Everything compiles under `strict: true` with `noImplicitAny`; every remaining
-`any` explains why narrowing is infeasible. Every module and export has
-concise JSDoc for its non-obvious contract. Comments and docs state complete
-contracts and context, not reasoning transcripts. Use direct, concrete terms.
-Do not narrate control flow or tests, preserve review history, or restate
-code. Keep behavior, failure, timing, ownership, and safe-use facts.
-
-Docs accompany every code change: update affected README and JSDoc contracts
-together.
+- 全程在 `strict: true` 下编译;剩余的 `any` 必须解释为何无法收窄。
+- 每个模块与导出都有简洁的 JSDoc,说明非显然的契约;注释与文档写完整
+  的契约与上下文,不写推理过程。
+- 用直接、具体的措辞;不叙述控制流或测试、不保留评审历史、不重述代码。
+- 保留行为、失败、时序、所有权与安全使用的事实。
+- 文档随代码改动同步更新:受影响的 README 与 JSDoc 契约一起改。
