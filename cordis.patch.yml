@@ -4,22 +4,24 @@
 #   dsh plugin --profile web add link:<本仓库路径>
 #
 # 格式:与 dsh-base/cordis.patch.yml 一致 —— 顶层是一个 insert 条目,
-# 下面的每一项都是要挂载的插件行。loader 以 profile 为基准解析 name,
-# 包内插件通过包名子路径引用(见下方 name 写法)。
+# 下面的每一项都是要挂载的插件行。
 #
-# 平面规则:
-#   - 这里是 HOST 组合层:注册的工具对所有会话可见,跨会话共享
-#   - 需要"每会话独立"的配置(如 persona、每会话工具),放 agent preset
-#   - 浏览器 UI 插件需要 npm 包 + dsh.client 声明,本层只做 Host 端
+# 注意:entry 的 name 必须是【包名】,而不是插件文件路径:
+#   - Host 半区:loader 按包名 import 包的 main(index.js)挂载插件
+#   - Client 半区:client-modules 按包名扫描 dsh.client 声明 + exports["./client"],
+#     自动把 client.js 注入浏览器
+# 这与 profile 里已有的 @dsh-external/dsh-vision-toolkit 完全同构。
 
 - insert:
     # ── 余额类 ────────────────────────────────────────────────────────────
-    # DeepSeek 账户余额查询:每分钟刷新,注册模型可见工具 balance_check。
-    # 完整 Node 环境,直接 fetch;API Key 走 credentials(DEEPSEEK_API_KEY)。
-    - id: kit-balance
-      name: 'dizzy-dsh/plugins/balance.js'
+    # DeepSeek 账户余额查询 + 输入栏余额徽章(模型选择器左侧)。
+    # Host: 每分钟刷新余额,提供 GET /dizzy/balance 与 balance_check 工具;
+    # Client: conversation.input.right 徽章,仅 deepseek-official 模型显示。
+    - id: dizzy-dsh
+      name: 'dizzy-dsh'
 
     # ── 新插件模板(复制此块,改 id/name)────────────────────────────────
     # - id: kit-my-feature
-    #   name: 'dizzy-dsh/plugins/my-feature.js'
+    #   name: 'dizzy-dsh'
     #   disabled: true
+    #   说明:新功能直接加进 index.js(或拆成子模块 import),client 半区在 client.js 扩展。
