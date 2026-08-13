@@ -29,26 +29,34 @@ Dizzy-DSH 是一个 **DSH bundle 层插件仓库**:"克隆即装",无需 npm 发
 
 ```bash
 # 一条命令安装主插件 + 收录的第三方插件(见 §7.5)
-dsh plugin --profile web add \
-  link:<仓库绝对路径> \
-  link:<仓库绝对路径>/third-party/DSH-better-sidebar \
-  link:<仓库绝对路径>/third-party/dsh-vision-toolkit
+dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
-1. `dsh plugin` 转发给 pnpm 在 profile 目录执行安装(link: 保留仓库原位);
-   **只把命令中列出的包写入 profile 的 `dependencies`**(传递依赖不会出现在
-   顶层,所以第三方插件必须显式列出)
-2. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
+1. `dsh plugin` 转发给 pnpm 在 profile 目录执行安装。**必须用 `file:` 而非
+   `link:`**:`link:` 协议下 pnpm 不解析目标包的 `dependencies`(目标目录
+   自管依赖,已实测:link 安装的包其依赖一律不进 lockfile/node_modules),
+   而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
+   经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
+2. 主插件 `package.json` 的 `dependencies` 声明两个收录的第三方插件
+   (`dsh-better-sidebar@0.10.3` 走 registry、`@dsh-external/dsh-vision-toolkit`
+   `file:./third-party/...` 走仓库快照)—— `file:` 安装时自动带上
+3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
    **遍历 profile 顶层 `dependencies`**,凡是解析到的包声明了
-   `dsh.bundle.patch` 就自动加入 `dsh.profile.bundles` 层列表(无需手动编辑)
-3. 下次启动 dsh web 时,loader 读取每个 bundle 的 `cordis.patch.yml` 的
-   `- insert:` 条目,entry 的 name 是包名,按包加载:
+   `dsh.bundle.patch` 就自动加入 `dsh.profile.bundles` 层列表(顶层只会有
+   主插件一个,第三方由主插件 patch 挂载,见第 4 步)
+4. 下次启动 dsh web 时,loader 读取主插件 bundle 的 `cordis.patch.yml`,
+   其中的 `- insert:` 条目列出全部插件行(主插件 + 两个第三方),entry 的
+   name 是包名,从 profile 顶层 node_modules 按包加载:
    - Host 半区:`import('<包名>')` → 包 `main`(index.js)→ 挂载插件
-   - Client 半区:`client-modules` 按包名扫描 `dsh.client` 声明 +
+   - Client 半区:`client-modules` 按 entry 的包名扫描 `dsh.client` 声明 +
      `exports["./client"]` → 把 client.js 注入浏览器
+5. 首次安装若遇 `ERR_PNPM_IGNORED_BUILDS`(node-pty/protobufjs 构建脚本):
+   pnpm 默认禁止并以非零码退出导致 reconcile 不执行。在 profile 的
+   `pnpm-workspace.yaml` 的 `allowBuilds` 里将两者设为 `true` 后重跑
+   (pnpm v11 会自动生成占位 `node-pty: set this to true or false`)
 
-**卸载**:`dsh plugin --profile web remove dizzy-dsh dsh-better-sidebar @dsh-external/dsh-vision-toolkit`
-**更新**:`cd <仓库> && git pull`(link: 方式无需重装),重启生效
+**卸载**:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
+**更新**:`cd <仓库> && git pull` 后重新执行 `dsh plugin --profile web add file:<仓库绝对路径>`(`file:` 是安装时快照,内容变化需重新 add),重启生效
 
 ---
 
@@ -387,20 +395,24 @@ git add -A && git commit -m "feat: ..." && git push
 - README「收录的第三方插件」表格同步登记:插件名 / 上游链接 / 版本 /
   收录位置 / 说明
 
-安装收录的插件与主插件同构(`dsh plugin add link:<路径>`),一条命令全部
-安装,插件自带的 `cordis.patch.yml` 会被自动挂载(reconcile 遍历顶层
-dependencies 自动加入 bundles):
+安装收录的插件**不需要单独 add**:主插件 `package.json` 的 `dependencies`
+声明了它们(`dsh-better-sidebar@0.10.3` registry + `@dsh-external/dsh-vision-toolkit`
+`file:./third-party/...` 快照),一条 `dsh plugin add file:<仓库>` 全部安装
+并随主插件 patch 一起挂载:
 
 ```bash
-dsh plugin --profile web add \
-  link:<仓库> \
-  link:<仓库>/third-party/DSH-better-sidebar \
-  link:<仓库>/third-party/dsh-vision-toolkit
-dsh --profile web --dump-config   # 出现 # == dsh-better-sidebar 等 entry 行
+dsh plugin --profile web add file:<仓库>
+dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 ```
 
-> 已验证:`dsh plugin add` 带多个 `link:` spec 时,每个包都会写入 profile
-> 顶层 `dependencies` 并进入 bundles;只 add 仓库根路径不会带上第三方。
+> 已验证(`tmp-file*` 临时 profile 完整实测):`file:` 安装主插件时 pnpm
+> 递归解析其 dependencies —— better-sidebar 及其全部运行时依赖
+> (ws/codemirror/xterm/node-pty 等)从 registry 安装,vision-toolkit 快照
+> 及其依赖 saxes 一并装入,hoisted 提升到顶层 node_modules,三个 entry
+> 全部 import 成功、dump-config 全部出现。`link:` 方案则不行(不装依赖,
+> better-sidebar 缺 ws 直接 import 失败)。首次安装记得配置
+> `pnpm-workspace.yaml` 的 `allowBuilds`(node-pty/protobufjs → true),
+> 否则 pnpm 以 `ERR_PNPM_IGNORED_BUILDS` 非零退出、reconcile 不执行。
 
 更新上游快照:重新获取发布包/同步 checkout(见各 UPSTREAM.md),更新版本
 与 commit 记录后提交。

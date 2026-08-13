@@ -15,21 +15,25 @@
 git clone https://github.com/Acidmoon/DIzzy-DSH.git
 
 # 2. 一条命令安装全部插件(主插件 + 收录的第三方插件)
-dsh plugin --profile web add \
-  link:<仓库绝对路径> \
-  link:<仓库绝对路径>/third-party/DSH-better-sidebar \
-  link:<仓库绝对路径>/third-party/dsh-vision-toolkit
+dsh plugin --profile web add file:<仓库绝对路径>
 
 # 3. 重启 dsh web,插件生效(含浏览器 UI)
 ```
 
-> ⚠️ 为什么必须列出每个插件:`dsh plugin add` 只把**命令中列出的包**写入
-> profile 的 `dependencies`(reconcile 也只遍历顶层 dependencies,见
-> `plugin-9h8shc4d.js`)。只 add 仓库根路径只会安装主插件 `dizzy-dsh`,
-> 两个第三方插件不会自动带上。一条命令带多个 `link:` 即可一次全装。
+> ⚠️ 必须用 **`file:`** 而不是 `link:`:`link:` 协议下 pnpm 不安装目标包
+> 声明的依赖,而 `file:` 会递归安装完整依赖树。主插件 `package.json` 的
+> `dependencies` 声明了两个收录的第三方插件(`dsh-better-sidebar@0.10.3`
+> 走 npm registry、`@dsh-external/dsh-vision-toolkit` 走仓库内快照),
+> `file:` 安装时它们连同全部依赖自动装进 profile,由主插件的
+> `cordis.patch.yml` 一起挂载 —— 一次 add,全部生效(已实测验证)。
 
-卸载:`dsh plugin --profile web remove dizzy-dsh dsh-better-sidebar @dsh-external/dsh-vision-toolkit`
-更新:`cd <仓库> && git pull`(link: 方式无需重装,重启即生效)
+> ⚠️ 首次安装如遇到 `ERR_PNPM_IGNORED_BUILDS: node-pty / protobufjs`:
+> pnpm 默认禁止依赖的构建脚本并以非零码退出。在
+> `~/.dsh/profiles/web/pnpm-workspace.yaml` 的 `allowBuilds` 里把
+> `node-pty` 与 `protobufjs` 设为 `true`(pnpm 会自动生成占位),重新 add。
+
+卸载:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
+更新:`cd <仓库> && git pull` 后重新执行 `dsh plugin --profile web add file:<仓库绝对路径>`(`file:` 是安装时快照,内容变化需重新 add)
 
 ## 原理
 
@@ -135,16 +139,18 @@ README 明确标注来源。快照存放在 `third-party/<包名>/`,每个目录
 | dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),本机已安装(link 指向本地 checkout) |
 | dsh-better-sidebar | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) | 0.10.3(`efb2e2b`) | `third-party/DSH-better-sidebar/` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 |
 
-**安装收录的第三方插件**:已包含在「安装」一节的一条命令中(与主插件一并
-`dsh plugin add`)。也可以单独安装(例如只想要其中一个):
+**安装收录的第三方插件**:无需单独安装 —— 「安装」一节的单条
+`dsh plugin add file:<仓库>` 会经主插件 `package.json` 的 `dependencies`
+自动带上(registry 的 `dsh-better-sidebar` 与仓库快照
+`@dsh-external/dsh-vision-toolkit`),并随主插件一起挂载、一起卸载。
 
-```bash
-dsh plugin --profile web add link:<仓库绝对路径>/third-party/DSH-better-sidebar
-dsh plugin --profile web add link:<仓库绝对路径>/third-party/dsh-vision-toolkit
-```
+> 为什么不单独 `link:` 安装:`link:` 协议不安装目标包的依赖树,
+> better-sidebar 的运行时依赖(ws/codemirror/xterm/node-pty 等)会缺失,
+> 插件实际无法加载(已实测复现)。因此收录插件的安装一律走主插件的
+> `file:` 依赖通道,由 pnpm 递归安装完整依赖。
 
-两个插件均自带 `cordis.patch.yml`,安装后自动挂载,无需手改 profile;
-重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
+两个插件均自带 `cordis.patch.yml`(由主插件 patch 统一挂载),无需手改
+profile;重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
 
 ## 已收录插件
 
