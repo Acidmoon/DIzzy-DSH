@@ -28,19 +28,26 @@ Dizzy-DSH 是一个 **DSH bundle 层插件仓库**:"克隆即装",无需 npm 发
 ### 安装与生命周期
 
 ```bash
-dsh plugin --profile web add link:<仓库绝对路径>
+# 一条命令安装主插件 + 收录的第三方插件(见 §7.5)
+dsh plugin --profile web add \
+  link:<仓库绝对路径> \
+  link:<仓库绝对路径>/third-party/DSH-better-sidebar \
+  link:<仓库绝对路径>/third-party/dsh-vision-toolkit
 ```
 
-1. `dsh plugin` 转发给 pnpm 在 profile 目录执行安装(link: 保留仓库原位)
-2. 包声明了 `dsh.bundle.patch`,DSH **自动**把包加入
-   `dsh.profile.bundles` 层列表(无需手动编辑)
-3. 下次启动 dsh web 时,loader 读取 `cordis.patch.yml` 的 `- insert:` 条目,
-   entry 的 name 是包名 `dizzy-dsh`,按包加载:
-   - Host 半区:`import('dizzy-dsh')` → 包 `main`(index.js)→ 挂载插件
+1. `dsh plugin` 转发给 pnpm 在 profile 目录执行安装(link: 保留仓库原位);
+   **只把命令中列出的包写入 profile 的 `dependencies`**(传递依赖不会出现在
+   顶层,所以第三方插件必须显式列出)
+2. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
+   **遍历 profile 顶层 `dependencies`**,凡是解析到的包声明了
+   `dsh.bundle.patch` 就自动加入 `dsh.profile.bundles` 层列表(无需手动编辑)
+3. 下次启动 dsh web 时,loader 读取每个 bundle 的 `cordis.patch.yml` 的
+   `- insert:` 条目,entry 的 name 是包名,按包加载:
+   - Host 半区:`import('<包名>')` → 包 `main`(index.js)→ 挂载插件
    - Client 半区:`client-modules` 按包名扫描 `dsh.client` 声明 +
      `exports["./client"]` → 把 client.js 注入浏览器
 
-**卸载**:`dsh plugin --profile web remove dizzy-dsh`
+**卸载**:`dsh plugin --profile web remove dizzy-dsh dsh-better-sidebar @dsh-external/dsh-vision-toolkit`
 **更新**:`cd <仓库> && git pull`(link: 方式无需重装),重启生效
 
 ---
@@ -380,13 +387,20 @@ git add -A && git commit -m "feat: ..." && git push
 - README「收录的第三方插件」表格同步登记:插件名 / 上游链接 / 版本 /
   收录位置 / 说明
 
-安装收录的插件与主插件同构(`dsh plugin add link:<路径>`),插件自带的
-`cordis.patch.yml` 会被自动挂载,验证方式同 §7 验证清单:
+安装收录的插件与主插件同构(`dsh plugin add link:<路径>`),一条命令全部
+安装,插件自带的 `cordis.patch.yml` 会被自动挂载(reconcile 遍历顶层
+dependencies 自动加入 bundles):
 
 ```bash
-dsh plugin --profile web add link:<仓库>/third-party/DSH-better-sidebar
-dsh --profile web --dump-config   # 出现 # == dsh-better-sidebar 与 entry 行
+dsh plugin --profile web add \
+  link:<仓库> \
+  link:<仓库>/third-party/DSH-better-sidebar \
+  link:<仓库>/third-party/dsh-vision-toolkit
+dsh --profile web --dump-config   # 出现 # == dsh-better-sidebar 等 entry 行
 ```
+
+> 已验证:`dsh plugin add` 带多个 `link:` spec 时,每个包都会写入 profile
+> 顶层 `dependencies` 并进入 bundles;只 add 仓库根路径不会带上第三方。
 
 更新上游快照:重新获取发布包/同步 checkout(见各 UPSTREAM.md),更新版本
 与 commit 记录后提交。

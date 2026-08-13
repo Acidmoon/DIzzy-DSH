@@ -14,13 +14,21 @@
 # 1. 克隆仓库
 git clone https://github.com/Acidmoon/DIzzy-DSH.git
 
-# 2. 安装为 web profile 的插件层
-dsh plugin --profile web add link:<仓库绝对路径>
+# 2. 一条命令安装全部插件(主插件 + 收录的第三方插件)
+dsh plugin --profile web add \
+  link:<仓库绝对路径> \
+  link:<仓库绝对路径>/third-party/DSH-better-sidebar \
+  link:<仓库绝对路径>/third-party/dsh-vision-toolkit
 
 # 3. 重启 dsh web,插件生效(含浏览器 UI)
 ```
 
-卸载:`dsh plugin --profile web remove dizzy-dsh`
+> ⚠️ 为什么必须列出每个插件:`dsh plugin add` 只把**命令中列出的包**写入
+> profile 的 `dependencies`(reconcile 也只遍历顶层 dependencies,见
+> `plugin-9h8shc4d.js`)。只 add 仓库根路径只会安装主插件 `dizzy-dsh`,
+> 两个第三方插件不会自动带上。一条命令带多个 `link:` 即可一次全装。
+
+卸载:`dsh plugin --profile web remove dizzy-dsh dsh-better-sidebar @dsh-external/dsh-vision-toolkit`
 更新:`cd <仓库> && git pull`(link: 方式无需重装,重启即生效)
 
 ## 原理
@@ -127,12 +135,11 @@ README 明确标注来源。快照存放在 `third-party/<包名>/`,每个目录
 | dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),本机已安装(link 指向本地 checkout) |
 | dsh-better-sidebar | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) | 0.10.3(`efb2e2b`) | `third-party/DSH-better-sidebar/` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 |
 
-**安装收录的第三方插件**(与主插件同样的 link: 方式):
+**安装收录的第三方插件**:已包含在「安装」一节的一条命令中(与主插件一并
+`dsh plugin add`)。也可以单独安装(例如只想要其中一个):
 
 ```bash
-# 示例:安装 dsh-better-sidebar
 dsh plugin --profile web add link:<仓库绝对路径>/third-party/DSH-better-sidebar
-# 示例:安装 dsh-vision-toolkit(若本机已装可跳过,保持现有 link 即可)
 dsh plugin --profile web add link:<仓库绝对路径>/third-party/dsh-vision-toolkit
 ```
 
