@@ -5,6 +5,9 @@
 [oh-my-opencode](https://deepwiki.com/code-yeongyu/oh-my-opencode/12.1-configuration-schema-reference):
 **仓库本身作为一个 DSH bundle 层安装,无需 npm 发布,重启后依然生效。**
 
+> 📖 开发文档:[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) —— 架构、平面规则、
+> 双半区开发流程、关键技术机制与常见坑,所有结论均经实际验证。
+
 ## 安装(用户侧)
 
 ```bash
