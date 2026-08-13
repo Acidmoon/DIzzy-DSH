@@ -48,7 +48,8 @@ Dizzy-DSH/
 ├── prompts/
 │   └── agent-instructions.md  # 注入系统提示词的 Agent 规则(源自 DSH 的 AGENTS.md)
 ├── plugins/_template.js  # 参考模板(多插件时拆分子模块)
-└── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
+├── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
+└── third-party/          # 收录的第三方插件快照(见下方章节,每目录含 UPSTREAM.md)
 ```
 
 ## 系统提示词注入(Agent 规则)
@@ -114,6 +115,29 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
 
 **注意**:bundle 层是 Host 平面,插件注册的工具对所有会话可见。
 若某插件 `ctx.provide()` 发布服务,服务名不能与其他插件冲突。
+
+## 收录的第三方插件(Third-party)
+
+本仓库收录社区/官方之外的第三方 DSH 插件快照,全部保留**上游地址**并在本
+README 明确标注来源。快照存放在 `third-party/<包名>/`,每个目录内有
+`UPSTREAM.md` 记录上游仓库、版本、commit 与更新方式;快照只做同步,不做修改。
+
+| 插件 | 上游仓库 | 版本 | 收录位置 | 说明 |
+|---|---|---|---|---|
+| dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),本机已安装(link 指向本地 checkout) |
+| dsh-better-sidebar | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) | 0.10.3(`efb2e2b`) | `third-party/DSH-better-sidebar/` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 |
+
+**安装收录的第三方插件**(与主插件同样的 link: 方式):
+
+```bash
+# 示例:安装 dsh-better-sidebar
+dsh plugin --profile web add link:<仓库绝对路径>/third-party/DSH-better-sidebar
+# 示例:安装 dsh-vision-toolkit(若本机已装可跳过,保持现有 link 即可)
+dsh plugin --profile web add link:<仓库绝对路径>/third-party/dsh-vision-toolkit
+```
+
+两个插件均自带 `cordis.patch.yml`,安装后自动挂载,无需手改 profile;
+重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
 
 ## 已收录插件
 

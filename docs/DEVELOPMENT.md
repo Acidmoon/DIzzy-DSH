@@ -365,6 +365,34 @@ git add -A && git commit -m "feat: ..." && git push
 
 ---
 
+## 7.5 收录第三方插件(third-party)
+
+仓库收录他人已做好的 DSH 插件快照,供"克隆即装",同时**明确保留上游
+地址与来源标注**。规范:
+
+- 目录:`third-party/<包名>/`,包名与插件 `package.json` 的 `name` 一致
+  (如 `DSH-better-sidebar` 对应 `dsh-better-sidebar`)
+- 每个目录必须有 `UPSTREAM.md`:`上游仓库`、`收录版本`、`上游 commit`、
+  `License`、`收录方式`、`更新方式`、`本地安装` 命令
+- **快照不改**:收录内容与上游一致(允许整文件格式层同步),功能修改
+  一律提交到上游;本地有未提交补丁时在 UPSTREAM.md 中注明
+- 排除 `.git`、`node_modules`、`__pycache__`、`*.tgz`(.gitignore 已兜底)
+- README「收录的第三方插件」表格同步登记:插件名 / 上游链接 / 版本 /
+  收录位置 / 说明
+
+安装收录的插件与主插件同构(`dsh plugin add link:<路径>`),插件自带的
+`cordis.patch.yml` 会被自动挂载,验证方式同 §7 验证清单:
+
+```bash
+dsh plugin --profile web add link:<仓库>/third-party/DSH-better-sidebar
+dsh --profile web --dump-config   # 出现 # == dsh-better-sidebar 与 entry 行
+```
+
+更新上游快照:重新获取发布包/同步 checkout(见各 UPSTREAM.md),更新版本
+与 commit 记录后提交。
+
+---
+
 ## 8. 常见问题排查
 
 | 症状 | 原因 | 处理 |
