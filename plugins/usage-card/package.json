@@ -2,7 +2,7 @@
   "name": "dizzy-dsh-usage-card",
   "private": true,
   "version": "0.1.0",
-  "description": "本月用量卡片:Host 聚合本地会话日志每日 token 用量 + /dizzy/usage 路由;Client 会话区左上角热力图卡片(月份切换/峰谷时钟/折叠)。",
+  "description": "本月用量视图:Host 聚合本地会话日志每日 token 用量(按 provider/model 归属)+ /dizzy/usage 路由;Client 会话视图「用量」Tab(conversation.view,对话/轨迹右侧;统计卡/月度热力图 + 近 7 天平滑曲线/今日分模型明细/峰谷时钟;悬浮弹窗给出输入/输出/缓存分项)。",
   "type": "module",
   "main": "./index.js",
   "exports": {

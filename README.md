@@ -75,7 +75,7 @@ Dizzy-DSH/
 ├── index.js              # 聚合根空插件(保证包可 import,无功能)
 ├── plugins/              # 自有插件合集:每个子包 = 一个独立插件
 │   ├── balance/          #   dizzy-dsh-balance —— 余额查询(host + 输入栏徽章 client)
-│   ├── usage-card/       #   dizzy-dsh-usage-card —— 本月用量卡片(host 聚合 + 热力图 client)
+│   ├── usage-card/       #   dizzy-dsh-usage-card —— 本月用量视图(host 聚合 + conversation.view「用量」Tab)
 │   └── agent-instructions/ # dizzy-dsh-agent-instructions —— 系统提示词注入(含 prompts/)
 ├── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
 └── third-party/          # 收录的第三方插件快照(见下方章节,每目录含 UPSTREAM.md)
@@ -118,7 +118,7 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
 ```
 浏览器 (client.js)                Host (index.js)
 ─────────────────                ─────────────────
-输入栏徽章 / 用量卡片  ──fetch──▶  GET /dizzy/balance  余额缓存(每分钟刷新)
+输入栏徽章 / 用量视图  ──fetch──▶  GET /dizzy/balance  余额缓存(每分钟刷新)
     │                             GET /dizzy/usage    本地会话日志聚合
     │                             │
     │                             └─ credentials 取 DEEPSEEK_API_KEY
@@ -147,7 +147,7 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
 |---|---|
 | 模型工具 / 定时任务 / 数据服务 / HTTP 路由 / **系统提示词注入** | 对应子包的 `index.js`(bundle 层 Host,全会话共享) |
 | 每会话独立的配置(prompt、persona) | agent preset(`~/.dsh/.agent-presets/`) |
-| 浏览器 UI(徽章、用量卡片) | 对应子包的 `client.js`(`dsh.client` 声明) |
+| 浏览器 UI(徽章、用量视图) | 对应子包的 `client.js`(`dsh.client` 声明) |
 
 **注意**:bundle 层是 Host 平面,插件注册的工具对所有会话可见。
 若某插件 `ctx.provide()` 发布服务,服务名不能与其他插件冲突。
@@ -181,5 +181,5 @@ profile;重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
 | 插件 | 包名 | Host | Client |
 |---|---|---|---|
 | DeepSeek 余额查询 | `dizzy-dsh-balance` | `plugins/balance/index.js`:每分钟刷新,`GET /dizzy/balance`,`balance_check` 工具 | `plugins/balance/client.js`:`conversation.input.right` 徽章(仅 deepseek-official 显示) |
-| 本月用量卡片 | `dizzy-dsh-usage-card` | `plugins/usage-card/index.js`:扫描本地会话日志聚合每日 token 用量,`GET /dizzy/usage?month=YYYY-MM` | `plugins/usage-card/client.js`:`conversation.session.header.utilities` 热力图卡片(月份切换/浅绿→墨绿周网格/北京时间峰谷时钟/折叠;better-sidebar 展开时隐藏) |
+| 本月用量视图 | `dizzy-dsh-usage-card` | `plugins/usage-card/index.js`:扫描本地会话日志聚合每日 token 用量(按 provider/model 归属),`GET /dizzy/usage?month=YYYY-MM`(含逐日分项/近 7 天/今日分模型) | `plugins/usage-card/client.js`:`conversation.view`「用量」Tab(对话/轨迹右侧;统计卡/月度热力图 + 近 7 天平滑曲线/今日分模型明细/峰谷时钟;悬浮弹窗显示输入/输出/缓存分项;月份切换 + 60s 自动刷新) |
 | Agent 规则注入 | `dizzy-dsh-agent-instructions` | `plugins/agent-instructions/index.js`:`systemPrompt.section` 注入本子包 `prompts/agent-instructions.md` | — |

@@ -91,7 +91,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 | 能力 | 位置 | 说明 |
 |---|---|---|
 | 模型工具、定时任务、数据服务、HTTP 路由 | **对应子包 Host 半区**(bundle 层) | 进程级,全会话共享 |
-| 浏览器 UI(徽章、用量卡片) | **对应子包 Client 半区**(`dsh.client`) | 随 bundle 持久加载 |
+| 浏览器 UI(徽章、用量视图) | **对应子包 Client 半区**(`dsh.client`) | 随 bundle 持久加载 |
 | 每会话独立的配置(prompt、persona、技能集) | agent preset(`~/.dsh/.agent-presets/`) | 每会话独立挂载/卸载 |
 | 临时扩展、原型验证 | 动态插件(`cordis_define`) | **进程级,重启即失** |
 
@@ -113,7 +113,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 ```
 浏览器 (client.js)                     Host (index.js)
 ─────────────────                      ─────────────────
-用量卡片 / 迷你方块                     会话日志聚合(每日 token)
+用量视图(「用量」Tab)               会话日志聚合(每日 token)
     │  fetch GET /dizzy/usage           │
     │◀───────────────────────────────   ├─ 扫描 ~/.dsh/sessions(增量)
     │                                    └─ webServer 路由 /dizzy/usage
@@ -310,7 +310,8 @@ const timer = setInterval(load, 60000)
 | `conversation.input.right` | 输入栏模型选择器左侧(本仓库徽章位置) |
 | `conversation.input.left` | 输入栏工具行左侧 |
 | `conversation.composer.dock` | 输入栏下方状态行 |
-| `conversation.session.header.utilities` | 会话页头右侧列表(本仓库用量卡挂载点;加法,不替换页头) |
+| `conversation.view` | 会话视图环(本仓库「用量」Tab 挂载点:一 entry 一 Tab,宿主只渲染激活视图;chat=0/trajectory=10,新视图取 order 20) |
+| `conversation.session.header.utilities` | 会话页头右侧列表(加法,不替换页头) |
 | `conversation.session.header` | **single 槽**,宿主已占 priority 0;占用即替换整条页头,本仓库不用 |
 | `settings.section` | 设置页(完整页面) |
 | `tool.view.cordis` | 动态插件 Run 卡片内交互区 |
@@ -408,7 +409,7 @@ git add -A && git commit -m "feat: ..." && git push
 ### 验证清单
 
 - [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现五个
-      entry(balance / usage-card / agent-instructions / better-sidebar /
+      entry(balance / usage-card / dizzy-agent-instructions / better-sidebar /
       dsh-vision-toolkit)
 - [ ] Host:每个子包可加载且 name/inject 正确:
       `node --input-type=module -e "import('dizzy-dsh-balance')"`,
@@ -465,25 +466,25 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 
 ---
 
-## 7.6 本月用量卡片(usage card)
+## 7.6 本月用量视图(usage view)
 
-会话区左上角的「本月用量」仪表面(约 248px,吃宿主 `--dsw-*` token,
-明暗主题都能跟),展示本地聚合的每日 token 热力图 + 北京时间峰谷状态。
-主数字是本月合计,热力图与时钟都是次级信息。
+会话页头的「用量」Tab(`conversation.view` 视图环,列在「对话」「轨迹」
+右侧),整页仪表面:统计卡 + 月度热力图与近 7 天曲线 + 今日明细(分模型)+ 北京时间峰谷状态。
+主数字是本月合计,热力图/明细/时钟都是次级信息。
 
 | 面 | 实现 |
 |---|---|
-| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`,统计 `assistant/message` 事件的 `data.usage`(`inputTokens+outputTokens+cacheReadTokens`)按本地日期聚合;增量刷新(文件 mtime+size 变化才重读,30s TTL) |
-| 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, scannedAt, errors }` |
-| 挂载 | Client 注册 `conversation.session.header.utilities` 列表插槽(零尺寸锚点)。官方 `conversation.session.header` 是 `kind: single`,宿主 `x6` 已在 priority 0 注册整条页头(标题/标签/操作行);同优先级会抛 `already has a registration`,换更低优先级会整槽替换页头并连带拆掉 `header.actions`。用量卡只要挂载点,走官方加法入口 `utilities`。卡片本体 `createPortal` 到 body + fixed 定位钉在会话区左上角,与宿主布局解耦;锚点不可见时退回 `[data-conversation-scroll]` |
-| 热力图 | 结构对齐 `token-heatmap.html`:左侧一周七天标签 + 右侧 `7 × 周数` 正方格(`aspect-ratio:1/1`);月外 `visibility:hidden`;有用量走我们的 DeepSeek 蓝阶并带微光,无用量透明;hover 放大;今日描边+脉冲 |
-| 月份切换 | 顶部 SVG 箭头 ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。不用原生 `<input type="month">` |
-| 时钟 | 独立 `PeakClock`(不拖整卡重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
-| 外观 | 紧凑布局:宽度 = 会话滚动区到聊天列空隙(封顶 280px),高度 ≈ 310px;热力图格子固定 20px(不再随宽度拉伸),padding 12/14、hero 数字 22px;右侧留 16px 不盖消息;空隙 < 200px 时不渲染 |
-| 可见性 | better-sidebar 展开(`--dsh-sidebar-width > 0`)— 隐藏;窗口 < 760px 隐藏(避免压住消息);右上角折叠按钮 → 左上角只留 34px 迷你方块(4 格热力图示意,同 token 体系),点击展开 |
+| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`,统计 `assistant/message` 事件的 `data.usage`(`inputTokens+outputTokens+cacheReadTokens`)按本地日期聚合;模型归属取同一事件的 `data.message.source`(provider/model,缺省 `unknown`);增量刷新(文件 mtime+size 变化才重读,30s TTL) |
+| 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, detail, scannedAt, errors }`:`days` 保持「日期 → 总 tokens」(后向兼容),`detail` = `{ days: 逐日 input/output/cacheRead 分项, recent7: 近 7 天(与查看月无关,含零用量天), today: 今日分模型 }`;`errors` > 0 时副标题提示「N 个日志文件解析失败,用量可能被低估」。旧 Host(无 `detail`)下 client 自动退化:弹窗只显总量、今日明细显重启提示 |
+| 挂载 | Client 注册 `conversation.view` list 插槽(`id: 'usage'`、`order: 20`、`label: '用量'`;chat=0、trajectory=10)。宿主把每个 entry 投影为页头 Tab,`renderSlot(..., { only: activeId })` 一次只渲染激活视图;选中状态存于宿主每会话 store(`persist: dsh.conversation.chat`),刷新页面保持;插件卸载后宿主 `resolveActiveView` 自动回退 chat。视图是普通整页 React 组件,无需 portal/fixed 定位与可见性守卫 |
+| 热力图 | 周一起始 `7 × 周数` 网格(34px 格,行=周一~周日、列=周),格内日期数字;DeepSeek 蓝阶四档(lv1–lv4,按当月峰值比例分档),月外 `visibility:hidden`;今日描边+脉冲;hover/focus 浮层显示日期 + 总量 + 输入/输出/缓存分项 |
+| 曲线 | 热力图右侧「近 7 天」用量曲线(detail.recent7):Catmull-Rom 转三次贝塞尔平滑过点 + 面积淡填 + 逐点悬浮读数,SVG viewBox 缩放自适应;旧 Host 退化为查看月内 7 天 |
+| 月份切换 | 页头 ‹ › ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。60s 自动重取 + 手动刷新按钮;数据按 `data.month === 查看月` 判定可见(切月即骨架,旧月数据不串月),同月刷新静默 |
+| 时钟 | 独立 `PeakClock`(不拖整页重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
+| 外观 | 居中栏(max-width 860px),全部吃宿主 `--dsw-*` token(明暗主题跟随);纵向滚动由宿主 scrollBody 提供,视图只管内容流;scrollBody 与对话共用,激活时主动 `scrollTop = 0` 回顶(对话自身有每会话滚动位置存档,不受影响) |
 
 > 注意:DeepSeek 官方 API 无按天用量接口(唯一官方数据源是响应里的
-> usage 字段,已由 DSH 落进会话日志),本卡片展示的是**本地记录的
+> usage 字段,已由 DSH 落进会话日志),本视图展示的是**本地记录的
 > DSH 会话 token 消耗**,与官方控制台「用量」页口径可能不同。
 > zstd 多帧解压逻辑复刻自 `@deepseek-ai/dsh-session-persistence-jsonl`
 > 的 `scanZstdFrames`(按 block 遍历,不依赖 FCS),插件不能 import
@@ -502,6 +503,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | 401 授权失败 | 敏感 env 被 scrub / key 未配置 | 用 credentials + fetch,检查 `DEEPSEEK_API_KEY` |
 | patch 不生效 | 改完没重启 / link 指向旧路径 | 重启 dsh web;确认 bundles 列表 |
 | 重复路由报错 | (kind, path) 重复注册 | 换路径或复用已有注册 |
+| `duplicate loader entry id: agent-instructions` | patch 里用了官方已占用的 entry id | 改成 `dizzy-agent-instructions`;官方 id 即使用 `disabled: true` 也仍占着 |
 | `single slot "conversation.session.header" already has a registration at priority 0` | 误占宿主 single 槽 | 改挂 `conversation.session.header.utilities`(list);不要用换 priority 去 shadow 整条页头 |
 
 ---
