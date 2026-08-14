@@ -67,7 +67,106 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > 收录的第三方插件快照更新走独立流程(跟随上游 + 补丁重放 + 适配检查):
 > 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
 
-##  文档
+## 第三方插件配置指南(Agent 向)
+
+> 本段写给读取本仓库的 AI Agent:当用户要求「配置 / 启用 / 排查」收录的第三方
+> 插件时,按下列流程执行。**「需用户提供」中缺什么就向用户问什么**,不要擅自
+> 假设或编造;拿不到就停下来说明。
+
+### 通用步骤(所有插件)
+
+1. 确认已安装:`dsh plugin --profile web list` 应包含 dizzy-dsh;没有则先走「快速开始」;
+2. 配置改动后一律**重启 dsh web + 浏览器硬刷新**(Ctrl+Shift+R);
+3. 配置文件:DSH 设置 `~/.dsh/settings.yaml`;**密钥只进 DSH credentials**
+   (`~/.dsh/.credentials.yaml` / 设置界面),settings 里只放 credential 引用,绝不写明文密钥。
+
+### 1. 视觉识别 dsh-vision-toolkit
+
+**需用户提供**:① 视觉模型 API 的 `baseUrl`(OpenAI 兼容,`/v1` 结尾)② API key
+③ 模型名(如 `mimo-v2.5`、`gemini-3.6-flash`)。
+
+**配置步骤**:
+
+1. 向用户索取上述三项;用户没有明确倾向时,可沿用默认形态
+   (`credential` 名 `VISION_API_KEY`,`language: zh`);
+2. 把 API key 写入 DSH credentials,名字与 `provider.credential` 一致
+   (默认 `VISION_API_KEY`);
+3. 写入 `settings.yaml` 的 `vision-toolkit` 段(实测可用示例):
+
+```yaml
+vision-toolkit:
+  provider:
+    baseUrl: https://api.xiaomimimo.com/v1
+    credential: VISION_API_KEY
+    model: mimo-v2.5
+  language: zh
+  timeoutMs: 60000
+  maxImageBytes: 10485760
+  maxImagePixels: 40000000
+  concurrency: 4
+  runtime:
+    mode: managed
+  allowedDirs: []
+```
+
+   或让用户走 **设置 > Vision Toolkit** 的 Web 编辑器(保存前会预检,非法配置拒绝保存);
+4. 重启 + 硬刷新。
+
+**验证**:新会话给模型一张图片,让它用 `vision_glance` 描述;工具目录应直接
+出现 `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff`
+四个常驻工具(其余工具加载 vision-tools skill 后出现)。
+
+**排查**:
+
+- host 日志报 `runtime not ready`:运行时未就绪——`managed` 模式会自动准备上游
+  Python 工具链,失败多为网络/磁盘问题;或改用 `runtime.mode: external` 并指定
+  `agentVisionToolkitPath` / `python` 指向已有环境;
+- 调用报 credential 错误:检查 credentials 里是否真的设置了对应名字的 key;
+- 只能看到 4 个常驻工具:正常,其余工具由 vision-tools skill 激活。
+
+### 2. 生成式 UI dsh-genui
+
+**需用户提供**:无。
+
+**配置**:零配置。可选增强——把 `third-party/dsh-genui/SKILL.md` 复制到
+`~/.dsh/skills/genui/`,让模型拿到更细的「内容 → 组件」映射。
+
+**验证**:新会话要求「用 dsh-ui 画一个统计仪表盘」,回答中应直接渲染出组件;
+工具目录含 `render_ui` / `validate_dsh_ui`。
+
+**排查**:
+
+- `dsh-ui` 围栏渲染成代码块:未重启 / 未硬刷新 / 插件不在 bundle 列表;
+- scene3d / mermaid 空白:按需资产路由失效——先硬刷新,仍不行则
+  `dsh plugin --profile web remove dizzy-dsh` 后重新 add(快照重装)。
+
+### 3. 桌面通知 dsh-notification
+
+**需用户提供**:无(浏览器权限由用户本人操作)。
+
+**配置步骤**:
+
+1. 打开 **设置 > 通知**:确认「启用通知」为开,点击授权按钮授予浏览器
+   Notification 权限,并发送测试通知确认能弹;
+2. 按需调整:结束状态开关(完成 / 出错 / 中止 / 阻塞 / 达 Token 上限)、
+   关键词包含/排除规则、需要手动关闭、仅在任务不在眼前时通知;
+3. 可选 host 参数:profile 的 `cordis.yml` 中 `dsh-notification` 行
+   `config.maxBodyChars`(默认 400,通知正文预算)。
+
+**验证**:让模型跑一个耗时任务,切到其他标签页,任务完成时应收到系统通知。
+
+**排查**:标签页**关闭**后不弹(浏览器限制,页面需处于打开状态);断线期间完成的
+轮次重连后不补发;站点权限被拒后页面内无法恢复,需浏览器站点设置里改回。
+
+### 4. IDE 侧边栏 dsh-better-sidebar
+
+**需用户提供**:无。
+
+**配置**:零配置,即点即用(界面右侧侧边栏图标)。
+
+**验证**:点开侧边栏,可见资源管理器 / 编辑器 / 终端 / Git / 浏览器分区,按会话隔离。
+
+## 文档
 
 | 文档 | 内容 |
 |---|---|
