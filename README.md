@@ -65,6 +65,11 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh* -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
+> ⚠️ **每次仓库改动后都要走这一步**(新增/修改插件、改 `cordis.patch.yml`、
+> 改 `plugins/` 代码):pnpm 对 `file:` 依赖只检测 `package.json` 是否变化,
+> **不会同步 patch 文件与子包内容**——只跑 `pnpm install` 会导致插件挂载不上
+> (实测:改了 `cordis.patch.yml` 只 `pnpm install`,重启后新 entry 完全不生效)。
+
 > 收录的第三方插件快照更新走独立流程(跟随上游 + 补丁重放 + 适配检查):
 > 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
 
