@@ -95,6 +95,11 @@ window.__ModuleLoader__.load({
         '.dsh-usage-clock{font-size:11px;font-weight:500;letter-spacing:0;font-variant-numeric:tabular-nums;font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);color:var(--dsw-alias-label-secondary)}',
         '.dsh-usage-period{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary)}',
         '.dsh-usage-tip{position:fixed;z-index:50;pointer-events:none;padding:6px 8px;border-radius:8px;background:var(--dsw-alias-tooltip-bg);color:var(--dsw-alias-label-primary-inverted,var(--dsw-alias-label-primary-foreground,#f7f8fa));font-size:12px;line-height:16px;box-shadow:0 4px 16px var(--dsw-alias-bg-mask-2);white-space:nowrap}',
+        // ── 折叠态:左上角迷你方块(与卡片同 token 体系)────────────
+        '.dsh-usage-mini{--dsh-usage-lv1:var(--dsw-static-deepseek-200);--dsh-usage-lv2:var(--dsw-static-deepseek-300);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-500);position:fixed;z-index:40;width:34px;height:34px;display:flex;align-items:center;justify-content:center;gap:2px;padding:0;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay);box-shadow:0 1px 0 var(--dsw-alias-border-l1),0 8px 20px var(--dsw-alias-bg-mask-2);cursor:pointer;transition:border-color var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease),transform var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
+        '.dsh-usage-mini:hover{border-color:var(--dsw-alias-border-l3);transform:scale(1.06)}',
+        '.dsh-usage-mini .m{width:5px;height:5px;border-radius:1.5px}',
+        'body[data-ds-dark-theme] .dsh-usage-mini{--dsh-usage-lv1:var(--dsw-static-deepseek-600);--dsh-usage-lv2:var(--dsw-static-deepseek-500);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-300);background:var(--dsw-alias-bg-layer-1)}',
       ].join('')
       document.head.append(style)
 
@@ -233,6 +238,20 @@ window.__ModuleLoader__.load({
           strokeLinejoin: 'round',
         }))
       }
+      function Minimize() {
+        return React.createElement('svg', {
+          width: 12,
+          height: 12,
+          viewBox: '0 0 12 12',
+          fill: 'none',
+          'aria-hidden': 'true',
+        }, React.createElement('path', {
+          d: 'M3 6h6',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+        }))
+      }
       function isSidebarExpanded() {
         const value = getComputedStyle(document.documentElement).getPropertyValue('--dsh-sidebar-width').trim()
         if (value === '') return false // better-sidebar 未加载
@@ -313,6 +332,7 @@ window.__ModuleLoader__.load({
         const [loadState, setLoadState] = React.useState('loading')
         const [pickerOpen, setPickerOpen] = React.useState(false)
         const [pickerYear, setPickerYear] = React.useState(new Date().getFullYear())
+        const [collapsed, setCollapsed] = React.useState(false)
         const [hidden, setHidden] = React.useState(false)
         const [pos, setPos] = React.useState(null)
         const [tip, setTip] = React.useState(null)
@@ -359,11 +379,11 @@ window.__ModuleLoader__.load({
         }, [])
 
         React.useEffect(() => {
-          if (hidden) {
+          if (hidden || collapsed) {
             setPickerOpen(false)
             setTip(null)
           }
-        }, [hidden])
+        }, [hidden, collapsed])
 
         React.useEffect(() => {
           let scroller = null
@@ -470,6 +490,24 @@ window.__ModuleLoader__.load({
 
         if (hidden || pos === null) return null
 
+        // 手动折叠:左上角只留迷你方块,点击展开
+        if (collapsed) {
+          const mini = React.createElement('button', {
+            type: 'button',
+            className: 'dsh-usage-mini',
+            style: { top: pos.top, left: pos.left },
+            title: '本月用量 · 点击展开',
+            'aria-label': '展开用量卡片',
+            onClick: () => setCollapsed(false),
+          }, [
+            React.createElement('span', { key: 'm1', className: 'm', style: { background: 'var(--dsh-usage-lv1)' } }),
+            React.createElement('span', { key: 'm2', className: 'm', style: { background: 'var(--dsh-usage-lv2)' } }),
+            React.createElement('span', { key: 'm3', className: 'm', style: { background: 'var(--dsh-usage-lv3)' } }),
+            React.createElement('span', { key: 'm4', className: 'm', style: { background: 'var(--dsh-usage-lv4)' } }),
+          ])
+          return ReactDom.createPortal(mini, document.body)
+        }
+
         const monthButtons = []
         for (let m = 1; m <= 12; m += 1) {
           const value = pickerYear + '-' + String(m).padStart(2, '0')
@@ -557,6 +595,14 @@ window.__ModuleLoader__.load({
               }, '回到本月'),
             ]) : null,
           ]),
+          React.createElement('button', {
+            key: 'fold',
+            type: 'button',
+            className: 'dsh-usage-btn',
+            'aria-label': '折叠卡片',
+            title: '折叠卡片',
+            onClick: () => setCollapsed(true),
+          }, React.createElement(Minimize)),
         ])
 
         let figure

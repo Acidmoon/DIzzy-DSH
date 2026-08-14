@@ -452,7 +452,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | 月份切换 | 顶部 SVG 箭头 ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。不用原生 `<input type="month">` |
 | 时钟 | 独立 `PeakClock`(不拖整卡重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
 | 外观 | 只占会话滚动区到聊天列(`--dsh-chat-content-width` 居中 748px)之间的左空隙,右侧留 16px,不盖消息;高按 330/422 随宽度走;热力图 `1fr` 拉伸;空隙 < 200px 时不渲染 |
-| 可见性 | better-sidebar 展开(`--dsh-sidebar-width > 0`)— 隐藏;窗口 < 760px 隐藏(避免压住消息) |
+| 可见性 | better-sidebar 展开(`--dsh-sidebar-width > 0`)— 隐藏;窗口 < 760px 隐藏(避免压住消息);右上角折叠按钮 → 左上角只留 34px 迷你方块(4 格热力图示意,同 token 体系),点击展开 |
 
 > 注意:DeepSeek 官方 API 无按天用量接口(唯一官方数据源是响应里的
 > usage 字段,已由 DSH 落进会话日志),本卡片展示的是**本地记录的
