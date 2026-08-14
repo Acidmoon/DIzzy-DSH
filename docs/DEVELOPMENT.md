@@ -505,6 +505,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | 重复路由报错 | (kind, path) 重复注册 | 换路径或复用已有注册 |
 | `duplicate loader entry id: agent-instructions` | patch 里用了官方已占用的 entry id | 改成 `dizzy-agent-instructions`;官方 id 即使用 `disabled: true` 也仍占着 |
 | `single slot "conversation.session.header" already has a registration at priority 0` | 误占宿主 single 槽 | 改挂 `conversation.session.header.utilities`(list);不要用换 priority 去 shadow 整条页头 |
+| `corrupt Zstandard session log: first frame is not exactly one header line` | 某份 `session.jsonl.zstd` 的第一帧明文不是单独一行 header(常见于把多帧日志解压后再一次性压回);官方 workspace `list()` 对这类文件零容忍,整棵插件树起不来。**不是** Dizzy-DSH 插件运行时逻辑错误 | 从仓库根跑 `node scripts/repair-zstd-header-frame.mjs` 先 dry-run(只报 `session.jsonl.zstd`,不改盘);确认 `actionable` 后加 `--apply`。解压明文与 `.bak` 完全一致才还原多帧备份,否则拆成「header 一帧 + 其余一帧」(能过 list,不等于恢复官方逐批追加的帧布局)。空文件/撕坏首帧官方会跳过,脚本也 leave,除非旁边有可用 `.bak`。修完仍可能因同目录残留 `session.jsonl`、重复 session id、header 路径对不上而起不来 |
 
 ---
 
