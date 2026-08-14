@@ -8,6 +8,16 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { VISION_TOOLS_SKILL_CONTENT, VISION_TOOLS_SKILL_NAME } from "./skill.js";
 /** Small bootstrap tool retained only until the current Agent gains visual tools. */
 export const VISION_TOOLKIT_ACTIVATE = 'vision_toolkit_activate';
+/**
+ * Core tools registered for every Agent at creation, without waiting for the
+ * Skill load: glance (describe/QA/OCR), ground (locate), detect, and
+ * pixel_diff (compare). The remaining tools keep the upstream progressive
+ * exposure (their registration is gated by the Skill load).
+ *
+ * Dizzy-DSH patch: deviates from upstream, which registers every visual tool
+ * only after the Skill loads. See docs/THIRD-PARTY-PATCHES.md.
+ */
+const ALWAYS_ON_TOOLS = new Set(['vision_glance', 'vision_ground', 'vision_detect', 'vision_pixel_diff']);
 function renderJson(_args, value) {
     return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
 }
@@ -160,9 +170,11 @@ export class VisionToolExposure {
     attach(agent) {
         if (this.states.has(agent))
             return;
-        this.states.set(agent, { active: false, toolDisposers: [], toolNames: [] });
+        this.states.set(agent, { active: false, coreActive: false, toolDisposers: [], toolNames: [] });
         if (hasLoadedVisionSkill(agent.session))
             this.activate(agent);
+        else
+            this.activateCore(agent);
     }
     activate(agent) {
         this.attach(agent);
@@ -173,10 +185,13 @@ export class VisionToolExposure {
         if (state.active)
             return { activated: false, tools: [...state.toolNames] };
         const definitions = this.createTools();
+        const remaining = state.coreActive
+            ? definitions.filter(definition => !ALWAYS_ON_TOOLS.has(definition.name))
+            : definitions;
         const toolDisposers = [];
         let hideActivation;
         try {
-            for (const definition of definitions)
+            for (const definition of remaining)
                 toolDisposers.push(agent.ctx.tools.register(definition));
             hideActivation = agent.ctx.tools.restrict({ deny: [VISION_TOOLKIT_ACTIVATE] });
         }
@@ -188,6 +203,38 @@ export class VisionToolExposure {
         }
         state.active = true;
         state.hideActivation = hideActivation;
+        state.toolDisposers = [...state.toolDisposers, ...toolDisposers];
+        state.toolNames = [...state.toolNames, ...remaining.map(definition => definition.name)];
+        return { activated: true, tools: [...state.toolNames] };
+    }
+    /**
+     * Register the always-on core subset for an Agent that has not loaded the
+     * Skill yet. The activation tool stays visible until the Skill loads and
+     * the tools/result listener completes the set through {@link activate}.
+     *
+     * Dizzy-DSH patch: upstream registers nothing here; see
+     * docs/THIRD-PARTY-PATCHES.md.
+     */
+    activateCore(agent) {
+        this.attach(agent);
+        const state = this.states.get(agent);
+        /* v8 ignore next -- attach() synchronously creates this exact entry. */
+        if (state === undefined)
+            throw new Error(`dsh-vision-toolkit: Agent ${String(agent.id)} has no exposure state`);
+        if (state.coreActive)
+            return { activated: false, tools: [...state.toolNames] };
+        const definitions = this.createTools().filter(definition => ALWAYS_ON_TOOLS.has(definition.name));
+        const toolDisposers = [];
+        try {
+            for (const definition of definitions)
+                toolDisposers.push(agent.ctx.tools.register(definition));
+        }
+        catch (error) {
+            for (const dispose of toolDisposers.reverse())
+                dispose();
+            throw error;
+        }
+        state.coreActive = true;
         state.toolDisposers = toolDisposers;
         state.toolNames = definitions.map(definition => definition.name);
         return { activated: true, tools: [...state.toolNames] };

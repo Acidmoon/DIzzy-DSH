@@ -11,3 +11,7 @@ node_modules/
 third-party/**/node_modules/
 third-party/**/__pycache__/
 third-party/**/*.tgz
+
+# dsh-genui 快照:演示视频与上游锁文件不入库
+third-party/dsh-genui/assets/demo.mp4
+third-party/dsh-genui/pnpm-lock.yaml

@@ -23,14 +23,18 @@
     - id: balance
       name: 'dizzy-dsh-balance'
 
-    # 本月用量卡片:Host 聚合本地会话日志 + /dizzy/usage;
-    #       Client: conversation.session.header.utilities 热力图卡片。
+    # 本月用量视图:Host 聚合本地会话日志 + /dizzy/usage;
+    #       Client: conversation.view「用量」Tab(对话/轨迹右侧)。
     - id: usage-card
       name: 'dizzy-dsh-usage-card'
 
     # Agent 规则注入:systemPrompt.section(order -50)读本子包
     #       prompts/agent-instructions.md。
-    - id: agent-instructions
+    # 不可用 id: agent-instructions —— 那是 dsh-base 里
+    # @deepseek-ai/dsh-agent-instructions 的官方 entry;web-app 虽把它
+    # disabled,id 仍占着,再 insert 同 id 会在 boot 抛
+    # "duplicate loader entry id: agent-instructions"。
+    - id: dizzy-agent-instructions
       name: 'dizzy-dsh-agent-instructions'
 
     # ── 收录的第三方插件(随主包依赖安装,见 package.json)────────
@@ -41,3 +45,8 @@
       name: 'dsh-better-sidebar'
     - id: dsh-vision-toolkit
       name: '@dsh-external/dsh-vision-toolkit'
+
+    # GenUI:模型在回答正文内输出 dsh-ui 围栏(JSON 规格),浏览器端渲染
+    # 为可交互组件(卡片/图表/表单/quiz/mermaid/3D),action 事件环回传模型。
+    - id: genui
+      name: '@omdsh-dev/dsh-genui'
