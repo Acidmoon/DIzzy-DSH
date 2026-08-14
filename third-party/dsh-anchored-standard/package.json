@@ -1,0 +1,15 @@
+{
+  "name": "dsh-anchored-standard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Two-phase DeepSeek Harness preset: Minimal-aligned bootstrap, then full Standard tools",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check preset/tool-bootstrap.mjs && node --test"
+  }
+}

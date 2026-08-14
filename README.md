@@ -25,6 +25,12 @@
 |  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.1) |
 |  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.10.3) |
 
+### 收录的第三方预设(agent preset)
+
+| 预设 | 能力 | 怎么用 | 状态 |
+|---|---|---|---|
+|  **Anchored Standard** `dsh-anchored-standard` | 两阶段工具目录引导:首个模型请求只暴露 `pwsh/read`(Windows)或 `bash/read`(Linux),对齐 Minimal 的系统提示词条件;会话记录首次工具调用后,开放 Standard 的完整工具目录;阶段由持久会话事件推导,resume/刷新不丢状态 | 运行 `scripts/install-anchored-standard.ps1` 装到 `~/.dsh/.agent-presets/`,重启后新会话预设选择「Anchored Standard (experimental)」 | ✅ 稳定(v0.1.0,已对照 rc.6 核对) |
+
 ## 收录的第三方插件
 
 本合集收录以下第三方 DSH 插件(快照保留于 `third-party/`),能力与用法见上方
@@ -37,6 +43,7 @@
 | dsh-genui | [omdsh-dev](https://github.com/omdsh-dev) | dsh-genui | https://github.com/omdsh-dev/dsh-genui | 0.8.1 | 仓库快照 |
 | dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.1 | 仓库快照 |
 | dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.10.3 | npm registry |
+| dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 
 ##  快速开始
 
@@ -72,6 +79,22 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 > 收录的第三方插件快照更新走独立流程(跟随上游 + 补丁重放 + 适配检查):
 > 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
+
+### 启用 Anchored Standard 预设(可选)
+
+`dsh-anchored-standard` 是 **agent preset,不走 `dsh plugin add` 机制**,安装 = 把快照的
+`preset/` 目录复制到用户预设根:
+
+```powershell
+# 4. (可选)安装 Anchored Standard 预设(两阶段工具目录引导)
+powershell -ExecutionPolicy Bypass -File scripts\install-anchored-standard.ps1
+```
+
+脚本幂等:目标已存在且文件齐全时跳过;缺文件时补全;加 `-Force` 覆盖为快照版。装完**重启
+dsh web**,新会话的预设下拉选择「Anchored Standard (experimental)」。
+
+> ⚠️ 不要在已经产生内容的会话中途切换 preset;首次请求只暴露 `pwsh/read`(Windows)/
+> `bash/read`(Linux),第一次工具调用后才开放 Standard 全部工具,这是设计行为。
 
 ## 插件配置指南(Agent 向)
 

@@ -21,6 +21,7 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 | dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.1 | ceab0ed | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 无 |
 | dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 有:exposure.js 核心工具常驻 |
+| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | e1277b5 | 无 |
 
 各上游形态备注:
 
@@ -28,7 +29,13 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 - **dsh-notification**:无 tag、未发布 npm → 只能跟 `main`,用 commit 锚定;
 - **dsh-vision-toolkit**:已发布 npm(0.1.4),上游真实仓库是 **Anionex**(快照内 package.json 的
   `repository` 字段指向已失效的 dsh-external 地址,勿信);main 已有 0.1.5 未打 tag;
-  有手工补丁,迁移/更新后必须重放。
+  有手工补丁,迁移/更新后必须重放;
+- **dsh-anchored-standard**:**agent preset,不是 cordis 插件**——不挂 cordis.patch.yml、不进
+  package.json 依赖,subtree pull 后无需 pnpm install;安装 = 复制 `preset/` 到
+  `~/.dsh/.agent-presets/anchored-standard`(用 `scripts/install-anchored-standard.ps1`)。
+  上游基于 rc.5/47f9438 开发,收录时已对照 rc.6 核对:agent.cordis.yml 全部 entry 与官方
+  standard 一致(仅多 `tool-bootstrap` 行、persona 用 minimal 风格),`system-prompt/assemble`
+  事件与 `systemPrompt` inject 在 rc.6 均存在;后续更新仍应按「适配检查」第 2 项重核。
 
 ## 一次性迁移(未执行;下次同步前完成)
 
