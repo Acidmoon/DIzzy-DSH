@@ -50,3 +50,8 @@
     # 为可交互组件(卡片/图表/表单/quiz/mermaid/3D),action 事件环回传模型。
     - id: genui
       name: '@omdsh-dev/dsh-genui'
+
+    # 桌面通知:会话跑完一轮任务时弹系统通知(设置 > 通知 可配状态/关键词
+    # 规则)。纯 UI,对模型零影响(无工具、无提示词、无日志写入)。
+    - id: dsh-notification
+      name: 'dsh-notification'
