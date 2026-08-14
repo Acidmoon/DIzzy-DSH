@@ -14,6 +14,7 @@
 |  **余额查询** `dizzy-dsh-balance` | DeepSeek 官方账户余额实时显示,每分钟自动刷新 | 输入栏右侧常驻徽章;对话中直接问「余额」或调用 `balance_check` 工具;`/dizzy/balance` 命令 | ✅ 稳定 |
 |  **本月用量** `dizzy-dsh-usage-card` | 本地会话日志聚合 token 用量:月度热力图 / 近 7 天趋势 / 今日分模型明细 / 峰谷时段 | 对话区右侧「用量」Tab(对话、轨迹并列);悬浮弹窗看输入/输出/缓存分项;支持月份切换 + 60s 自动刷新 | ✅ 稳定 |
 |  **Agent 规则注入** `dizzy-dsh-agent-instructions` | 向每个会话注入 Agent 规则:用户哨兵规则(第一性原理 / 对抗式审查 / 子代理优先 / 喵字开头)+ 开发规范(不重复造轮子 / 核心约定 / 防御性模式 / 类型安全) | 装完即全局生效,所有会话、所有工作区;编辑规则文本**下一轮对话即生效**,无需重启 | ✅ 稳定 |
+|  **浏览器控制** `dizzy-dsh-kimi-webbridge` | 通过 Kimi WebBridge(daemon + 浏览器扩展)控制你的**真实浏览器**:打开网页、读取页面、点击、填表、截图、抓包、存 PDF —— 带登录态的会话直接可用 | 渐进式披露:模型先调用 `kimi_browser_activate` 引导工具,随后获得全套 `kimi_browser_*` 工具(导航/快照/点击/输入/截图/标签管理) | ✅ 稳定 |
 
 ### 第三方插件(能力速览)
 
@@ -67,9 +68,9 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > 收录的第三方插件快照更新走独立流程(跟随上游 + 补丁重放 + 适配检查):
 > 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
 
-## 第三方插件配置指南(Agent 向)
+## 插件配置指南(Agent 向)
 
-> 本段写给读取本仓库的 AI Agent:当用户要求「配置 / 启用 / 排查」收录的第三方
+> 本段写给读取本仓库的 AI Agent:当用户要求「配置 / 启用 / 排查」本合集的
 > 插件时,按下列流程执行。**「需用户提供」中缺什么就向用户问什么**,不要擅自
 > 假设或编造;拿不到就停下来说明。
 
@@ -79,6 +80,27 @@ dsh plugin --profile web add file:<仓库绝对路径>
 2. 配置改动后一律**重启 dsh web + 浏览器硬刷新**(Ctrl+Shift+R);
 3. 配置文件:DSH 设置 `~/.dsh/settings.yaml`;**密钥只进 DSH credentials**
    (`~/.dsh/.credentials.yaml` / 设置界面),settings 里只放 credential 引用,绝不写明文密钥。
+
+### 0. 浏览器控制 dizzy-dsh-kimi-webbridge(自有)
+
+**需用户提供**:无密钥。但依赖 Kimi 官方的两个组件(不在本仓库):
+① daemon(`%USERPROFILE%\.kimi-webbridge\bin\kimi-webbridge.exe`,监听 127.0.0.1:10086)
+② Chrome/Edge 的 **Kimi WebBridge 浏览器扩展**(需已安装并连接)。
+
+**配置步骤**:
+
+1. 检测 daemon:POST `http://127.0.0.1:10086/status`(或工具调用时插件会自动尝试启动);
+   daemon 缺失 → 请用户到 https://www.kimi.com/zh-cn/features/webbridge 安装;
+2. 检查 `/status` 的 `extension_connected`;为 false → 请用户检查浏览器扩展是否启用;
+3. 无配置文件;工具调用时插件会自动处理 session 命名与 daemon 自愈。
+
+**验证**:让模型调用 `kimi_browser_activate`,随后工具目录出现全套 `kimi_browser_*`;
+让模型打开一个网页并截图,截图路径可用 `vision_glance` 查看。
+
+**排查**:`kimi_browser_* 失败:浏览器扩展未连接` → 检查扩展;错误含
+「Please update the Kimi WebBridge extension」→ 让用户更新扩展;
+daemon 无法连接且自动启动失败 → 让用户手动运行
+`& "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" start`。
 
 ### 1. 视觉识别 dsh-vision-toolkit
 

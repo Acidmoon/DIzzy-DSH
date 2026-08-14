@@ -1,0 +1,12 @@
+{
+  "name": "dizzy-dsh-kimi-webbridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kimi WebBridge 浏览器控制:渐进式披露的 kimi_browser_* 工具集(全局仅暴露引导工具,模型调用后注入全套工具)。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  }
+}

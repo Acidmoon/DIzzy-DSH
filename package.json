@@ -5,6 +5,7 @@
     "dizzy-dsh-balance": "file:./plugins/balance",
     "dizzy-dsh-usage-card": "file:./plugins/usage-card",
     "dizzy-dsh-agent-instructions": "file:./plugins/agent-instructions",
+    "dizzy-dsh-kimi-webbridge": "file:./plugins/kimi-webbridge",
     "dsh-better-sidebar": "0.10.3",
     "@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit",
     "@omdsh-dev/dsh-genui": "file:./third-party/dsh-genui",
