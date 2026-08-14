@@ -451,7 +451,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | 热力图 | 结构对齐 `token-heatmap.html`:左侧一周七天标签 + 右侧 `7 × 周数` 正方格(`aspect-ratio:1/1`);月外 `visibility:hidden`;有用量走我们的 DeepSeek 蓝阶并带微光,无用量透明;hover 放大;今日描边+脉冲 |
 | 月份切换 | 顶部 SVG 箭头 ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。不用原生 `<input type="month">` |
 | 时钟 | 独立 `PeakClock`(不拖整卡重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
-| 外观 | 只占会话滚动区到聊天列(`--dsh-chat-content-width` 居中 748px)之间的左空隙,右侧留 16px,不盖消息;高按 330/422 随宽度走;热力图 `1fr` 拉伸;空隙 < 200px 时不渲染 |
+| 外观 | 紧凑布局:宽度 = 会话滚动区到聊天列空隙(封顶 280px),高度 ≈ 310px;热力图格子固定 20px(不再随宽度拉伸),padding 12/14、hero 数字 22px;右侧留 16px 不盖消息;空隙 < 200px 时不渲染 |
 | 可见性 | better-sidebar 展开(`--dsh-sidebar-width > 0`)— 隐藏;窗口 < 760px 隐藏(避免压住消息);右上角折叠按钮 → 左上角只留 34px 迷你方块(4 格热力图示意,同 token 体系),点击展开 |
 
 > 注意:DeepSeek 官方 API 无按天用量接口(唯一官方数据源是响应里的
