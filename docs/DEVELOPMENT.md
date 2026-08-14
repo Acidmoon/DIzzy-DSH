@@ -292,6 +292,8 @@ const timer = setInterval(load, 60000)
 | `conversation.input.right` | 输入栏模型选择器左侧(本仓库徽章位置) |
 | `conversation.input.left` | 输入栏工具行左侧 |
 | `conversation.composer.dock` | 输入栏下方状态行 |
+| `conversation.session.header.utilities` | 会话页头右侧列表(本仓库用量卡挂载点;加法,不替换页头) |
+| `conversation.session.header` | **single 槽**,宿主已占 priority 0;占用即替换整条页头,本仓库不用 |
 | `settings.section` | 设置页(完整页面) |
 | `tool.view.cordis` | 动态插件 Run 卡片内交互区 |
 
@@ -435,6 +437,32 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 
 ---
 
+## 7.6 本月用量卡片(usage card)
+
+会话区左上角的「本月用量」仪表面(约 248px,吃宿主 `--dsw-*` token,
+明暗主题都能跟),展示本地聚合的每日 token 热力图 + 北京时间峰谷状态。
+主数字是本月合计,热力图与时钟都是次级信息。
+
+| 面 | 实现 |
+|---|---|
+| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`,统计 `assistant/message` 事件的 `data.usage`(`inputTokens+outputTokens+cacheReadTokens`)按本地日期聚合;增量刷新(文件 mtime+size 变化才重读,30s TTL) |
+| 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, scannedAt, errors }` |
+| 挂载 | Client 注册 `conversation.session.header.utilities` 列表插槽(零尺寸锚点)。官方 `conversation.session.header` 是 `kind: single`,宿主 `x6` 已在 priority 0 注册整条页头(标题/标签/操作行);同优先级会抛 `already has a registration`,换更低优先级会整槽替换页头并连带拆掉 `header.actions`。用量卡只要挂载点,走官方加法入口 `utilities`。卡片本体 `createPortal` 到 body + fixed 定位钉在会话区左上角,与宿主布局解耦;锚点不可见时退回 `[data-conversation-scroll]` |
+| 热力图 | 结构对齐 `token-heatmap.html`:左侧一周七天标签 + 右侧 `7 × 周数` 正方格(`aspect-ratio:1/1`);月外 `visibility:hidden`;有用量走我们的 DeepSeek 蓝阶并带微光,无用量透明;hover 放大;今日描边+脉冲 |
+| 月份切换 | 顶部 SVG 箭头 ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。不用原生 `<input type="month">` |
+| 时钟 | 独立 `PeakClock`(不拖整卡重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
+| 外观 | 只占会话滚动区到聊天列(`--dsh-chat-content-width` 居中 748px)之间的左空隙,右侧留 16px,不盖消息;高按 330/422 随宽度走;热力图 `1fr` 拉伸;空隙 < 200px 时不渲染 |
+| 可见性 | better-sidebar 展开(`--dsh-sidebar-width > 0`)— 隐藏;窗口 < 760px 隐藏(避免压住消息) |
+
+> 注意:DeepSeek 官方 API 无按天用量接口(唯一官方数据源是响应里的
+> usage 字段,已由 DSH 落进会话日志),本卡片展示的是**本地记录的
+> DSH 会话 token 消耗**,与官方控制台「用量」页口径可能不同。
+> zstd 多帧解压逻辑复刻自 `@deepseek-ai/dsh-session-persistence-jsonl`
+> 的 `scanZstdFrames`(按 block 遍历,不依赖 FCS),插件不能 import
+> 该包(profile 的 node_modules 里没有 @deepseek-ai/*)。
+
+---
+
 ## 8. 常见问题排查
 
 | 症状 | 原因 | 处理 |
@@ -446,6 +474,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | 401 授权失败 | 敏感 env 被 scrub / key 未配置 | 用 credentials + fetch,检查 `DEEPSEEK_API_KEY` |
 | patch 不生效 | 改完没重启 / link 指向旧路径 | 重启 dsh web;确认 bundles 列表 |
 | 重复路由报错 | (kind, path) 重复注册 | 换路径或复用已有注册 |
+| `single slot "conversation.session.header" already has a registration at priority 0` | 误占宿主 single 槽 | 改挂 `conversation.session.header.utilities`(list);不要用换 priority 去 shadow 整条页头 |
 
 ---
 

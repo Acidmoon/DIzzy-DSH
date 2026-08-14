@@ -2,6 +2,11 @@
 node_modules/
 *.log
 
+# 本地临时文件与工具产物(不入库)
+.tmp-gaofeng/
+.dsh-vision-toolkit/
+.playwright-cli/
+
 # 收录的第三方插件内部产物(快照本身入库,产物不入库)
 third-party/**/node_modules/
 third-party/**/__pycache__/

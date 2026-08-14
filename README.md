@@ -170,4 +170,5 @@ profile;重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
 | 功能 | Host | Client |
 |---|---|---|
 | DeepSeek 余额查询 | `index.js`:每分钟刷新,`GET /dizzy/balance`,`balance_check` 工具 | `client.js`:`conversation.input.right` 徽章(仅 deepseek-official 显示) |
+| 本月用量卡片 | `index.js`:扫描本地会话日志聚合每日 token 用量,`GET /dizzy/usage?month=YYYY-MM` | `client.js`:`conversation.session.header` 挂载热力图卡片(月份切换/浅绿→墨绿周网格/北京时间峰谷时钟;better-sidebar 展开时隐藏) |
 | Agent 规则注入 | `index.js`:`systemPrompt.section` 注入 `prompts/agent-instructions.md`(源自 DSH 的 AGENTS.md) | — |

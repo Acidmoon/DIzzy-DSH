@@ -5,7 +5,7 @@
     "dsh-better-sidebar": "0.10.3",
     "@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dizzy-DSH 系列插件仓库:git clone 后 dsh plugin add 即装,无需 npm 发布。",
   "type": "module",
   "main": "./index.js",
