@@ -1,0 +1,22 @@
+{
+  "name": "dizzy-dsh-balance",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DeepSeek 余额查询:Host 每分钟刷新余额 + /dizzy/balance 路由 + balance_check 工具;Client 输入栏余额徽章。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

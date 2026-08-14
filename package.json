@@ -2,28 +2,23 @@
   "name": "dizzy-dsh",
   "private": true,
   "dependencies": {
+    "dizzy-dsh-balance": "file:./plugins/balance",
+    "dizzy-dsh-usage-card": "file:./plugins/usage-card",
+    "dizzy-dsh-agent-instructions": "file:./plugins/agent-instructions",
     "dsh-better-sidebar": "0.10.3",
     "@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit"
   },
-  "version": "0.2.0",
-  "description": "Dizzy-DSH 系列插件仓库:git clone 后 dsh plugin add 即装,无需 npm 发布。",
+  "version": "0.3.0",
+  "description": "Dizzy-DSH 插件合集仓库:git clone 后 dsh plugin add 即装,无需 npm 发布。",
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
-    "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
     }
   }
 }

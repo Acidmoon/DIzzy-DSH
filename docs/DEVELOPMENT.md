@@ -8,8 +8,10 @@
 
 ## 1. 架构总览
 
-Dizzy-DSH 是一个 **DSH bundle 层插件仓库**:"克隆即装",无需 npm 发布,
-重启后依然生效。
+Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 npm 发布,
+重启后依然生效。**每个功能 = 一个独立子包插件**(与 third-party 收录的插件
+同构):独立 host 插件、独立 client bundle、独立挂载/卸载,互不引用;
+主包只是聚合根(依赖声明 + patch 层)。
 
 ```
 用户机器
@@ -17,18 +19,25 @@ Dizzy-DSH 是一个 **DSH bundle 层插件仓库**:"克隆即装",无需 npm 发
 ├── profile: ~/.dsh/profiles/web/
 │   ├── package.json          # dependencies 含 dizzy-dsh(file: 仓库路径)
 │   │                         # bundles 列表含 dizzy-dsh(自动加入)
-│   └── node_modules/dizzy-dsh → Junction → store 快照(file: 安装时生成)
+│   └── node_modules/
+│       ├── dizzy-dsh → Junction → store 快照(file: 安装时生成)
+│       ├── dizzy-dsh-balance / dizzy-dsh-usage-card /
+│       │   dizzy-dsh-agent-instructions   # 自有子包(随主包 file: 依赖安装)
+│       └── dsh-better-sidebar / @dsh-external/...  # 收录的第三方
 └── 仓库(本目录)
-    ├── package.json          # 包声明:main + exports + dsh.bundle + dsh.client
-    ├── cordis.patch.yml      # bundle 插件层(insert 条目)
-    ├── index.js              # Host 半区(完整 Node 环境)
-    └── client.js             # Client 半区(浏览器,免构建 ModuleLoader bundle)
+    ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/* + 第三方)
+    ├── cordis.patch.yml      # bundle 插件层(insert 条目,全部插件在此挂载)
+    ├── index.js              # 聚合根空插件(无功能)
+    └── plugins/              # 自有插件合集
+        ├── balance/          #   dizzy-dsh-balance:package.json + index.js(Host) + client.js(UI)
+        ├── usage-card/       #   dizzy-dsh-usage-card:同上
+        └── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
 ```
 
 ### 安装与生命周期
 
 ```bash
-# 一条命令安装主插件 + 收录的第三方插件(见 §7.5)
+# 一条命令安装全部插件(自有子包 + 收录的第三方插件,见 §7.5)
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -37,37 +46,43 @@ dsh plugin --profile web add file:<仓库绝对路径>
    自管依赖,已实测:link 安装的包其依赖一律不进 lockfile/node_modules),
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
-2. 主插件 `package.json` 的 `dependencies` 声明两个收录的第三方插件
-   (`dsh-better-sidebar@0.10.3` 走 registry、`@dsh-external/dsh-vision-toolkit`
-   `file:./third-party/...` 走仓库快照)—— `file:` 安装时自动带上
+2. 主插件 `package.json` 的 `dependencies` 声明三个自有子包
+   (`file:./plugins/*`)与两个收录的第三方插件(`dsh-better-sidebar@0.10.3`
+   走 registry、`@dsh-external/dsh-vision-toolkit` 走仓库快照)—— `file:`
+   安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
    **遍历 profile 顶层 `dependencies`**,凡是解析到的包声明了
    `dsh.bundle.patch` 就自动加入 `dsh.profile.bundles` 层列表(顶层只会有
-   主插件一个,第三方由主插件 patch 挂载,见第 4 步)
+   主插件一个,子包与第三方由主插件 patch 挂载,见第 4 步;
+   子包不带 `dsh.bundle.patch`,add 时会提示 "plain dependency",属预期)
 4. 下次启动 dsh web 时,loader 读取主插件 bundle 的 `cordis.patch.yml`,
-   其中的 `- insert:` 条目列出全部插件行(主插件 + 两个第三方),entry 的
-   name 是包名,从 profile 顶层 node_modules 按包加载:
+   其中的 `- insert:` 条目列出全部插件行(三个自有子包 + 两个第三方),
+   entry 的 name 是包名,从 profile 顶层 node_modules 按包加载:
    - Host 半区:`import('<包名>')` → 包 `main`(index.js)→ 挂载插件
    - Client 半区:`client-modules` 按 entry 的包名扫描 `dsh.client` 声明 +
-     `exports["./client"]` → 把 client.js 注入浏览器
+     `exports["./client"]` → 把该包的 client bundle 注入浏览器
 5. 首次安装若遇 `ERR_PNPM_IGNORED_BUILDS`(node-pty/protobufjs 构建脚本):
    pnpm 默认禁止并以非零码退出导致 reconcile 不执行。在 profile 的
    `pnpm-workspace.yaml` 的 `allowBuilds` 里将两者设为 `true` 后重跑
    (pnpm v11 会自动生成占位 `node-pty: set this to true or false`)
 
-**卸载**:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
+**卸载**:`dsh plugin --profile web remove dizzy-dsh`(子包与第三方随依赖一起移除)
 **更新**:`cd <仓库> && git pull` 后**强制同步** file: 快照 —— pnpm 对
 `file:` 依赖只检测 `package.json` 是否变化,仓库内其他文件(如
-`prompts/agent-instructions.md`)改了不会同步到 `node_modules` 的安装副本
-(已实测复现:改 prompt 文件后 `dsh plugin add` 报 "Already up to date",
-system 里仍是旧内容)。强制同步:
+`plugins/agent-instructions/prompts/agent-instructions.md`)改了不会同步到
+`node_modules` 的安装副本(已实测复现:改 prompt 文件后 `dsh plugin add`
+报 "Already up to date",system 里仍是旧内容)。强制同步(主包与每个子包
+都要删):
 
 ```powershell
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-balance -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-usage-card -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
-注入内容动态读取,同步后下一轮对话即生效;改了 `index.js` 等代码才需重启
+注入内容动态读取,同步后下一轮对话即生效;改了插件代码才需重启
 
 ---
 
@@ -75,34 +90,33 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 | 能力 | 位置 | 说明 |
 |---|---|---|
-| 模型工具、定时任务、数据服务、HTTP 路由 | **本仓库 Host 半区**(bundle 层) | 进程级,全会话共享 |
-| 浏览器 UI(徽章、设置页) | **本仓库 Client 半区**(`dsh.client`) | 随 bundle 持久加载 |
+| 模型工具、定时任务、数据服务、HTTP 路由 | **对应子包 Host 半区**(bundle 层) | 进程级,全会话共享 |
+| 浏览器 UI(徽章、用量卡片) | **对应子包 Client 半区**(`dsh.client`) | 随 bundle 持久加载 |
 | 每会话独立的配置(prompt、persona、技能集) | agent preset(`~/.dsh/.agent-presets/`) | 每会话独立挂载/卸载 |
 | 临时扩展、原型验证 | 动态插件(`cordis_define`) | **进程级,重启即失** |
 
 ### 判断准则
 
-- 能力需要**跨会话共享**或**被浏览器访问** → bundle 层(本仓库)
+- 能力需要**跨会话共享**或**被浏览器访问** → 子包插件(bundle 层)
 - 能力只属于"某个会话的 agent 行为" → agent preset
 - 能力只是**临时调试/验证** → 动态插件(用完即弃)
 
 > ⚠️ 动态插件的最大局限:进程重启后全部丢失(这正是早期余额徽章
-> 重启消失的原因)。任何"希望长期存在"的插件都必须固化为 bundle 层。
+> 重启消失的原因)。任何"希望长期存在"的插件都必须固化为子包。
 
 ---
 
 ## 3. 双半区开发模型
 
-本仓库的插件形态是"一个包,双半区":
+每个子包插件的形态是"一个包,双半区"(以 usage-card 为例):
 
 ```
 浏览器 (client.js)                     Host (index.js)
 ─────────────────                      ─────────────────
-输入栏徽章 / 设置页                     余额缓存(每分钟刷新)
-    │  fetch GET /dizzy/balance          │
-    │◀───────────────────────────────   ├─ credentials.resolve('DEEPSEEK_API_KEY')
-    │                                    ├─ fetch('https://api.deepseek.com/user/balance')
-    └── modelDirectories 服务 ◀── 模型    └─ webServer 路由 / tools 注册
+用量卡片 / 迷你方块                     会话日志聚合(每日 token)
+    │  fetch GET /dizzy/usage           │
+    │◀───────────────────────────────   ├─ 扫描 ~/.dsh/sessions(增量)
+    │                                    └─ webServer 路由 /dizzy/usage
 ```
 
 ### 核心原则
@@ -112,11 +126,15 @@ dsh plugin --profile web add file:<仓库绝对路径>
 2. **Client 免构建**:`client.js` 是 `window.__ModuleLoader__.load({ id, factory })`
    工厂格式,`factory` 内的 `require("react")` 由平台 seed 提供,
    **不需要** TypeScript 编译或 bundler 打包,改完即生效。
-3. **改动即提交**:`file:` 是安装时快照语义,仓库即线上代码;`git pull` 后重新执行 `dsh plugin add file:<仓库>` 同步,再重启。
+3. **一功能一子包**:每个功能 = `plugins/<name>/` 独立包(host + client +
+   自己的 package.json),主包只聚合;不把新功能塞进既有子包。
+4. **改动即提交**:`file:` 是安装时快照语义,仓库即线上代码;`git pull` 后
+   删除 profile 里 `node_modules/dizzy-dsh*` 副本并重新
+   `dsh plugin add file:<仓库>` 同步,再重启。
 
 ---
 
-## 4. Host 半区开发(index.js)
+## 4. Host 半区开发(plugins/<name>/index.js)
 
 ### 插件骨架
 
@@ -241,7 +259,7 @@ const disposePrompt = ctx.systemPrompt.section({
 | 优先级 | 作为用户消息 | 系统提示词,模型最先读取 |
 
 两者名字不同、注入路径不同,同时存在不冲突,互补使用。
-## 5. Client 半区开发(client.js)
+## 5. Client 半区开发(plugins/<name>/client.js)
 
 ### 免构建 ModuleLoader bundle 骨架
 
@@ -360,36 +378,46 @@ loader entry(name=包名) → require.resolve(包名/package.json)
 
 ---
 
-## 7. 添加新功能的完整流程
+## 7. 添加新功能(新子包)的完整流程
 
 ```bash
-# 1. Host 逻辑 → index.js(或拆子模块 import)
-#    - 数据/工具/路由加入 apply,返回 disposer
+# 0. 建子包目录 plugins/<name>/
+#    package.json:name = 包名,声明 main + exports["./client"] + dsh.client
+# 1. Host 逻辑 → plugins/<name>/index.js
+#    - 数据/工具/路由加入 apply,返回 disposer;name 用子包名
 
-# 2. Client UI(如果需要)→ client.js
+# 2. Client UI(如果需要)→ plugins/<name>/client.js
+#    - window.__ModuleLoader__.load({ id: <包名>, ... })
 #    - slots.inject 注册目标 Slot
 #    - 数据经 ctx.webServer.register 的新路由获取
 
-# 3. 验证
-dsh --profile web --dump-config          # entry 是否挂载
+# 3. 主包 package.json 的 dependencies 加 "包名": "file:./plugins/<name>"
+#    cordis.patch.yml 加一行 entry(name = 包名)
+
+# 4. 验证
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh* -Recurse -Force
+dsh plugin --profile web add file:<仓库绝对路径>
+dsh --profile web --dump-config          # 新 entry 是否挂载
 #    浏览器刷新,检查 UI 是否出现
 
-# 4. 提交
+# 5. 提交
 git add -A && git commit -m "feat: ..." && git push
-#    用户侧:git pull + 重启 dsh web
+#    用户侧:git pull + 删副本重装 + 重启 dsh web
 ```
 
 ### 验证清单
 
-- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现三个
-      entry(dizzy-dsh / better-sidebar / dsh-vision-toolkit)
-- [ ] Host:`node --input-type=module -e "import('dizzy-dsh')"` 可加载,
-      name/inject 正确
+- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现五个
+      entry(balance / usage-card / agent-instructions / better-sidebar /
+      dsh-vision-toolkit)
+- [ ] Host:每个子包可加载且 name/inject 正确:
+      `node --input-type=module -e "import('dizzy-dsh-balance')"`,
+      `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`
 - [ ] 收录的第三方可加载(依赖齐全):
       `import('dsh-better-sidebar')` 与
       `import('@dsh-external/dsh-vision-toolkit')` 均不报
       `Cannot find package ...`(link: 安装的典型症状)
-- [ ] Client:`exports["./client"]` 指向的文件存在,含
+- [ ] 每个有 UI 的子包 Client:`exports["./client"]` 指向的文件存在,含
       `window.__ModuleLoader__.load` 且 id 等于包名
 - [ ] 浏览器:目标 Slot 出现 UI,数据路由返回正确 JSON
 - [ ] 重启 dsh web 后功能仍在(验证持久化)

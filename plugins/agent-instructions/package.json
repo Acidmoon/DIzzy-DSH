@@ -1,0 +1,12 @@
+{
+  "name": "dizzy-dsh-agent-instructions",
+  "private": true,
+  "version": "0.1.0",
+  "description": "系统提示词注入:把 prompts/agent-instructions.md(源自 DSH AGENTS.md 的 Agent 规则)注入到 systemPrompt section(order -50)。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  }
+}

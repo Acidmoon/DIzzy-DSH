@@ -22,9 +22,9 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 > ⚠️ 必须用 **`file:`** 而不是 `link:`:`link:` 协议下 pnpm 不安装目标包
 > 声明的依赖,而 `file:` 会递归安装完整依赖树。主插件 `package.json` 的
-> `dependencies` 声明了两个收录的第三方插件(`dsh-better-sidebar@0.10.3`
-> 走 npm registry、`@dsh-external/dsh-vision-toolkit` 走仓库内快照),
-> `file:` 安装时它们连同全部依赖自动装进 profile,由主插件的
+> `dependencies` 声明了全部自有子包(`file:./plugins/*`)与收录的第三方插件
+> (`dsh-better-sidebar@0.10.3` 走 npm registry、`@dsh-external/dsh-vision-toolkit`
+> 走仓库内快照),`file:` 安装时它们连同全部依赖自动装进 profile,由主插件的
 > `cordis.patch.yml` 一起挂载 —— 一次 add,全部生效(已实测验证)。
 
 > ⚠️ 首次安装如遇到 `ERR_PNPM_IGNORED_BUILDS: node-pty / protobufjs`:
@@ -32,18 +32,21 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > `~/.dsh/profiles/web/pnpm-workspace.yaml` 的 `allowBuilds` 里把
 > `node-pty` 与 `protobufjs` 设为 `true`(pnpm 会自动生成占位),重新 add。
 
-卸载:`dsh plugin --profile web remove dizzy-dsh`(收录的第三方随依赖一起移除)
+卸载:`dsh plugin --profile web remove dizzy-dsh`(自有子包与收录的第三方随依赖一起移除)
 更新:`cd <仓库> && git pull` 后**强制同步** file: 快照(pnpm 对 `file:` 依赖只
 检测 `package.json` 是否变化,仓库内其他文件(如 `prompts/`)改了不会自动
 同步到 `node_modules` 里的安装副本,必须删除副本重装):
 
 ```powershell
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-balance -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-usage-card -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
-注入内容(`prompts/agent-instructions.md`)是每次组装动态读取的,同步后
-**下一轮对话即生效,无需重启**;改动了 `index.js` 等代码才需要重启 web。
+注入内容(`plugins/agent-instructions/prompts/agent-instructions.md`)是每次组装
+动态读取的,同步后**下一轮对话即生效,无需重启**;改动了插件代码才需要重启 web。
 
 ## 原理
 
@@ -67,16 +70,20 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 ```
 Dizzy-DSH/
-├── package.json          # name + main + exports["./client"] + dsh.bundle/client 声明
-├── cordis.patch.yml      # 插件层:insert 条目列表(entry name = 包名)
-├── index.js              # Host 主插件:数据/工具/定时任务/HTTP 路由/系统提示词注入
-├── client.js             # Client 半区:浏览器 UI(手写 ModuleLoader bundle,免构建)
-├── prompts/
-│   └── agent-instructions.md  # 注入系统提示词的 Agent 规则(源自 DSH 的 AGENTS.md)
-├── plugins/_template.js  # 参考模板(多插件时拆分子模块)
+├── package.json          # 聚合根:file: 依赖收录 plugins/* 子包与第三方插件
+├── cordis.patch.yml      # 插件层:insert 条目列表(entry name = 包名,全部插件在此挂载)
+├── index.js              # 聚合根空插件(保证包可 import,无功能)
+├── plugins/              # 自有插件合集:每个子包 = 一个独立插件
+│   ├── balance/          #   dizzy-dsh-balance —— 余额查询(host + 输入栏徽章 client)
+│   ├── usage-card/       #   dizzy-dsh-usage-card —— 本月用量卡片(host 聚合 + 热力图 client)
+│   └── agent-instructions/ # dizzy-dsh-agent-instructions —— 系统提示词注入(含 prompts/)
 ├── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
 └── third-party/          # 收录的第三方插件快照(见下方章节,每目录含 UPSTREAM.md)
 ```
+
+每个子包的结构:`package.json`(name/main/exports["./client"]/dsh.client)
++ `index.js`(Host 插件)+ `client.js`(可选,Client bundle)—— 与
+`third-party/` 里的插件完全同构,独立挂载、独立卸载、互不引用。
 
 ## 系统提示词注入(Agent 规则)
 
@@ -89,10 +96,10 @@ Harness 项目的 AGENTS.md 与用户要求):**用户哨兵规则**(第一性原
 
 | 层 | 机制 |
 |---|---|
-| 入口 | Host 半区 `index.js` 调用 `ctx.systemPrompt.section({...})` |
+| 入口 | Host 半区 `plugins/agent-instructions/index.js` 调用 `ctx.systemPrompt.section({...})` |
 | 名称 | `dizzy-dsh:agent-instructions`(唯一,无冲突) |
 | 顺序 | `order: -50` —— 在 harness 身份(`-100`)之后、persona(`0`)之前渲染 |
-| 内容 | 每次模型步骤组装时**动态读取** `prompts/agent-instructions.md` |
+| 内容 | 每次模型步骤组装时**动态读取** `plugins/agent-instructions/prompts/agent-instructions.md` |
 | 生效 | 编辑该文件后**无需重启**,下一次模型步骤即生效 |
 | 范围 | bundle 层注册 = 全局 section,所有会话、所有工作区生效 |
 
@@ -106,14 +113,15 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
 > Dizzy-DSH 注入的是**全局系统提示词段**,不依赖工作区文件 ——
 > 两者互补,同时存在也不会冲突(名字不同、注入路径不同)。
 
-## 双半区架构(本仓库的插件形态)
+## 双半区架构(每个子包都是这个形态)
 
 ```
-浏览器 (client.js)              Host (index.js)
-─────────────────              ─────────────────
-输入栏徽章 / 设置页  ──fetch──▶  GET /dizzy/balance  余额缓存(每分钟刷新)
-    │                           │
-    │                           └─ credentials 取 DEEPSEEK_API_KEY
+浏览器 (client.js)                Host (index.js)
+─────────────────                ─────────────────
+输入栏徽章 / 用量卡片  ──fetch──▶  GET /dizzy/balance  余额缓存(每分钟刷新)
+    │                             GET /dizzy/usage    本地会话日志聚合
+    │                             │
+    │                             └─ credentials 取 DEEPSEEK_API_KEY
     └── 模型选择状态 ◀──modelDirectories 服务
 ```
 
@@ -122,21 +130,24 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
   `require("react")` 由平台 seed 提供,改完即生效(重启后)
 - **重启不丢**:bundle 层随 profile 持久加载 —— 这正是它优于动态插件的地方
 
-## 添加功能
+## 添加功能(新子包)
 
-1. **Host 逻辑**:加进 `index.js`(或拆子模块后 import;需 `inject` 的服务先查
-   `cordis_inspect_query` 确认签名)
-2. **Client UI**:在 `client.js` 的 `apply` 里注册对应 Slot(`slots.inject`),
-   数据一律经 host 路由(`ctx.webServer.register`)获取
-3. 改动即提交,`git pull` 后重新 `dsh plugin add file:<仓库>` 同步(file: 快照语义)再重启
+1. 在 `plugins/` 下建子包目录:`package.json`(name = 包名,声明
+   `dsh.client` 与 `exports["./client"]`)+ `index.js`(Host 插件)+
+   `client.js`(如需要浏览器 UI,`slots.inject` 注册对应 Slot;
+   数据一律经 host 路由 `ctx.webServer.register` 获取)
+2. 主包 `package.json` 的 `dependencies` 加 `file:./plugins/<name>`
+3. `cordis.patch.yml` 加一行 entry(entry name = 子包包名)
+4. 删除 profile 里 `node_modules/dizzy-dsh*` 副本后重新
+   `dsh plugin add file:<仓库>`(file: 快照语义),重启生效
 
 ## 平面规则(重要)
 
 | 能力 | 放哪 |
 |---|---|
-| 模型工具 / 定时任务 / 数据服务 / HTTP 路由 / **系统提示词注入** | 本仓库 bundle 层(Host,全会话共享) |
+| 模型工具 / 定时任务 / 数据服务 / HTTP 路由 / **系统提示词注入** | 对应子包的 `index.js`(bundle 层 Host,全会话共享) |
 | 每会话独立的配置(prompt、persona) | agent preset(`~/.dsh/.agent-presets/`) |
-| 浏览器 UI(徽章、设置页) | 本仓库 client.js(`dsh.client` 声明) |
+| 浏览器 UI(徽章、用量卡片) | 对应子包的 `client.js`(`dsh.client` 声明) |
 
 **注意**:bundle 层是 Host 平面,插件注册的工具对所有会话可见。
 若某插件 `ctx.provide()` 发布服务,服务名不能与其他插件冲突。
@@ -167,8 +178,8 @@ profile;重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
 
 ## 已收录插件
 
-| 功能 | Host | Client |
-|---|---|---|
-| DeepSeek 余额查询 | `index.js`:每分钟刷新,`GET /dizzy/balance`,`balance_check` 工具 | `client.js`:`conversation.input.right` 徽章(仅 deepseek-official 显示) |
-| 本月用量卡片 | `index.js`:扫描本地会话日志聚合每日 token 用量,`GET /dizzy/usage?month=YYYY-MM` | `client.js`:`conversation.session.header` 挂载热力图卡片(月份切换/浅绿→墨绿周网格/北京时间峰谷时钟;better-sidebar 展开时隐藏) |
-| Agent 规则注入 | `index.js`:`systemPrompt.section` 注入 `prompts/agent-instructions.md`(源自 DSH 的 AGENTS.md) | — |
+| 插件 | 包名 | Host | Client |
+|---|---|---|---|
+| DeepSeek 余额查询 | `dizzy-dsh-balance` | `plugins/balance/index.js`:每分钟刷新,`GET /dizzy/balance`,`balance_check` 工具 | `plugins/balance/client.js`:`conversation.input.right` 徽章(仅 deepseek-official 显示) |
+| 本月用量卡片 | `dizzy-dsh-usage-card` | `plugins/usage-card/index.js`:扫描本地会话日志聚合每日 token 用量,`GET /dizzy/usage?month=YYYY-MM` | `plugins/usage-card/client.js`:`conversation.session.header.utilities` 热力图卡片(月份切换/浅绿→墨绿周网格/北京时间峰谷时钟/折叠;better-sidebar 展开时隐藏) |
+| Agent 规则注入 | `dizzy-dsh-agent-instructions` | `plugins/agent-instructions/index.js`:`systemPrompt.section` 注入本子包 `prompts/agent-instructions.md` | — |

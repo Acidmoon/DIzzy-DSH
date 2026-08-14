@@ -1,36 +1,43 @@
-# Dizzy-DSH 插件层(bundle patch)
+# Dizzy-DSH 插件合集(patch 挂载层)
 #
 # 本文件由 dsh plugin add 安装后自动挂载:
-#   dsh plugin --profile web add link:<本仓库路径>
+#   dsh plugin --profile web add file:<本仓库路径>
 #
 # 格式:与 dsh-base/cordis.patch.yml 一致 —— 顶层是一个 insert 条目,
-# 下面的每一项都是要挂载的插件行。
+# 下面的每一项都是要挂载的插件行(entry)。
 #
 # 注意:entry 的 name 必须是【包名】,而不是插件文件路径:
 #   - Host 半区:loader 按包名 import 包的 main(index.js)挂载插件
 #   - Client 半区:client-modules 按包名扫描 dsh.client 声明 + exports["./client"],
-#     自动把 client.js 注入浏览器
-# 这与 profile 里已有的 @dsh-external/dsh-vision-toolkit 完全同构。
+#     自动把 client bundle 注入浏览器
+# 自有子包(plugins/*)经主包 dependencies 的 file: 依赖安装并提升到
+# profile 顶层 node_modules,与 @dsh-external/dsh-vision-toolkit 同构。
+#
+# 新增插件:在 plugins/ 下建子包(自己的 package.json/main/client bundle),
+# 主包 package.json 加 file: 依赖,再在本文件加一行 entry。
 
 - insert:
-    # ── 余额类 ────────────────────────────────────────────────────────────
-    # DeepSeek 账户余额查询 + 输入栏余额徽章(模型选择器左侧)。
-    # Host: 每分钟刷新余额,提供 GET /dizzy/balance 与 balance_check 工具;
-    # Client: conversation.input.right 徽章,仅 deepseek-official 模型显示。
-    - id: dizzy-dsh
-      name: 'dizzy-dsh'
+    # ── 自有插件(子包,随主包 file: 依赖安装)────────────────────
+    # 余额:Host 每分钟刷新余额 + /dizzy/balance + balance_check 工具;
+    #       Client: conversation.input.right 徽章。
+    - id: balance
+      name: 'dizzy-dsh-balance'
 
-    # ── 收录的第三方插件(随本包依赖安装,见 package.json dependencies)──
-    # 说明:这两个包通过主包 dependencies(link:./third-party/...)随主包安装,
-    # profile 的 pnpm-workspace.yaml 为 hoisted 模式,传递依赖提升到顶层
-    # node_modules,loader 按包名即可 import。无需单独 dsh plugin add。
+    # 本月用量卡片:Host 聚合本地会话日志 + /dizzy/usage;
+    #       Client: conversation.session.header.utilities 热力图卡片。
+    - id: usage-card
+      name: 'dizzy-dsh-usage-card'
+
+    # Agent 规则注入:systemPrompt.section(order -50)读本子包
+    #       prompts/agent-instructions.md。
+    - id: agent-instructions
+      name: 'dizzy-dsh-agent-instructions'
+
+    # ── 收录的第三方插件(随主包依赖安装,见 package.json)────────
+    # 说明:这两个包通过主包 dependencies(registry / file:./third-party/...)
+    # 随主包安装,profile 的 pnpm-workspace.yaml 为 hoisted 模式,传递依赖
+    # 提升到顶层 node_modules,loader 按包名即可 import。无需单独 dsh plugin add。
     - id: better-sidebar
       name: 'dsh-better-sidebar'
     - id: dsh-vision-toolkit
       name: '@dsh-external/dsh-vision-toolkit'
-
-    # ── 新插件模板(复制此块,改 id/name)────────────────────────────────
-    # - id: kit-my-feature
-    #   name: 'dizzy-dsh'
-    #   disabled: true
-    #   说明:新功能直接加进 index.js(或拆成子模块 import),client 半区在 client.js 扩展。

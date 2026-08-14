@@ -1,0 +1,22 @@
+{
+  "name": "dizzy-dsh-usage-card",
+  "private": true,
+  "version": "0.1.0",
+  "description": "本月用量卡片:Host 聚合本地会话日志每日 token 用量 + /dizzy/usage 路由;Client 会话区左上角热力图卡片(月份切换/峰谷时钟/折叠)。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
