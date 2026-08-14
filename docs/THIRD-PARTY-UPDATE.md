@@ -20,7 +20,7 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 |---|---|---|---|---|---|---|
 | dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.1 | ceab0ed | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游最新 0.1.5) | a8dc713 | 有:exposure.js 核心工具常驻 |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 有:exposure.js 核心工具常驻 |
 
 各上游形态备注:
 

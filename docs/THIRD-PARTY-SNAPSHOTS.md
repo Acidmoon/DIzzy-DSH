@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|---|
 | dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.1 | ceab0ed | 2026-08-14 | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 2026-08-14 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游最新 0.1.5) | a8dc713 | 2026-08-14 | 有:exposure.js(见 THIRD-PARTY-PATCHES.md) |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 2026-08-14 | 有:exposure.js(见 THIRD-PARTY-PATCHES.md) |
 
 ## 各上游更新形态(决定更新源)
 

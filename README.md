@@ -23,9 +23,10 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > ⚠️ 必须用 **`file:`** 而不是 `link:`:`link:` 协议下 pnpm 不安装目标包
 > 声明的依赖,而 `file:` 会递归安装完整依赖树。主插件 `package.json` 的
 > `dependencies` 声明了全部自有子包(`file:./plugins/*`)与收录的第三方插件
-> (`dsh-better-sidebar@0.10.3` 走 npm registry、`@dsh-external/dsh-vision-toolkit`
-> 走仓库内快照),`file:` 安装时它们连同全部依赖自动装进 profile,由主插件的
-> `cordis.patch.yml` 一起挂载 —— 一次 add,全部生效(已实测验证)。
+> (`dsh-better-sidebar@0.10.3` 走 npm registry;`@dsh-external/dsh-vision-toolkit`、
+> `@omdsh-dev/dsh-genui`、`dsh-notification` 走仓库内快照),`file:` 安装时
+> 它们连同全部依赖自动装进 profile,由主插件的 `cordis.patch.yml` 一起挂载
+> —— 一次 add,全部生效(已实测验证)。
 
 > ⚠️ 首次安装如遇到 `ERR_PNPM_IGNORED_BUILDS: node-pty / protobufjs`:
 > pnpm 默认禁止依赖的构建脚本并以非零码退出。在
@@ -45,6 +46,9 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recur
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
+> 收录的第三方插件快照更新有独立流程(跟随上游 + 补丁重放 + 适配检查):
+> 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
+
 注入内容(`plugins/agent-instructions/prompts/agent-instructions.md`)是每次组装
 动态读取的,同步后**下一轮对话即生效,无需重启**;改动了插件代码才需要重启 web。
 
@@ -62,9 +66,10 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 **安装必须用 `file:` 而非 `link:`**:`link:` 协议下 pnpm 不解析目标包的
 `dependencies`(依赖树完全不装,插件实际无法加载);`file:` 会递归安装
-完整依赖树。本仓库因此把两个收录的第三方插件声明为主包 `dependencies`
-(`dsh-better-sidebar@0.10.3` registry、`@dsh-external/dsh-vision-toolkit`
-仓库快照),`file:` 安装时自动带上,由主包 patch 统一挂载。
+完整依赖树。本仓库因此把收录的第三方插件全部声明为主包 `dependencies`
+(`dsh-better-sidebar@0.10.3` registry;`@dsh-external/dsh-vision-toolkit`、
+`@omdsh-dev/dsh-genui`、`dsh-notification` 仓库快照),`file:` 安装时自动
+带上,由主包 patch 统一挂载。
 
 ## 目录结构
 
@@ -78,7 +83,7 @@ Dizzy-DSH/
 │   ├── usage-card/       #   dizzy-dsh-usage-card —— 本月用量视图(host 聚合 + conversation.view「用量」Tab)
 │   └── agent-instructions/ # dizzy-dsh-agent-instructions —— 系统提示词注入(含 prompts/)
 ├── skills/               # 可选:配套技能目录(复制到 ~/.dsh/skills/)
-└── third-party/          # 收录的第三方插件快照(见下方章节,每目录含 UPSTREAM.md)
+└── third-party/          # 收录的第三方插件快照(登记表见 docs/THIRD-PARTY-SNAPSHOTS.md)
 ```
 
 每个子包的结构:`package.json`(name/main/exports["./client"]/dsh.client)
@@ -155,26 +160,32 @@ user-role 快照、`variable()` 模板变量)按需使用,当前插件用 `secti
 ## 收录的第三方插件(Third-party)
 
 本仓库收录社区/官方之外的第三方 DSH 插件快照,全部保留**上游地址**并在本
-README 明确标注来源。快照存放在 `third-party/<包名>/`,每个目录内有
-`UPSTREAM.md` 记录上游仓库、版本、commit 与更新方式;快照只做同步,不做修改。
+README 明确标注来源。快照存放在 `third-party/<包名>/`;上游登记表(仓库 /
+分支 / 版本 / commit / 补丁标记)见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/THIRD-PARTY-SNAPSHOTS.md)。
+快照原则上只做同步;必须的本地改动一律文件化为 `patches/*.patch` 并登记到
+[docs/THIRD-PARTY-PATCHES.md](docs/THIRD-PARTY-PATCHES.md),更新时用
+`scripts/reapply-third-party-patches.mjs` 重放。
 
 | 插件 | 上游仓库 | 版本 | 收录位置 | 说明 |
 |---|---|---|---|---|
-| dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等),经主包 `file:` 依赖安装仓库快照 |
+| dsh-genui | [omdsh-dev/dsh-genui](https://github.com/omdsh-dev/dsh-genui) | 0.8.1(`ceab0ed`) | `third-party/dsh-genui/` | GenUI 生成式 UI:模型在回答中输出 `dsh-ui` 围栏,浏览器渲染为可交互组件(卡片/图表/表单/quiz/mermaid/3D);`render_ui` / `validate_dsh_ui` 工具宿主层常驻 |
+| dsh-notification | [omdsh-dev/dsh-notification](https://github.com/omdsh-dev/dsh-notification) | 0.1.1(`3e33100`) | `third-party/dsh-notification/` | 桌面通知:会话跑完一轮任务时弹系统通知(设置 > 通知 可配结束状态/关键词规则);纯 UI,对模型零影响 |
+| dsh-vision-toolkit | [Anionex/dsh-vision-toolkit](https://github.com/Anionex/dsh-vision-toolkit) | 0.1.2(`8d35621`) | `third-party/dsh-vision-toolkit/` | DSH 视觉工程工具集(`vision_glance` 等);有本地补丁:4 个高频视觉工具随会话常驻,其余仍由 vision-tools skill 激活 |
 | dsh-better-sidebar | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) | 0.10.3(`efb2e2b`) | `third-party/DSH-better-sidebar/` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 |
 
 **安装收录的第三方插件**:无需单独安装 —— 「安装」一节的单条
 `dsh plugin add file:<仓库>` 会经主插件 `package.json` 的 `dependencies`
-自动带上(registry 的 `dsh-better-sidebar` 与仓库快照
-`@dsh-external/dsh-vision-toolkit`),并随主插件一起挂载、一起卸载。
+自动带上(registry 的 `dsh-better-sidebar` 与仓库快照 `@dsh-external/dsh-vision-toolkit`、
+`@omdsh-dev/dsh-genui`、`dsh-notification`),并随主插件一起挂载、一起卸载。
 
 > 为什么不单独 `link:` 安装:`link:` 协议不安装目标包的依赖树,
 > better-sidebar 的运行时依赖(ws/codemirror/xterm/node-pty 等)会缺失,
 > 插件实际无法加载(已实测复现)。因此收录插件的安装一律走主插件的
 > `file:` 依赖通道,由 pnpm 递归安装完整依赖。
 
-两个插件均自带 `cordis.patch.yml`(由主插件 patch 统一挂载),无需手改
-profile;重启 `dsh web` 生效。更新方式见各目录的 `UPSTREAM.md`。
+收录插件均自带 `cordis.patch.yml`(由主插件 patch 统一挂载),无需手改
+profile;重启 `dsh web` 生效。更新流程(跟随上游 + 补丁重放 + 适配检查):
+见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
 
 ## 已收录插件
 
