@@ -38,8 +38,9 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
   standard 一致(仅多 `tool-bootstrap` 行、persona 用 minimal 风格),`system-prompt/assemble`
   事件与 `systemPrompt` inject 在 rc.6 均存在;后续更新仍应按「适配检查」第 2 项重核。
 - **dsh-subscription-auth**:已发布 npm(0.2.1),合集走仓库快照因为有本地补丁(usage 钳零 /
-  投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer)。更新后必须
-  重放 `patches/dsh-subscription-auth-local.patch`。
+  投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer /
+  思考档位对齐官方最高档)。更新后必须先重放 `patches/dsh-subscription-auth-local.patch`,
+  再重放 `patches/dsh-subscription-auth-reasoning-effort.patch`。
 
 ## 一次性迁移(未执行;下次同步前完成)
 

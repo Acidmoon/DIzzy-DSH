@@ -9,12 +9,10 @@ import type { AdapterModel } from './adapter.js'
 
 /** 思考强度档位（模型选择器「推理等级」菜单的一项）。 */
 export interface ReasoningEffort {
-  /** 档位 id：OpenAI/xAI Responses API 直接作为 reasoning.effort 发送。 */
+  /** 档位 id：原样作为官方 effort 字段发送（OpenAI/xAI 的 reasoning.effort、Claude 的 output_config.effort、Kimi 的 reasoning_effort）。 */
   id: string
   name: string
   description?: string
-  /** Anthropic 系渠道（Claude/Kimi）：该档位对应的 thinking budget_tokens。 */
-  budgetTokens?: number
 }
 
 /** 渠道级思考强度配置；缺省表示该渠道不提供思考强度选择。 */

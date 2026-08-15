@@ -30,13 +30,14 @@ const DEFAULT_MODELS: AdapterModel[] = [
   { id: 'kimi-k2.5', name: 'Kimi K2.5', contextWindow: 262_144 },
 ]
 
-/** 思考强度 → thinking budget_tokens（Anthropic 兼容端点）；无默认档位。 */
+/** 思考强度 → 顶层 reasoning_effort；K3 官方是 low / high / max，默认 max。 */
 const REASONING: ChannelReasoning = {
   efforts: [
-    { id: 'low', name: 'Low', budgetTokens: 4_096 },
-    { id: 'medium', name: 'Medium', budgetTokens: 16_384 },
-    { id: 'high', name: 'High', budgetTokens: 32_768 },
+    { id: 'low', name: 'Low' },
+    { id: 'high', name: 'High' },
+    { id: 'max', name: 'Max' },
   ],
+  defaultEffort: 'max',
 }
 
 /** 进程内稳定的通用请求头（device id 只生成一次并缓存）。 */
@@ -205,6 +206,7 @@ export const kimiChannel: ChannelDefinition = {
         headers: () => kimiCommonHeaders(),
       }),
       reasoning: REASONING,
+      wireEffort: 'reasoning_effort',
       resolveAccessToken: async () => {
         const token = await ctx.readToken()
         if (!token) {

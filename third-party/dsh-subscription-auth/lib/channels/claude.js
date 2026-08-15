@@ -18,11 +18,13 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_BETA = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,advanced-tool-use-2025-11-20,effort-2025-11-24,extended-cache-ttl-2025-04-11";
 const REASONING = {
   efforts: [
-    { id: "low", name: "Low", budgetTokens: 8192 },
-    { id: "medium", name: "Medium", budgetTokens: 16384 },
-    { id: "high", name: "High", budgetTokens: 32000 }
+    { id: "low", name: "Low" },
+    { id: "medium", name: "Medium" },
+    { id: "high", name: "High" },
+    { id: "xhigh", name: "Extra High" },
+    { id: "max", name: "Max" }
   ],
-  defaultEffort: "medium"
+  defaultEffort: "high"
 };
 function redirectUri(port) {
   return "http://localhost:" + port + CALLBACK_PATH;
@@ -138,6 +140,7 @@ export const claudeChannel = {
         })
       }),
       reasoning: REASONING,
+      wireEffort: "output_config",
       resolveAccessToken: async () => {
         const token = await ctx.readToken();
         if (!token) {

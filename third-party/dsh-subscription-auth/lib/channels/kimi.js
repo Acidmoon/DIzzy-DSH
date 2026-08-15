@@ -20,10 +20,11 @@ const DEFAULT_MODELS = [
 ];
 const REASONING = {
   efforts: [
-    { id: "low", name: "Low", budgetTokens: 4096 },
-    { id: "medium", name: "Medium", budgetTokens: 16384 },
-    { id: "high", name: "High", budgetTokens: 32768 }
-  ]
+    { id: "low", name: "Low" },
+    { id: "high", name: "High" },
+    { id: "max", name: "Max" }
+  ],
+  defaultEffort: "max"
 };
 let deviceId;
 function kimiCommonHeaders() {
@@ -163,6 +164,7 @@ export const kimiChannel = {
         headers: () => kimiCommonHeaders()
       }),
       reasoning: REASONING,
+      wireEffort: "reasoning_effort",
       resolveAccessToken: async () => {
         const token = await ctx.readToken();
         if (!token) {

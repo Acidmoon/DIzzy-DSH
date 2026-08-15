@@ -26,13 +26,15 @@ const DEFAULT_MODELS: AdapterModel[] = [
   { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', contextWindow: 400_000 },
 ]
 
-/** codex Responses API 的 reasoning.effort 取值（与 opencode 一致）。 */
+/** codex Responses API 的 reasoning.effort：官方最高档是 max，high 上面还有 xhigh。 */
 const REASONING: ChannelReasoning = {
   efforts: [
     { id: 'minimal', name: 'Minimal' },
     { id: 'low', name: 'Low' },
     { id: 'medium', name: 'Medium' },
     { id: 'high', name: 'High' },
+    { id: 'xhigh', name: 'Extra High' },
+    { id: 'max', name: 'Max' },
   ],
   defaultEffort: 'medium',
 }

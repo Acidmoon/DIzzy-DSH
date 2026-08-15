@@ -19,7 +19,7 @@
 | dsh-notification | git `main` 分支 | **无 tag、未发布 npm**,只能跟 main,用 commit 锚定 |
 | dsh-vision-toolkit | git `main`(Anionex)+ **已发布 npm**(最新 0.1.4) | 快照内 package.json 的 `repository` 字段指向已失效的 dsh-external 地址,上游在 Anionex;有手工补丁,更新后必须重放 |
 | dsh-anchored-standard | git `main` 分支 | **agent preset,不是 cordis 插件**:不挂 cordis.patch.yml、不进 package.json 依赖。收录的是完整仓库;安装 = 复制 `preset/` 到 `~/.dsh/.agent-presets/anchored-standard`(用 `scripts/install-anchored-standard.ps1`)。上游基于 rc.5/47f9438 开发,收录时已对照 rc.6 核对 entry 名与 `system-prompt/assemble` 事件,结构兼容 |
-| dsh-subscription-auth | git `main` 分支 + **已发布 npm**(0.2.1) | 上游 [Khellendros97/dsh-subscription-auth](https://github.com/Khellendros97/dsh-subscription-auth);合集走仓库快照而不是 registry,因为有本地补丁(usage 钳零 / 投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知)。更新后必须重放 `patches/dsh-subscription-auth-local.patch` |
+| dsh-subscription-auth | git `main` 分支 + **已发布 npm**(0.2.1) | 上游 [Khellendros97/dsh-subscription-auth](https://github.com/Khellendros97/dsh-subscription-auth);合集走仓库快照而不是 registry,因为有本地补丁(usage 钳零 / 投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / 思考档位对齐官方最高档)。更新后必须重放 `patches/dsh-subscription-auth-local.patch` 再重放 `patches/dsh-subscription-auth-reasoning-effort.patch` |
 
 ## 记录格式约定
 

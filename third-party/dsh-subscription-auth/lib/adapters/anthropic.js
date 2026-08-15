@@ -7,7 +7,7 @@ function flattenText(blocks) {
   }
   return out;
 }
-function serializeRequest(options, o, reasoning) {
+function serializeRequest(options, o, reasoning, wireEffort) {
   const messages = [];
   let system = options.system;
   const push = (role, block) => {
@@ -62,11 +62,17 @@ ${text}` : text;
   if (system !== undefined && system !== "")
     body.system = system;
   if (reasoning !== undefined && options.reasoningEffort !== undefined) {
-    const effort = reasoning.efforts.find((e) => e.id === options.reasoningEffort);
-    body.thinking = {
-      type: "enabled",
-      budget_tokens: effort?.budgetTokens ?? 16384
-    };
+    const effortId = String(options.reasoningEffort);
+    if (wireEffort === "output_config") {
+      body.output_config = { effort: effortId };
+    } else if (wireEffort === "reasoning_effort") {
+      body.reasoning_effort = effortId;
+    } else {
+      body.thinking = {
+        type: "enabled",
+        budget_tokens: 16384
+      };
+    }
   }
   if (options.tools !== undefined && options.tools.length > 0) {
     body.tools = options.tools.map((t) => ({
@@ -324,7 +330,7 @@ export class AnthropicMessagesAdapter extends LlmAdapter {
     const o = this.cfg.options();
     const label = this.cfg.label ?? "anthropic";
     const token = await this.cfg.resolveAccessToken();
-    const body = serializeRequest(options, o, this.cfg.reasoning);
+    const body = serializeRequest(options, o, this.cfg.reasoning, this.cfg.wireEffort);
     const headers = {
       authorization: `Bearer ${token.access}`,
       "content-type": "application/json",

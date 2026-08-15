@@ -22,7 +22,9 @@ const REASONING = {
     { id: "minimal", name: "Minimal" },
     { id: "low", name: "Low" },
     { id: "medium", name: "Medium" },
-    { id: "high", name: "High" }
+    { id: "high", name: "High" },
+    { id: "xhigh", name: "Extra High" },
+    { id: "max", name: "Max" }
   ],
   defaultEffort: "medium"
 };

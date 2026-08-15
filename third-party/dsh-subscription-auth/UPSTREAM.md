@@ -29,7 +29,8 @@
 - OAuth state 与 PKCE verifier 分离;
 - Grok 设备流按 body.error 判断,不再把 HTTP 400 pending 当失败;
 - 检测 `HTTPS_PROXY`/`HTTP_PROXY` 时给 Node fetch 装 undici 代理;
-- `@deepseek-ai/schemastery` 改 peer,避免 profile 再装一份独立实例。
+- `@deepseek-ai/schemastery` 改 peer,避免 profile 再装一份独立实例;
+- 思考档位对齐官方最高档:ChatGPT `xhigh`/`max`,Grok `xhigh`,Claude `output_config.effort`(含 `max`),Kimi `reasoning_effort`(含 `max`)。
 
 ## 更新方式
 

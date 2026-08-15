@@ -1,0 +1,473 @@
+diff --git a/third-party/dsh-subscription-auth/README.md b/third-party/dsh-subscription-auth/README.md
+index 6dfff2c..7445cc6 100644
+--- a/third-party/dsh-subscription-auth/README.md
++++ b/third-party/dsh-subscription-auth/README.md
+@@ -110,10 +110,10 @@ dsh plugin --profile web add dsh-subscription-auth
+ 3. 在模型选择里切到对应的提供商（如「Claude (订阅)」），选一个模型即可对话。
+ 
+    模型选择器可为订阅模型选择**思考强度（推理等级）**：
+-   - ChatGPT：`minimal / low / medium / high`（默认 `medium`，作为 codex Responses 的 `reasoning.effort` 发送）
+-   - Claude：`low / medium / high`（默认 `medium`，映射为 extended thinking 的 `budget_tokens` 8192 / 16384 / 32000）
+-   - Grok：`low / medium / high`（不设默认，选择后作为 xAI Responses 的 `reasoning.effort` 发送）
+-   - Kimi：`low / medium / high`（不设默认，映射为 `thinking.budget_tokens` 4096 / 16384 / 32768）
++   - ChatGPT：`minimal / low / medium / high / xhigh / max`（默认 `medium`，作为 codex Responses 的 `reasoning.effort` 发送）
++   - Claude：`low / medium / high / xhigh / max`（默认 `high`，作为 `output_config.effort` 发送）
++   - Grok：`low / medium / high / xhigh`（不设默认，选择后作为 xAI Responses 的 `reasoning.effort` 发送；不支持 xhigh 的旧模型会按 high 处理）
++   - Kimi：`low / high / max`（默认 `max`，作为顶层 `reasoning_effort` 发送）
+ 
+    不选择时走提供商默认行为（请求体不带思考参数）。
+ 
+diff --git a/third-party/dsh-subscription-auth/UPSTREAM.md b/third-party/dsh-subscription-auth/UPSTREAM.md
+index 5118a09..718c315 100644
+--- a/third-party/dsh-subscription-auth/UPSTREAM.md
++++ b/third-party/dsh-subscription-auth/UPSTREAM.md
+@@ -29,7 +29,8 @@
+ - OAuth state 与 PKCE verifier 分离;
+ - Grok 设备流按 body.error 判断,不再把 HTTP 400 pending 当失败;
+ - 检测 `HTTPS_PROXY`/`HTTP_PROXY` 时给 Node fetch 装 undici 代理;
+-- `@deepseek-ai/schemastery` 改 peer,避免 profile 再装一份独立实例。
++- `@deepseek-ai/schemastery` 改 peer,避免 profile 再装一份独立实例;
++- 思考档位对齐官方最高档:ChatGPT `xhigh`/`max`,Grok `xhigh`,Claude `output_config.effort`(含 `max`),Kimi `reasoning_effort`(含 `max`)。
+ 
+ ## 更新方式
+ 
+diff --git a/third-party/dsh-subscription-auth/lib/adapters/anthropic.js b/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
+index 90391c8..41f307a 100644
+--- a/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
++++ b/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
+@@ -7,7 +7,7 @@ function flattenText(blocks) {
+   }
+   return out;
+ }
+-function serializeRequest(options, o, reasoning) {
++function serializeRequest(options, o, reasoning, wireEffort) {
+   const messages = [];
+   let system = options.system;
+   const push = (role, block) => {
+@@ -62,11 +62,17 @@ ${text}` : text;
+   if (system !== undefined && system !== "")
+     body.system = system;
+   if (reasoning !== undefined && options.reasoningEffort !== undefined) {
+-    const effort = reasoning.efforts.find((e) => e.id === options.reasoningEffort);
+-    body.thinking = {
+-      type: "enabled",
+-      budget_tokens: effort?.budgetTokens ?? 16384
+-    };
++    const effortId = String(options.reasoningEffort);
++    if (wireEffort === "output_config") {
++      body.output_config = { effort: effortId };
++    } else if (wireEffort === "reasoning_effort") {
++      body.reasoning_effort = effortId;
++    } else {
++      body.thinking = {
++        type: "enabled",
++        budget_tokens: 16384
++      };
++    }
+   }
+   if (options.tools !== undefined && options.tools.length > 0) {
+     body.tools = options.tools.map((t) => ({
+@@ -324,7 +330,7 @@ export class AnthropicMessagesAdapter extends LlmAdapter {
+     const o = this.cfg.options();
+     const label = this.cfg.label ?? "anthropic";
+     const token = await this.cfg.resolveAccessToken();
+-    const body = serializeRequest(options, o, this.cfg.reasoning);
++    const body = serializeRequest(options, o, this.cfg.reasoning, this.cfg.wireEffort);
+     const headers = {
+       authorization: `Bearer ${token.access}`,
+       "content-type": "application/json",
+diff --git a/third-party/dsh-subscription-auth/lib/channels/chatgpt.js b/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
+index 152b798..9bf4f31 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
++++ b/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
+@@ -22,7 +22,9 @@ const REASONING = {
+     { id: "minimal", name: "Minimal" },
+     { id: "low", name: "Low" },
+     { id: "medium", name: "Medium" },
+-    { id: "high", name: "High" }
++    { id: "high", name: "High" },
++    { id: "xhigh", name: "Extra High" },
++    { id: "max", name: "Max" }
+   ],
+   defaultEffort: "medium"
+ };
+diff --git a/third-party/dsh-subscription-auth/lib/channels/claude.js b/third-party/dsh-subscription-auth/lib/channels/claude.js
+index 38edb5f..2e1b87a 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/claude.js
++++ b/third-party/dsh-subscription-auth/lib/channels/claude.js
+@@ -18,11 +18,13 @@ const ANTHROPIC_VERSION = "2023-06-01";
+ const ANTHROPIC_BETA = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,advanced-tool-use-2025-11-20,effort-2025-11-24,extended-cache-ttl-2025-04-11";
+ const REASONING = {
+   efforts: [
+-    { id: "low", name: "Low", budgetTokens: 8192 },
+-    { id: "medium", name: "Medium", budgetTokens: 16384 },
+-    { id: "high", name: "High", budgetTokens: 32000 }
++    { id: "low", name: "Low" },
++    { id: "medium", name: "Medium" },
++    { id: "high", name: "High" },
++    { id: "xhigh", name: "Extra High" },
++    { id: "max", name: "Max" }
+   ],
+-  defaultEffort: "medium"
++  defaultEffort: "high"
+ };
+ function redirectUri(port) {
+   return "http://localhost:" + port + CALLBACK_PATH;
+@@ -138,6 +140,7 @@ export const claudeChannel = {
+         })
+       }),
+       reasoning: REASONING,
++      wireEffort: "output_config",
+       resolveAccessToken: async () => {
+         const token = await ctx.readToken();
+         if (!token) {
+diff --git a/third-party/dsh-subscription-auth/lib/channels/grok.js b/third-party/dsh-subscription-auth/lib/channels/grok.js
+index fcf4fe4..f5676ee 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/grok.js
++++ b/third-party/dsh-subscription-auth/lib/channels/grok.js
+@@ -18,7 +18,8 @@ const REASONING = {
+   efforts: [
+     { id: "low", name: "Low" },
+     { id: "medium", name: "Medium" },
+-    { id: "high", name: "High" }
++    { id: "high", name: "High" },
++    { id: "xhigh", name: "Extra High" }
+   ]
+ };
+ async function discoverTokenEndpoint() {
+diff --git a/third-party/dsh-subscription-auth/lib/channels/kimi.js b/third-party/dsh-subscription-auth/lib/channels/kimi.js
+index b8e5296..4776bfc 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/kimi.js
++++ b/third-party/dsh-subscription-auth/lib/channels/kimi.js
+@@ -20,10 +20,11 @@ const DEFAULT_MODELS = [
+ ];
+ const REASONING = {
+   efforts: [
+-    { id: "low", name: "Low", budgetTokens: 4096 },
+-    { id: "medium", name: "Medium", budgetTokens: 16384 },
+-    { id: "high", name: "High", budgetTokens: 32768 }
+-  ]
++    { id: "low", name: "Low" },
++    { id: "high", name: "High" },
++    { id: "max", name: "Max" }
++  ],
++  defaultEffort: "max"
+ };
+ let deviceId;
+ function kimiCommonHeaders() {
+@@ -163,6 +164,7 @@ export const kimiChannel = {
+         headers: () => kimiCommonHeaders()
+       }),
+       reasoning: REASONING,
++      wireEffort: "reasoning_effort",
+       resolveAccessToken: async () => {
+         const token = await ctx.readToken();
+         if (!token) {
+diff --git a/third-party/dsh-subscription-auth/src/adapters/anthropic.ts b/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
+index e55a2dd..9aa8765 100644
+--- a/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
++++ b/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
+@@ -39,8 +39,15 @@ export interface AnthropicAdapterConfig {
+   options(): AnthropicAdapterOptions
+   /** 每次请求前解析（必要时刷新）出可用的 access token。 */
+   resolveAccessToken(): Promise<{ access: string }>
+-  /** 思考强度档位（缺省不提供）。effort id 映射为 thinking.budget_tokens。 */
++  /** 思考强度档位（缺省不提供）。effort id 按 wireEffort 发到官方字段。 */
+   reasoning?: ChannelReasoning
++  /**
++   * 思考强度上线方式。
++   * - `output_config`：Claude 官方 `output_config.effort`（含 xhigh / max）
++   * - `reasoning_effort`：Kimi K3 顶层 `reasoning_effort`（low / high / max）
++   * 缺省回退旧的 thinking.budget_tokens，仅给测试或未声明渠道用。
++   */
++  wireEffort?: 'output_config' | 'reasoning_effort'
+   /** 错误信息与 providerInfo 里的标签（默认 'anthropic' / 'Claude (订阅)'）。 */
+   label?: string
+   displayName?: string
+@@ -58,6 +65,7 @@ function serializeRequest(
+   options: GenerateOptions,
+   o: AnthropicAdapterOptions,
+   reasoning: ChannelReasoning | undefined,
++  wireEffort: 'output_config' | 'reasoning_effort' | undefined,
+ ): unknown {
+   const messages: any[] = []
+   let system = options.system
+@@ -112,13 +120,20 @@ function serializeRequest(
+     stream: true,
+   }
+   if (system !== undefined && system !== '') body.system = system
+-  // 思考强度：用户显式选择（或渠道声明默认档位）时启用 extended thinking，
+-  // effort 档位映射为 thinking budget_tokens（档位未声明 budget 时用 16384）。
++  // 思考强度：用户显式选择（或渠道声明默认档位）时按官方字段发送。
++  // Claude 走 output_config.effort；Kimi K3 走顶层 reasoning_effort。
++  // 未声明 wireEffort 时回退旧的 thinking.budget_tokens（仅兼容测试）。
+   if (reasoning !== undefined && options.reasoningEffort !== undefined) {
+-    const effort = reasoning.efforts.find((e) => e.id === options.reasoningEffort)
+-    body.thinking = {
+-      type: 'enabled',
+-      budget_tokens: effort?.budgetTokens ?? 16384,
++    const effortId = String(options.reasoningEffort)
++    if (wireEffort === 'output_config') {
++      body.output_config = { effort: effortId }
++    } else if (wireEffort === 'reasoning_effort') {
++      body.reasoning_effort = effortId
++    } else {
++      body.thinking = {
++        type: 'enabled',
++        budget_tokens: 16_384,
++      }
+     }
+   }
+   if (options.tools !== undefined && options.tools.length > 0) {
+@@ -413,7 +428,7 @@ export class AnthropicMessagesAdapter extends LlmAdapter {
+     const o = this.cfg.options()
+     const label = this.cfg.label ?? 'anthropic'
+     const token = await this.cfg.resolveAccessToken()
+-    const body = serializeRequest(options, o, this.cfg.reasoning)
++    const body = serializeRequest(options, o, this.cfg.reasoning, this.cfg.wireEffort)
+     const headers: Record<string, string> = {
+       authorization: `Bearer ${token.access}`,
+       'content-type': 'application/json',
+diff --git a/third-party/dsh-subscription-auth/src/channel.ts b/third-party/dsh-subscription-auth/src/channel.ts
+index 7fdc2e2..152a7d6 100644
+--- a/third-party/dsh-subscription-auth/src/channel.ts
++++ b/third-party/dsh-subscription-auth/src/channel.ts
+@@ -9,12 +9,10 @@ import type { AdapterModel } from './adapter.js'
+ 
+ /** 思考强度档位（模型选择器「推理等级」菜单的一项）。 */
+ export interface ReasoningEffort {
+-  /** 档位 id：OpenAI/xAI Responses API 直接作为 reasoning.effort 发送。 */
++  /** 档位 id：原样作为官方 effort 字段发送（OpenAI/xAI 的 reasoning.effort、Claude 的 output_config.effort、Kimi 的 reasoning_effort）。 */
+   id: string
+   name: string
+   description?: string
+-  /** Anthropic 系渠道（Claude/Kimi）：该档位对应的 thinking budget_tokens。 */
+-  budgetTokens?: number
+ }
+ 
+ /** 渠道级思考强度配置；缺省表示该渠道不提供思考强度选择。 */
+diff --git a/third-party/dsh-subscription-auth/src/channels/chatgpt.ts b/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
+index b6e9c87..eed8f3a 100644
+--- a/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
++++ b/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
+@@ -26,13 +26,15 @@ const DEFAULT_MODELS: AdapterModel[] = [
+   { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', contextWindow: 400_000 },
+ ]
+ 
+-/** codex Responses API 的 reasoning.effort 取值（与 opencode 一致）。 */
++/** codex Responses API 的 reasoning.effort：官方最高档是 max，high 上面还有 xhigh。 */
+ const REASONING: ChannelReasoning = {
+   efforts: [
+     { id: 'minimal', name: 'Minimal' },
+     { id: 'low', name: 'Low' },
+     { id: 'medium', name: 'Medium' },
+     { id: 'high', name: 'High' },
++    { id: 'xhigh', name: 'Extra High' },
++    { id: 'max', name: 'Max' },
+   ],
+   defaultEffort: 'medium',
+ }
+diff --git a/third-party/dsh-subscription-auth/src/channels/claude.ts b/third-party/dsh-subscription-auth/src/channels/claude.ts
+index 31d9b57..e4d58ae 100644
+--- a/third-party/dsh-subscription-auth/src/channels/claude.ts
++++ b/third-party/dsh-subscription-auth/src/channels/claude.ts
+@@ -31,14 +31,16 @@ const ANTHROPIC_VERSION = '2023-06-01'
+ const ANTHROPIC_BETA =
+   'claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,advanced-tool-use-2025-11-20,effort-2025-11-24,extended-cache-ttl-2025-04-11'
+ 
+-/** 思考强度 → extended thinking budget_tokens（Claude 官方推荐预算区间）。 */
++/** 思考强度 → Claude output_config.effort；官方最高档是 max，high 上面还有 xhigh。 */
+ const REASONING: ChannelReasoning = {
+   efforts: [
+-    { id: 'low', name: 'Low', budgetTokens: 8_192 },
+-    { id: 'medium', name: 'Medium', budgetTokens: 16_384 },
+-    { id: 'high', name: 'High', budgetTokens: 32_000 },
++    { id: 'low', name: 'Low' },
++    { id: 'medium', name: 'Medium' },
++    { id: 'high', name: 'High' },
++    { id: 'xhigh', name: 'Extra High' },
++    { id: 'max', name: 'Max' },
+   ],
+-  defaultEffort: 'medium',
++  defaultEffort: 'high',
+ }
+ 
+ function redirectUri(port: number): string {
+@@ -160,6 +162,7 @@ export const claudeChannel: ChannelDefinition = {
+         }),
+       }),
+       reasoning: REASONING,
++      wireEffort: 'output_config',
+       resolveAccessToken: async () => {
+         const token = await ctx.readToken()
+         if (!token) {
+diff --git a/third-party/dsh-subscription-auth/src/channels/grok.ts b/third-party/dsh-subscription-auth/src/channels/grok.ts
+index 7133924..ea956a0 100644
+--- a/third-party/dsh-subscription-auth/src/channels/grok.ts
++++ b/third-party/dsh-subscription-auth/src/channels/grok.ts
+@@ -25,12 +25,13 @@ const DEFAULT_MODELS: AdapterModel[] = [
+   { id: 'grok-composer-2.5-fast', name: 'Grok Composer 2.5 Fast', contextWindow: 200000 },
+ ]
+ 
+-/** xAI Responses API 的 reasoning.effort 取值；无默认档位（用户显式选择才发送）。 */
++/** xAI Responses API 的 reasoning.effort：grok-4.6+ 最高是 xhigh；不支持的模型会把 xhigh 当成 high。 */
+ const REASONING: ChannelReasoning = {
+   efforts: [
+     { id: 'low', name: 'Low' },
+     { id: 'medium', name: 'Medium' },
+     { id: 'high', name: 'High' },
++    { id: 'xhigh', name: 'Extra High' },
+   ],
+ }
+ 
+diff --git a/third-party/dsh-subscription-auth/src/channels/kimi.ts b/third-party/dsh-subscription-auth/src/channels/kimi.ts
+index d164edf..429f9ae 100644
+--- a/third-party/dsh-subscription-auth/src/channels/kimi.ts
++++ b/third-party/dsh-subscription-auth/src/channels/kimi.ts
+@@ -30,13 +30,14 @@ const DEFAULT_MODELS: AdapterModel[] = [
+   { id: 'kimi-k2.5', name: 'Kimi K2.5', contextWindow: 262_144 },
+ ]
+ 
+-/** 思考强度 → thinking budget_tokens（Anthropic 兼容端点）；无默认档位。 */
++/** 思考强度 → 顶层 reasoning_effort；K3 官方是 low / high / max，默认 max。 */
+ const REASONING: ChannelReasoning = {
+   efforts: [
+-    { id: 'low', name: 'Low', budgetTokens: 4_096 },
+-    { id: 'medium', name: 'Medium', budgetTokens: 16_384 },
+-    { id: 'high', name: 'High', budgetTokens: 32_768 },
++    { id: 'low', name: 'Low' },
++    { id: 'high', name: 'High' },
++    { id: 'max', name: 'Max' },
+   ],
++  defaultEffort: 'max',
+ }
+ 
+ /** 进程内稳定的通用请求头（device id 只生成一次并缓存）。 */
+@@ -205,6 +206,7 @@ export const kimiChannel: ChannelDefinition = {
+         headers: () => kimiCommonHeaders(),
+       }),
+       reasoning: REASONING,
++      wireEffort: 'reasoning_effort',
+       resolveAccessToken: async () => {
+         const token = await ctx.readToken()
+         if (!token) {
+diff --git a/third-party/dsh-subscription-auth/tests/reasoning-wire.mjs b/third-party/dsh-subscription-auth/tests/reasoning-wire.mjs
+index 54ca681..9cf101f 100644
+--- a/third-party/dsh-subscription-auth/tests/reasoning-wire.mjs
++++ b/third-party/dsh-subscription-auth/tests/reasoning-wire.mjs
+@@ -4,8 +4,8 @@
+  *    显示「推理等级」菜单；
+  * 2. ChatGptAdapter（ChatGPT/Grok）：显式 effort 序列化为 responses 请求的
+  *    reasoning.effort；未选择/未声明渠道不发送该字段；
+- * 3. AnthropicMessagesAdapter（Claude/Kimi）：effort 序列化为 thinking
+- *    { type: 'enabled', budget_tokens }，档位预算来自渠道声明。
++ * 3. AnthropicMessagesAdapter：Claude 发 output_config.effort（含 xhigh/max），
++ *    Kimi 发顶层 reasoning_effort（含 max）；未声明 wireEffort 才回退 thinking。
+  * 运行：node tests/reasoning-wire.mjs
+  */
+ import assert from 'node:assert'
+@@ -63,12 +63,14 @@ const drain = async (iter) => {
+         { id: 'low', name: 'Low' },
+         { id: 'medium', name: 'Medium' },
+         { id: 'high', name: 'High' },
++        { id: 'xhigh', name: 'Extra High' },
++        { id: 'max', name: 'Max' },
+       ],
+       defaultEffort: 'medium',
+     },
+   })
+   const info = await adapter.resolveModel('chatgpt', 'gpt-5.5')
+-  assert.deepEqual(info.reasoning?.efforts.map((e) => e.id), ['minimal', 'low', 'medium', 'high'])
++  assert.deepEqual(info.reasoning?.efforts.map((e) => e.id), ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+   assert.equal(info.reasoning?.defaultEffort, 'medium')
+   assert.equal(info.reasoning?.efforts[2].name, 'Medium')
+   assert.equal(info.context?.contextWindow, 400_000)
+@@ -90,9 +92,9 @@ const drain = async (iter) => {
+     },
+   })
+   const cap = captureStream()
+-  await drain(adapter.stream({ ...callOptions, reasoningEffort: 'high' }))
+-  assert.deepEqual(cap.body().reasoning, { effort: 'high' }, 'Responses 请求体携带 reasoning.effort')
+-  console.log('✓ 2a. ChatGptAdapter 显式 effort=high → body.reasoning.effort=high')
++  await drain(adapter.stream({ ...callOptions, reasoningEffort: 'max' }))
++  assert.deepEqual(cap.body().reasoning, { effort: 'max' }, 'Responses 请求体携带 reasoning.effort')
++  console.log('✓ 2a. ChatGptAdapter 显式 effort=max → body.reasoning.effort=max')
+ }
+ 
+ // ---------- 2b. 未选择 effort → 不发送 reasoning 字段 ----------
+@@ -124,7 +126,7 @@ const drain = async (iter) => {
+   console.log('✓ 2c. 未声明 reasoning 的渠道：无元数据、请求体不发送')
+ }
+ 
+-// ---------- 3a. AnthropicMessagesAdapter：effort → thinking.budget_tokens ----------
++// ---------- 3a. Claude：effort → output_config.effort ----------
+ {
+   const adapter = new AnthropicMessagesAdapter({
+     options: () => ({
+@@ -136,25 +138,29 @@ const drain = async (iter) => {
+     resolveAccessToken: async () => ({ access: 't' }),
+     reasoning: {
+       efforts: [
+-        { id: 'low', name: 'Low', budgetTokens: 8_192 },
+-        { id: 'medium', name: 'Medium', budgetTokens: 16_384 },
+-        { id: 'high', name: 'High', budgetTokens: 32_000 },
++        { id: 'low', name: 'Low' },
++        { id: 'medium', name: 'Medium' },
++        { id: 'high', name: 'High' },
++        { id: 'xhigh', name: 'Extra High' },
++        { id: 'max', name: 'Max' },
+       ],
+-      defaultEffort: 'medium',
++      defaultEffort: 'high',
+     },
++    wireEffort: 'output_config',
+   })
+   const cap = captureStream()
+   await drain(adapter.stream({
+     provider: 'claude',
+     model: 'claude-sonnet-5',
+     messages: [],
+-    reasoningEffort: 'high',
++    reasoningEffort: 'max',
+   }))
+-  assert.deepEqual(cap.body().thinking, { type: 'enabled', budget_tokens: 32_000 }, 'thinking 携带档位预算')
+-  console.log('✓ 3a. AnthropicMessagesAdapter effort=high → thinking.budget_tokens=32000')
++  assert.deepEqual(cap.body().output_config, { effort: 'max' }, 'Claude 发 output_config.effort')
++  assert.equal(cap.body().thinking, undefined, '不再发 thinking.budget_tokens')
++  console.log('✓ 3a. Claude effort=max → output_config.effort=max')
+ }
+ 
+-// ---------- 3b. 档位未声明 budget → 兜底 16384；未选择 → 不发送 ----------
++// ---------- 3b. Kimi：effort → reasoning_effort；未选择 → 不发送 ----------
+ {
+   const adapter = new AnthropicMessagesAdapter({
+     options: () => ({
+@@ -165,16 +171,23 @@ const drain = async (iter) => {
+     }),
+     resolveAccessToken: async () => ({ access: 't' }),
+     reasoning: {
+-      efforts: [{ id: 'high', name: 'High' }], // 无 budgetTokens → 兜底
++      efforts: [
++        { id: 'low', name: 'Low' },
++        { id: 'high', name: 'High' },
++        { id: 'max', name: 'Max' },
++      ],
++      defaultEffort: 'max',
+     },
++    wireEffort: 'reasoning_effort',
+   })
+   const cap = captureStream()
+-  await drain(adapter.stream({ provider: 'kimi', model: 'k3', messages: [], reasoningEffort: 'high' }))
+-  assert.deepEqual(cap.body().thinking, { type: 'enabled', budget_tokens: 16_384 }, 'budget 兜底 16384')
++  await drain(adapter.stream({ provider: 'kimi', model: 'k3', messages: [], reasoningEffort: 'max' }))
++  assert.equal(cap.body().reasoning_effort, 'max', 'Kimi 发顶层 reasoning_effort')
++  assert.equal(cap.body().thinking, undefined, 'K3 不发 thinking')
+   const cap2 = captureStream()
+   await drain(adapter.stream({ provider: 'kimi', model: 'k3', messages: [] }))
+-  assert.equal(cap2.body().thinking, undefined, '未选择 effort 时不发送 thinking')
+-  console.log('✓ 3b. budget 兜底 16384；未选择 effort 不发送 thinking')
++  assert.equal(cap2.body().reasoning_effort, undefined, '未选择 effort 时不发送 reasoning_effort')
++  console.log('✓ 3b. Kimi effort=max → reasoning_effort=max；未选择不发送')
+ }
+ 
+ console.log('✓ 思考强度（reasoning effort）测试全部通过')

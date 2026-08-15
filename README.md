@@ -143,7 +143,7 @@ daemon 无法连接且自动启动失败 → 让用户手动运行
 2. 点对应渠道的「登录」:
    - **ChatGPT / Claude**(授权码 + PKCE):本机浏览器打开授权页 → 用户授权 → 跳回 `127.0.0.1` 回调。**必须在本机跑 dsh**,远程/无桌面环境收不到回调;
    - **Grok / Kimi**(设备授权流):页面展示验证链接 + 设备码 → 用户在浏览器打开并输入代码;
-3. 登录成功后该提供商出现在模型选择器;可选手动思考强度(ChatGPT 默认 `medium`;Claude 默认 `medium`;Grok / Kimi 不设默认);
+3. 登录成功后该提供商出现在模型选择器;可选手动思考强度(ChatGPT 默认 `medium`,最高 `max`;Claude 默认 `high`,最高 `max`;Grok 最高 `xhigh`;Kimi 默认/最高 `max`);
 4. 可选:在 `settings.yaml` 的 `subscription-auth-<id>` 段覆盖 `apiBaseURL` / `redirectPort` / `maxTokens`,或用 `models` 手动固定模型列表。密钥只进 credentials,settings 里不要写令牌。
 
 **验证**:设置页该渠道显示「已登录」;模型选择器出现对应提供商;新会话切到该模型能发出一轮请求。日志:`~/.dsh/tmp/subscription-auth.log`;状态:`GET /subscription-auth/providers`。

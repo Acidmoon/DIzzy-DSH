@@ -18,7 +18,8 @@ const REASONING = {
   efforts: [
     { id: "low", name: "Low" },
     { id: "medium", name: "Medium" },
-    { id: "high", name: "High" }
+    { id: "high", name: "High" },
+    { id: "xhigh", name: "Extra High" }
   ]
 };
 async function discoverTokenEndpoint() {

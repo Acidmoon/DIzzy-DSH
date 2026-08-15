@@ -39,8 +39,15 @@ export interface AnthropicAdapterConfig {
   options(): AnthropicAdapterOptions
   /** 每次请求前解析（必要时刷新）出可用的 access token。 */
   resolveAccessToken(): Promise<{ access: string }>
-  /** 思考强度档位（缺省不提供）。effort id 映射为 thinking.budget_tokens。 */
+  /** 思考强度档位（缺省不提供）。effort id 按 wireEffort 发到官方字段。 */
   reasoning?: ChannelReasoning
+  /**
+   * 思考强度上线方式。
+   * - `output_config`：Claude 官方 `output_config.effort`（含 xhigh / max）
+   * - `reasoning_effort`：Kimi K3 顶层 `reasoning_effort`（low / high / max）
+   * 缺省回退旧的 thinking.budget_tokens，仅给测试或未声明渠道用。
+   */
+  wireEffort?: 'output_config' | 'reasoning_effort'
   /** 错误信息与 providerInfo 里的标签（默认 'anthropic' / 'Claude (订阅)'）。 */
   label?: string
   displayName?: string
@@ -58,6 +65,7 @@ function serializeRequest(
   options: GenerateOptions,
   o: AnthropicAdapterOptions,
   reasoning: ChannelReasoning | undefined,
+  wireEffort: 'output_config' | 'reasoning_effort' | undefined,
 ): unknown {
   const messages: any[] = []
   let system = options.system
@@ -112,13 +120,20 @@ function serializeRequest(
     stream: true,
   }
   if (system !== undefined && system !== '') body.system = system
-  // 思考强度：用户显式选择（或渠道声明默认档位）时启用 extended thinking，
-  // effort 档位映射为 thinking budget_tokens（档位未声明 budget 时用 16384）。
+  // 思考强度：用户显式选择（或渠道声明默认档位）时按官方字段发送。
+  // Claude 走 output_config.effort；Kimi K3 走顶层 reasoning_effort。
+  // 未声明 wireEffort 时回退旧的 thinking.budget_tokens（仅兼容测试）。
   if (reasoning !== undefined && options.reasoningEffort !== undefined) {
-    const effort = reasoning.efforts.find((e) => e.id === options.reasoningEffort)
-    body.thinking = {
-      type: 'enabled',
-      budget_tokens: effort?.budgetTokens ?? 16384,
+    const effortId = String(options.reasoningEffort)
+    if (wireEffort === 'output_config') {
+      body.output_config = { effort: effortId }
+    } else if (wireEffort === 'reasoning_effort') {
+      body.reasoning_effort = effortId
+    } else {
+      body.thinking = {
+        type: 'enabled',
+        budget_tokens: 16_384,
+      }
     }
   }
   if (options.tools !== undefined && options.tools.length > 0) {
@@ -413,7 +428,7 @@ export class AnthropicMessagesAdapter extends LlmAdapter {
     const o = this.cfg.options()
     const label = this.cfg.label ?? 'anthropic'
     const token = await this.cfg.resolveAccessToken()
-    const body = serializeRequest(options, o, this.cfg.reasoning)
+    const body = serializeRequest(options, o, this.cfg.reasoning, this.cfg.wireEffort)
     const headers: Record<string, string> = {
       authorization: `Bearer ${token.access}`,
       'content-type': 'application/json',

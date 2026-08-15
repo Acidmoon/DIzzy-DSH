@@ -53,6 +53,22 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 
 **重放失败时的处理**:上游若已吸收对应修复,删除本补丁并更新登记;冲突则按上面 7 条适配新文件后再提交。
 
+### `patches/dsh-subscription-auth-reasoning-effort.patch`
+
+**插件**:dsh-subscription-auth
+**上游**:叠在 `dsh-subscription-auth-local.patch` 之后
+**登记日期**:2026-08-15
+
+**改动内容**:
+
+1. ChatGPT 思考档位加 `xhigh` / `max`(默认仍 `medium`)。
+2. Grok 加 `xhigh`(不设默认;不支持的旧模型会按 high 处理)。
+3. Claude 发 `output_config.effort`,档位含 `xhigh` / `max`,默认 `high`。
+4. Kimi 发顶层 `reasoning_effort`,档位 `low` / `high` / `max`,默认 `max`。
+5. 未声明 `wireEffort` 时才回退旧的 `thinking.budget_tokens`(测试兼容)。
+
+**重放失败时的处理**:上游若已改官方字段,按各渠道当前 API 适配后再更新本补丁。
+
 ## 重放工具
 
 ```sh

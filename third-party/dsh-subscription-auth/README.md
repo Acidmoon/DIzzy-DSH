@@ -110,10 +110,10 @@ dsh plugin --profile web add dsh-subscription-auth
 3. 在模型选择里切到对应的提供商（如「Claude (订阅)」），选一个模型即可对话。
 
    模型选择器可为订阅模型选择**思考强度（推理等级）**：
-   - ChatGPT：`minimal / low / medium / high`（默认 `medium`，作为 codex Responses 的 `reasoning.effort` 发送）
-   - Claude：`low / medium / high`（默认 `medium`，映射为 extended thinking 的 `budget_tokens` 8192 / 16384 / 32000）
-   - Grok：`low / medium / high`（不设默认，选择后作为 xAI Responses 的 `reasoning.effort` 发送）
-   - Kimi：`low / medium / high`（不设默认，映射为 `thinking.budget_tokens` 4096 / 16384 / 32768）
+   - ChatGPT：`minimal / low / medium / high / xhigh / max`（默认 `medium`，作为 codex Responses 的 `reasoning.effort` 发送）
+   - Claude：`low / medium / high / xhigh / max`（默认 `high`，作为 `output_config.effort` 发送）
+   - Grok：`low / medium / high / xhigh`（不设默认，选择后作为 xAI Responses 的 `reasoning.effort` 发送；不支持 xhigh 的旧模型会按 high 处理）
+   - Kimi：`low / high / max`（默认 `max`，作为顶层 `reasoning_effort` 发送）
 
    不选择时走提供商默认行为（请求体不带思考参数）。
 

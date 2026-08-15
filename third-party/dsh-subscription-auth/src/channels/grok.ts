@@ -25,12 +25,13 @@ const DEFAULT_MODELS: AdapterModel[] = [
   { id: 'grok-composer-2.5-fast', name: 'Grok Composer 2.5 Fast', contextWindow: 200000 },
 ]
 
-/** xAI Responses API 的 reasoning.effort 取值；无默认档位（用户显式选择才发送）。 */
+/** xAI Responses API 的 reasoning.effort：grok-4.6+ 最高是 xhigh；不支持的模型会把 xhigh 当成 high。 */
 const REASONING: ChannelReasoning = {
   efforts: [
     { id: 'low', name: 'Low' },
     { id: 'medium', name: 'Medium' },
     { id: 'high', name: 'High' },
+    { id: 'xhigh', name: 'Extra High' },
   ],
 }
 
