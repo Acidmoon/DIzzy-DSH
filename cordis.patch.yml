@@ -44,7 +44,7 @@
       name: 'dizzy-dsh-kimi-webbridge'
 
     # ── 收录的第三方插件(随主包依赖安装,见 package.json)────────
-    # 说明:这两个包通过主包 dependencies(registry / file:./third-party/...)
+    # 说明:下列包通过主包 dependencies(registry / file:./third-party/...)
     # 随主包安装,profile 的 pnpm-workspace.yaml 为 hoisted 模式,传递依赖
     # 提升到顶层 node_modules,loader 按包名即可 import。无需单独 dsh plugin add。
     - id: better-sidebar
@@ -68,3 +68,10 @@
     # 命名空间一致;勿改成 dizzy-dsh-* 以免冲掉本机登录态。
     - id: dsh-subscription-auth
       name: 'dsh-subscription-auth'
+
+    # 界面设定(时装工坊):Nous 蓝默认配色 / 氛围光 / 图片与视频背景。
+    # 纯 Client,Host apply 为空;设置走 localStorage,背景走 IndexedDB。
+    # 入口在「设置 → 界面设定」。id 与上游自带 patch 一致,本机若还留着
+    # 单独安装会撞 duplicate loader entry id,先 remove 那份再挂本行。
+    - id: ui-gui-customization
+      name: 'dsh-gui-customization'

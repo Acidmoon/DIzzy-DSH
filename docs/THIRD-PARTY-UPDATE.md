@@ -23,6 +23,7 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 | dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 有:exposure.js 核心工具常驻 |
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | e1277b5 | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local |
+| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.5.2 | 092e181 | 无 |
 
 各上游形态备注:
 
@@ -41,6 +42,12 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
   投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer /
   思考档位对齐官方最高档)。更新后必须先重放 `patches/dsh-subscription-auth-local.patch`,
   再重放 `patches/dsh-subscription-auth-reasoning-effort.patch`。
+- **dsh-gui-customization**:已发布 npm(0.5.2),上游是 monorepo,可安装组合插件在
+  `packages/dsh-gui-customization/`;本快照只收录该子包(含已构建 `lib/` 与内置背景图)。
+  默认分支 `master`。无本地补丁。未迁 subtree 前用 sparse-checkout 覆盖子包目录;
+  迁 subtree 时 prefix 仍是 `third-party/dsh-gui-customization`,但上游路径在
+  `packages/dsh-gui-customization/`,**不能**对整个上游仓直接 subtree(会把动态原型
+  和 docs 一并带入)。优先继续 sparse 覆盖或 `npm pack`。
 
 ## 一次性迁移(未执行;下次同步前完成)
 
@@ -108,6 +115,7 @@ node scripts/reapply-third-party-patches.mjs
 | dsh-vision-toolkit | 工具目录含 `vision_glance` 等 4 个常驻工具;加载 skill 后出现全部 |
 | dsh-notification | 设置 > 通知 出现设置段;授权后测试通知可弹 |
 | dsh-subscription-auth | 设置 > 订阅服务 列出四个渠道;`GET /subscription-auth/providers` 返回 JSON;已登录渠道出现在模型选择器 |
+| dsh-gui-customization | 设置 → 界面设定 出现配色/氛围光/背景区块;选预设配色即时换肤;刷新后设置仍在 |
 | 全部 | host 日志无挂载报错(duplicate entry / 缺 service) |
 
 ## 回滚

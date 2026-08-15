@@ -23,7 +23,7 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
 │       ├── dizzy-dsh → Junction → store 快照(file: 安装时生成)
 │       ├── dizzy-dsh-balance / dizzy-dsh-usage-card /
 │       │   dizzy-dsh-agent-instructions / dizzy-dsh-kimi-webbridge
-│       └── dsh-better-sidebar / dsh-subscription-auth / @dsh-external/...
+│       └── dsh-better-sidebar / dsh-subscription-auth / dsh-gui-customization / @dsh-external/...
 └── 仓库(本目录)
     ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/* + 第三方)
     ├── cordis.patch.yml      # bundle 插件层(insert 条目,全部插件在此挂载)
@@ -34,7 +34,9 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
     │   ├── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
     │   └── kimi-webbridge/   #   dizzy-dsh-kimi-webbridge:Host 工具集
     └── third-party/          # 收录的第三方快照
-        └── dsh-subscription-auth/ # OAuth 订阅登录(上游快照 + 本地补丁)
+        ├── dsh-subscription-auth/ # OAuth 订阅登录(上游快照 + 本地补丁)
+        ├── dsh-gui-customization/ # 界面设定/时装工坊(上游插件包快照)
+        └── …                  # genui / notification / vision-toolkit / anchored-standard
 ```
 
 ### 安装与生命周期
@@ -84,6 +86,7 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-usage-card -Recurse -Forc
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-kimi-webbridge -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -416,15 +419,17 @@ git add -A && git commit -m "feat: ..." && git push
 - [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现全部
       entry(balance / usage-card / dizzy-agent-instructions / kimi-webbridge /
       dsh-subscription-auth / better-sidebar / dsh-vision-toolkit / genui /
-      dsh-notification)
+      dsh-notification / ui-gui-customization)
 - [ ] Host:每个子包可加载且 name/inject 正确:
       `node --input-type=module -e "import('dizzy-dsh-balance')"`,
       `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`、
       `import('dizzy-dsh-kimi-webbridge')`、`import('dsh-subscription-auth')`
 - [ ] 收录的第三方可加载(依赖齐全):
-      `import('dsh-better-sidebar')` 与
-      `import('@dsh-external/dsh-vision-toolkit')` 均不报
-      `Cannot find package ...`(link: 安装的典型症状)
+      `import('dsh-better-sidebar')`、
+      `import('@dsh-external/dsh-vision-toolkit')` 与
+      `import('dsh-gui-customization')` 均不报
+      `Cannot find package ...`(link: 安装的典型症状);
+      `dsh-gui-customization` 是空 Host(`typeof apply === 'function'`),无 name/inject
 - [ ] 每个有 UI 的子包 Client:`exports["./client"]` 指向的文件存在,含
       `window.__ModuleLoader__.load` 且 id 等于包名
 - [ ] 浏览器:目标 Slot 出现 UI,数据路由返回正确 JSON
@@ -456,14 +461,14 @@ git add -A && git commit -m "feat: ..." && git push
 
 ```bash
 dsh plugin --profile web add file:<仓库>
-dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
+dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-gui-customization)
 ```
 
 > 已验证(`tmp-file*` 临时 profile 完整实测):`file:` 安装主插件时 pnpm
 > 递归解析其 dependencies —— better-sidebar 及其全部运行时依赖
 > (ws/codemirror/xterm/node-pty 等)从 registry 安装,vision-toolkit 快照
-> 及其依赖 saxes 一并装入,hoisted 提升到顶层 node_modules,三个 entry
-> 全部 import 成功、dump-config 全部出现。`link:` 方案则不行(不装依赖,
+> 及其依赖 saxes 一并装入,hoisted 提升到顶层 node_modules,自有与收录
+> entry 全部 import 成功、dump-config 全部出现。`link:` 方案则不行(不装依赖,
 > better-sidebar 缺 ws 直接 import 失败)。首次安装记得配置
 > `pnpm-workspace.yaml` 的 `allowBuilds`(node-pty/protobufjs → true),
 > 否则 pnpm 以 `ERR_PNPM_IGNORED_BUILDS` 非零退出、reconcile 不执行。
@@ -516,6 +521,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | `corrupt Zstandard session log: first frame is not exactly one header line` | 某份 `session.jsonl.zstd` 的第一帧明文不是单独一行 header(常见于把多帧日志解压后再一次性压回);官方 workspace `list()` 对这类文件零容忍,整棵插件树起不来。**不是** Dizzy-DSH 插件运行时逻辑错误 | 从仓库根跑 `node scripts/repair-zstd-header-frame.mjs` 先 dry-run(只报 `session.jsonl.zstd`,不改盘);确认 `actionable` 后加 `--apply`。解压明文与 `.bak` 完全一致才还原多帧备份,否则拆成「header 一帧 + 其余一帧」(能过 list,不等于恢复官方逐批追加的帧布局)。空文件/撕坏首帧官方会跳过,脚本也 leave,除非旁边有可用 `.bak`。修完仍可能因同目录残留 `session.jsonl`、重复 session id、header 路径对不上而起不来 |
 | `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0` | 订阅插件(Kimi Anthropic)曾把净增量 `input_tokens` 再减 cache,写出负 usage;DSH tokenUsage schema 非负校验会让 `session.history` 整页失败 | 已在 `third-party/dsh-subscription-auth` 写入侧 `mapUsage` 钳零,读路径 `projection-guard` 按 unit 钳非负(本地补丁,见 THIRD-PARTY-PATCHES.md)。不要改 DSH 内核。旧日志仍炸则换新会话;改完重启 `dsh --profile web` |
 | `duplicate loader entry id: dsh-subscription-auth` | profile 的 `cordis.patch.yml` 仍单独 insert 了试装行,与合集 bundle patch 撞 id | 删掉 `~/.dsh/profiles/web/cordis.patch.yml` 里那条 insert,并去掉指向仓库外的 junction |
+| `duplicate loader entry id: ui-gui-customization` | 本机曾单独 `dsh plugin add dsh-gui-customization`,与合集 bundle patch 撞同一 id | 先 `dsh plugin --profile web remove dsh-gui-customization`,再重装合集 |
 
 ---
 

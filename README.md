@@ -1,7 +1,7 @@
 # 🌀 Dizzy-DSH —— DSH 插件合集
 
 一个「克隆即装」的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件合集:
-**一条命令装完,重启即用** —— 余额、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏,一次到位。
+**一条命令装完,重启即用** —— 余额、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏、界面换装,一次到位。
 
 无需 npm 发布;仓库本身作为 bundle 层安装,重启后依然生效。
 
@@ -25,6 +25,7 @@
 |  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.1) |
 |  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.10.3) |
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
+|  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.5.2) |
 
 ### 收录的第三方预设(agent preset)
 
@@ -34,9 +35,12 @@
 
 ## 收录的第三方插件
 
-本合集收录以下第三方 DSH 插件(快照保留于 `third-party/`),能力与用法见上方
-「能力总览」。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/THIRD-PARTY-SNAPSHOTS.md)
+本合集收录以下第三方 DSH 插件,能力与用法见上方「能力总览」。多数以仓库快照
+放在 `third-party/`(随主包 `file:` 依赖安装);`dsh-better-sidebar` 走 npm
+registry。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/THIRD-PARTY-SNAPSHOTS.md)
 与 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
+`dsh-gui-customization` 只收录上游 monorepo 的插件包子目录
+(`packages/dsh-gui-customization/`),不是整个仓库。
 
 | 插件 | 作者 | 项目 | 地址 | 版本 | 收录方式 |
 |---|---|---|---|---|---|
@@ -46,6 +50,7 @@
 | dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.10.3 | npm registry |
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 | dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
+| dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.5.2 | 仓库快照(插件包子目录) |
 
 ##  快速开始
 
@@ -72,6 +77,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 ```powershell
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh* -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -240,6 +246,34 @@ vision-toolkit:
 **配置**:零配置,即点即用(界面右侧侧边栏图标)。
 
 **验证**:点开侧边栏,可见资源管理器 / 编辑器 / 终端 / Git / 浏览器分区,按会话隔离。
+
+### 5. 界面设定 dsh-gui-customization
+
+**需用户提供**:无密钥、无 `settings.yaml`。背景图 / 视频从本机选;内置三张
+「deepseek娘」预设可直接用。文案随 DSH 语言在中 / 英之间切换。
+
+**配置步骤**:
+
+1. 打开 **设置 → 界面设定**(设置 → 插件 区也有一张识别卡片);
+2. 预设配色四选一(系统默认 / Nous 蓝 / 靛紫 / 翡翠绿),或改 13 个颜色字段后点「应用配色」(不是每个字段即时写回);
+3. 氛围光:开关、强度、呼吸幅度、位置(右上·左下 / 左上·右下 / 顶 / 底 / 居中)实时生效;
+4. 背景:选图片 / 内置预设 01–03 / 选视频(静音循环,与图片互斥);调背景透明度(10%–90%)与侧边栏透明;
+5. 配色可导出 JSON(自动复制剪贴板)或粘贴导入。导出不含背景图 / 视频。
+
+设置走浏览器 `localStorage`,图片 / 视频走 IndexedDB,跟当前浏览器走,不进
+`settings.yaml`,也不跨设备。选「系统默认」会清掉已保存的配色设置(背景图可保留)。
+
+**验证**:设置页出现「界面设定」段;换预设后面板配色立即变;刷新页面后设置仍在。
+`dsh --profile web --dump-config` 的 `# == dizzy-dsh` 段应有
+`id: ui-gui-customization`。
+
+**排查**:
+
+- 设置里没有「界面设定」:未重装合集或未硬刷新。走「更新」仪式(删 `dizzy-dsh*` 与 `dsh-gui-customization` 副本再 add)后重启 + Ctrl+Shift+R;
+- 曾单独 `dsh plugin add dsh-gui-customization`(或 GitHub 直装):合集接管前先 `remove` 那份,否则会撞 `duplicate loader entry id: ui-gui-customization`;
+- 大背景图不显示:上游 0.5.1 已改 Blob URL;确认快照版本 ≥ 0.5.2;
+- 侧边栏开透明后 better-sidebar 衬底可能发虚:关「侧边栏透明」即可,不是挂载失败;
+- 换浏览器 / 清站点数据会丢配色和背景,这是浏览器存储,不是合集没装上。
 
 ## 文档
 
