@@ -483,9 +483,10 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 |---|---|
 | 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`,统计 `assistant/message` 事件的 `data.usage`(`inputTokens+outputTokens+cacheReadTokens`)按本地日期聚合;模型归属取同一事件的 `data.message.source`(provider/model,缺省 `unknown`);增量刷新(文件 mtime+size 变化才重读,30s TTL) |
 | 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, detail, scannedAt, errors }`:`days` 保持「日期 → 总 tokens」(后向兼容),`detail` = `{ days: 逐日 input/output/cacheRead 分项, recent7: 近 7 天(与查看月无关,含零用量天), today: 今日分模型 }`;`errors` > 0 时副标题提示「N 个日志文件解析失败,用量可能被低估」。旧 Host(无 `detail`)下 client 自动退化:弹窗只显总量、今日明细显重启提示 |
-| 挂载 | Client 注册 `conversation.view` list 插槽(`id: 'usage'`、`order: 20`、`label: '用量'`;chat=0、trajectory=10)。宿主把每个 entry 投影为页头 Tab,`renderSlot(..., { only: activeId })` 一次只渲染激活视图;选中状态存于宿主每会话 store(`persist: dsh.conversation.chat`),刷新页面保持;插件卸载后宿主 `resolveActiveView` 自动回退 chat。视图是普通整页 React 组件,无需 portal/fixed 定位与可见性守卫 |
-| 热力图 | 周一起始 `7 × 周数` 网格(34px 格,行=周一~周日、列=周),格内日期数字;DeepSeek 蓝阶四档(lv1–lv4,按当月峰值比例分档),月外 `visibility:hidden`;今日描边+脉冲;hover/focus 浮层显示日期 + 总量 + 输入/输出/缓存分项 |
-| 曲线 | 热力图右侧「近 7 天」用量曲线(detail.recent7):Catmull-Rom 转三次贝塞尔平滑过点 + 面积淡填 + 逐点悬浮读数,SVG viewBox 缩放自适应;旧 Host 退化为查看月内 7 天 |
+| 挂载 | Client 注册 `conversation.view` list 插槽(`id: 'usage'`、`order: 20`、`label: '用量'`;chat=0、trajectory=10)。宿主把每个 entry 投影为页头 Tab,`renderSlot(..., { only: activeId })` 一次只渲染激活视图;选中状态存于宿主每会话 store(`persist: dsh.conversation.chat`),刷新页面保持;插件卸载后宿主 `resolveActiveView` 自动回退 chat。视图本身是普通整页流,不需要 portal;悬浮读数是视图内的 `position:fixed` 弹窗,跟鼠标并避让视口边缘 |
+| 热力图 | 周一起始 `7 × 周数` 网格(34px 格,行=周一~周日、列=周),格内日期数字;DeepSeek 蓝阶四档(lv1–lv4,按当月峰值比例分档),月外 `visibility:hidden`;今日描边+脉冲;hover/focus 浮层显示日期 + 总量 + 输入(未命中)/输入(命中缓存)/输出 |
+| 曲线 | 热力图右侧「近 7 天」用量曲线(detail.recent7):Catmull-Rom 转三次贝塞尔平滑过点 + 面积淡填;鼠标按横坐标吸附最近一天,竖线跟随鼠标 X,弹窗跟鼠标并避让视口边缘;旧 Host 退化为查看月内 7 天 |
+| 今日明细 | 按模型分行的统一蓝底堆叠条:输入未命中(蓝) / 输入命中缓存(青绿) / 输出(琥珀);条长相对当日峰值,段宽相对该模型三项之和;缺分项时整条纯蓝;旧 Host 无 `detail` 时显示重启提示 |
 | 月份切换 | 页头 ‹ › ±1 月;点月份打开年/12 月格 + 「回到本月」;Esc / 点外侧关闭。60s 自动重取 + 手动刷新按钮;数据按 `data.month === 查看月` 判定可见(切月即骨架,旧月数据不串月),同月刷新静默 |
 | 时钟 | 独立 `PeakClock`(不拖整页重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
 | 外观 | 居中栏(max-width 860px),全部吃宿主 `--dsw-*` token(明暗主题跟随);纵向滚动由宿主 scrollBody 提供,视图只管内容流;scrollBody 与对话共用,激活时主动 `scrollTop = 0` 回顶(对话自身有每会话滚动位置存档,不受影响) |

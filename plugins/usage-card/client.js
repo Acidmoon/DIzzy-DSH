@@ -16,11 +16,12 @@
  *   - 页头:标题 + 月份导航(‹ › ±1 月;点月份开年/12 月格选择器,
  *     Esc / 点外侧关闭)+ 手动刷新;每 60s 自动重取当前月份
  *   - 统计卡:本月合计 / 活跃天数 / 活跃日均 / 峰值日
- *   - 月度热力图 + 近 7 天用量曲线(平滑贝塞尔过点,悬浮逐点读数):
- *     热力图周一起始,行=周一~周日、列=周,DeepSeek 蓝阶四档,格内
- *     日期数字,今日描边+脉冲;悬浮弹窗显示输入/输出/缓存分项
- *   - 今日明细:按模型分行(provider/model 归属),条形与热力图同一
- *     色阶,悬浮显示该模型输入/输出/缓存
+ *   - 月度热力图 + 近 7 天用量曲线(平滑贝塞尔过点):热力图周一起始,
+ *     行=周一~周日、列=周,DeepSeek 蓝阶四档,格内日期数字,今日描边+
+ *     脉冲;格悬浮弹窗显示输入(未命中)/输入(命中缓存)/输出。曲线按鼠标横坐标吸附
+ *     最近一天,竖线跟随鼠标 X,弹窗跟鼠标并避让视口边缘
+ *   - 今日明细:按模型分行(provider/model 归属),条形统一蓝色底,
+ *     内部分三段(输入未命中 / 输入命中缓存 / 输出),悬浮显示分项
  *   - 底部:北京时间峰谷时钟(高峰 9:00-12:00 / 14:00-18:00 红,
  *     空闲绿,进入高峰前 30 分钟渐变)
  *
@@ -47,8 +48,8 @@ window.__ModuleLoader__.load({
       const style = document.createElement('style')
       style.textContent = [
         // ── 视图骨架:吃宿主 token,明暗主题跟随 ─────────────────
-        '.dsh-usage-view{--dsh-usage-lv0:transparent;--dsh-usage-lv1:var(--dsw-static-deepseek-200);--dsh-usage-lv2:var(--dsw-static-deepseek-300);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-500);box-sizing:border-box;width:100%;max-width:860px;margin:0 auto;padding:28px 24px 64px;display:flex;flex-direction:column;gap:16px;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family,ui-sans-serif,system-ui,sans-serif)}',
-        'body[data-ds-dark-theme] .dsh-usage-view{--dsh-usage-lv1:var(--dsw-static-deepseek-600);--dsh-usage-lv2:var(--dsw-static-deepseek-500);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-300)}',
+        '.dsh-usage-view{--dsh-usage-lv0:transparent;--dsh-usage-lv1:var(--dsw-static-deepseek-200);--dsh-usage-lv2:var(--dsw-static-deepseek-300);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-500);--dsh-usage-seg-in:var(--dsw-static-deepseek-500);--dsh-usage-seg-cache:#2dd4bf;--dsh-usage-seg-out:#f59e0b;box-sizing:border-box;width:100%;max-width:860px;margin:0 auto;padding:28px 24px 64px;display:flex;flex-direction:column;gap:16px;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family,ui-sans-serif,system-ui,sans-serif)}',
+        'body[data-ds-dark-theme] .dsh-usage-view{--dsh-usage-lv1:var(--dsw-static-deepseek-600);--dsh-usage-lv2:var(--dsw-static-deepseek-500);--dsh-usage-lv3:var(--dsw-static-deepseek-400);--dsh-usage-lv4:var(--dsw-static-deepseek-300);--dsh-usage-seg-in:var(--dsw-static-deepseek-400);--dsh-usage-seg-cache:#5eead4;--dsh-usage-seg-out:#fbbf24}',
         // ── 页头:标题 + 月份导航 + 刷新 ──────────────────────
         '.dsh-usage-topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}',
         '.dsh-usage-title{margin:0;font-size:20px;font-weight:600;line-height:28px;color:var(--dsw-alias-label-primary)}',
@@ -56,7 +57,7 @@ window.__ModuleLoader__.load({
         '.dsh-usage-nav{position:relative;display:inline-flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums}',
         '.dsh-usage-btn{display:inline-flex;align-items:center;justify-content:center;min-width:30px;min-height:30px;padding:0 6px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:1;cursor:pointer;transition:background var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease),color var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
         '.dsh-usage-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-        '.dsh-usage-btn:focus-visible,.dsh-usage-cell:focus-visible,.dsh-usage-mbtn:focus-visible{outline:2px solid var(--dsw-static-deepseek-500);outline-offset:1px}',
+        '.dsh-usage-btn:focus-visible,.dsh-usage-cell:focus-visible,.dsh-usage-mbtn:focus-visible,.dsh-usage-row:focus-visible{outline:2px solid var(--dsw-static-deepseek-500);outline-offset:1px}',
         '.dsh-usage-month{min-width:92px;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}',
         '.dsh-usage-refresh.is-spinning svg{animation:dsh-usage-spin .9s linear infinite}',
         '@keyframes dsh-usage-spin{to{transform:rotate(360deg)}}',
@@ -108,28 +109,36 @@ window.__ModuleLoader__.load({
         '.dsh-usage-cell.is-today:after{content:"";position:absolute;inset:0;border-radius:6px;box-shadow:0 0 0 0 color-mix(in srgb,var(--dsw-alias-label-primary) 35%,transparent);animation:dsh-usage-today 2.6s ease-out 1s infinite;pointer-events:none}',
         '@keyframes dsh-usage-today{70%{box-shadow:0 0 0 5px transparent}100%{box-shadow:0 0 0 0 transparent}}',
         '.dsh-usage-cell:hover:not(.is-void){transform:scale(1.12);z-index:3;box-shadow:0 0 12px color-mix(in srgb,currentColor 35%,transparent)}',
-        // ── 近 7 天曲线:平滑贝塞尔 + 面积淡填 + 逐点悬浮 ─────
+        // ── 近 7 天曲线:平滑贝塞尔 + 面积淡填 + 竖线吸附 ─────
         '.dsh-usage-curvebox{flex:1;min-width:280px;display:flex;flex-direction:column}',
         '.dsh-usage-curve-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px}',
         '.dsh-usage-curve-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary)}',
         '.dsh-usage-curve-sum{font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-variant-numeric:tabular-nums}',
         '.dsh-usage-curve-body{flex:1;display:flex;align-items:center;min-height:0}',
-        '.dsh-usage-curve-svg{width:100%;height:auto;display:block;overflow:visible}',
-        '.dsh-usage-curve-line{fill:none;stroke:var(--dsw-alias-state-business-primary);stroke-width:2;stroke-linecap:round}',
-        '.dsh-usage-curve-area{fill:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}',
-        '.dsh-usage-curve-dot{fill:var(--dsw-alias-bg-layer-1);stroke:var(--dsw-alias-state-business-primary);stroke-width:1.6;cursor:pointer}',
-        '.dsh-usage-curve-dot:hover{r:5}',
-        '.dsh-usage-curve-x{font-size:10px;fill:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-variant-numeric:tabular-nums}',
-        // ── 今日明细(分模型):标签 + 条形(同热力图色阶)+ 数值 ──
+        '.dsh-usage-curve-svg{width:100%;height:auto;display:block;overflow:visible;cursor:crosshair}',
+        '.dsh-usage-curve-line{fill:none;stroke:var(--dsw-alias-state-business-primary);stroke-width:2;stroke-linecap:round;pointer-events:none}',
+        '.dsh-usage-curve-area{fill:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);pointer-events:none}',
+        '.dsh-usage-curve-dot{fill:var(--dsw-alias-bg-layer-1);stroke:var(--dsw-alias-state-business-primary);stroke-width:1.6;pointer-events:none}',
+        '.dsh-usage-curve-dot.is-on{fill:var(--dsw-alias-state-business-primary)}',
+        '.dsh-usage-curve-rule{stroke:var(--dsw-alias-state-business-primary);stroke-width:1;stroke-dasharray:2 3;opacity:.5;pointer-events:none}',
+        '.dsh-usage-curve-x{font-size:10px;fill:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-variant-numeric:tabular-nums;pointer-events:none}',
+        '.dsh-usage-curve-hit{fill:transparent;pointer-events:all}',
+        // ── 今日明细(分模型):统一蓝底堆叠条 + 数值 ──────────
         '.dsh-usage-rows{display:flex;flex-direction:column;gap:8px}',
-        '.dsh-usage-row{display:flex;align-items:center;gap:12px}',
+        '.dsh-usage-row{display:flex;align-items:center;gap:12px;margin:0;padding:0;border:0;background:transparent;width:100%;text-align:left;font:inherit;cursor:default}',
         '.dsh-usage-rowlabel{flex:none;width:132px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
         '.dsh-usage-track{flex:1;min-width:0;height:10px;border-radius:5px;background:var(--dsw-alias-bg-base)}',
-        '.dsh-usage-bar{height:100%;border-radius:5px}',
-        '.dsh-usage-bar.lv1{background:var(--dsh-usage-lv1)}',
-        '.dsh-usage-bar.lv2{background:var(--dsh-usage-lv2)}',
-        '.dsh-usage-bar.lv3{background:var(--dsh-usage-lv3)}',
-        '.dsh-usage-bar.lv4{background:var(--dsh-usage-lv4)}',
+        '.dsh-usage-bar{display:flex;height:100%;border-radius:5px;overflow:hidden;background:var(--dsh-usage-seg-in)}',
+        '.dsh-usage-seg{flex:none;height:100%}',
+        '.dsh-usage-seg.is-in{background:var(--dsh-usage-seg-in)}',
+        '.dsh-usage-seg.is-cache{background:var(--dsh-usage-seg-cache)}',
+        '.dsh-usage-seg.is-out{background:var(--dsh-usage-seg-out)}',
+        '.dsh-usage-seglg{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 12px;font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));user-select:none}',
+        '.dsh-usage-seglg>span{display:inline-flex;align-items:center;gap:4px}',
+        '.dsh-usage-segdot{width:8px;height:8px;border-radius:2px;flex:none}',
+        '.dsh-usage-segdot.is-in{background:var(--dsh-usage-seg-in)}',
+        '.dsh-usage-segdot.is-cache{background:var(--dsh-usage-seg-cache)}',
+        '.dsh-usage-segdot.is-out{background:var(--dsh-usage-seg-out)}',
         '.dsh-usage-rowvalue{flex:none;width:76px;text-align:right;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}',
         '.dsh-usage-empty{padding:20px 0 8px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
         // ── 错误条 + 底部峰谷时钟 ───────────────────────────
@@ -139,7 +148,7 @@ window.__ModuleLoader__.load({
         '.dsh-usage-clock{font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}',
         '.dsh-usage-period{color:var(--dsw-alias-label-secondary)}',
         '.dsh-usage-note{margin-left:auto;text-align:right}',
-        '.dsh-usage-tip{position:fixed;z-index:50;pointer-events:none;padding:6px 8px;border-radius:8px;max-width:320px;overflow:hidden;text-overflow:ellipsis;background:var(--dsw-alias-tooltip-bg,rgba(30,32,38,.97));color:var(--dsw-alias-label-primary-inverted,var(--dsw-alias-label-primary-foreground,#f7f8fa));font-size:12px;line-height:16px;box-shadow:0 4px 16px var(--dsw-alias-bg-mask-2);white-space:nowrap}',
+        '.dsh-usage-tip{position:fixed;z-index:50;pointer-events:none;padding:6px 8px;border-radius:8px;max-width:280px;background:var(--dsw-alias-tooltip-bg,rgba(30,32,38,.97));color:var(--dsw-alias-label-primary-inverted,var(--dsw-alias-label-primary-foreground,#f7f8fa));font-size:12px;line-height:16px;box-shadow:0 4px 16px var(--dsw-alias-bg-mask-2);white-space:normal}',
         '.dsh-usage-tip-sub{margin-top:2px;font-size:11px;line-height:15px;opacity:.85}',
         'body[data-ds-dark-theme] .dsh-usage-tip{color:var(--dsw-alias-label-primary,#f9fafb)}',
       ].join('')
@@ -220,7 +229,7 @@ window.__ModuleLoader__.load({
         }
         return weeks
       }
-      // 用量相对峰值的四档分级(0 = 无用量),热力图/明细条共用
+      // 用量相对峰值的四档分级(0 = 无用量),热力图用
       function levelOf(tokens, max) {
         if (tokens <= 0 || max <= 0) return 0
         const r = tokens / max
@@ -229,10 +238,28 @@ window.__ModuleLoader__.load({
         if (r > 0.25) return 2
         return 1
       }
-      // 分项弹窗的第二行:输入/输出/缓存(无 detail 的旧 host 返回 null)
+      // 分项弹窗的第二行(无 detail 的旧 host 返回 null)
       function partsLine(parts) {
         if (parts === null || parts === undefined) return null
-        return '输入 ' + fmtTokens(parts.input) + ' · 输出 ' + fmtTokens(parts.output) + ' · 缓存 ' + fmtTokens(parts.cacheRead)
+        return '输入(未命中) ' + fmtTokens(parts.input)
+          + ' · 输入(命中缓存) ' + fmtTokens(parts.cacheRead)
+          + ' · 输出 ' + fmtTokens(parts.output)
+      }
+      // 弹窗跟鼠标:默认右下,贴边则翻到左/上,始终留 8px 边距
+      function placeTip(x, y, w, h) {
+        const gap = 14
+        let left = x + gap
+        let top = y + gap
+        if (left + w > window.innerWidth - 8) left = x - gap - w
+        if (left < 8) left = 8
+        if (top + h > window.innerHeight - 8) top = y - gap - h
+        if (top < 8) top = 8
+        return { left: Math.round(left), top: Math.round(top) }
+      }
+      function applyTipPos(el, x, y) {
+        const next = placeTip(x, y, el.offsetWidth, el.offsetHeight)
+        el.style.left = next.left + 'px'
+        el.style.top = next.top + 'px'
       }
       // 'provider/model' → 显示用短名(全名进悬浮弹窗)
       function modelLabel(key) {
@@ -299,7 +326,13 @@ window.__ModuleLoader__.load({
 
       // ── 近 7 天曲线:Catmull-Rom 转三次贝塞尔,平滑过点 ──────────
       function UsageCurve({ points, onTip, onTipEnd }) {
-        if (points.length < 2) return null
+        const [hoverKey, setHoverKey] = React.useState(null)
+        const ruleRef = React.useRef(null)
+        const hoverKeyRef = React.useRef(null)
+        const lineXRef = React.useRef(null)
+        if (!Array.isArray(points) || points.length < 2) {
+          return null
+        }
         const W = 360
         const H = 150
         const pad = { l: 10, r: 10, t: 14, b: 24 }
@@ -329,23 +362,79 @@ window.__ModuleLoader__.load({
         }
         const base = H - pad.b
         const area = d + ' L ' + pts[pts.length - 1].x.toFixed(1) + ' ' + base + ' L ' + pts[0].x.toFixed(1) + ' ' + base + ' Z'
+        const clientToViewX = (event) => {
+          const svg = event.currentTarget
+          const ctm = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null
+          if (ctm !== null && typeof ctm.inverse === 'function') {
+            const pt = svg.createSVGPoint()
+            pt.x = event.clientX
+            pt.y = event.clientY
+            return pt.matrixTransform(ctm.inverse()).x
+          }
+          const rect = svg.getBoundingClientRect()
+          if (rect.width <= 0) return pts[0].x
+          return ((event.clientX - rect.left) / rect.width) * W
+        }
+        const nearest = (viewX) => {
+          let best = pts[0]
+          let bestDist = Math.abs(viewX - pts[0].x)
+          for (let i = 1; i < pts.length; i += 1) {
+            const dist = Math.abs(viewX - pts[i].x)
+            if (dist < bestDist) {
+              best = pts[i]
+              bestDist = dist
+            }
+          }
+          return best
+        }
+        const showAt = (event) => {
+          const viewX = clientToViewX(event)
+          const p = nearest(viewX)
+          const lineX = Math.min(W - pad.r, Math.max(pad.l, viewX))
+          lineXRef.current = lineX
+          if (ruleRef.current !== null) {
+            ruleRef.current.setAttribute('x1', String(lineX))
+            ruleRef.current.setAttribute('x2', String(lineX))
+            ruleRef.current.setAttribute('visibility', 'visible')
+          }
+          if (hoverKeyRef.current !== p.key) {
+            hoverKeyRef.current = p.key
+            setHoverKey(p.key)
+          }
+          onTip(
+            event,
+            p.key + ' · ' + (p.tokens > 0 ? fmtTokens(p.tokens) + ' tokens' : '无用量'),
+            partsLine(p.parts)
+          )
+        }
+        const hideAt = () => {
+          hoverKeyRef.current = null
+          lineXRef.current = null
+          if (ruleRef.current !== null) ruleRef.current.setAttribute('visibility', 'hidden')
+          setHoverKey(null)
+          onTipEnd()
+        }
         const children = [
           React.createElement('path', { key: 'area', className: 'dsh-usage-curve-area', d: area }),
           React.createElement('path', { key: 'line', className: 'dsh-usage-curve-line', d }),
         ]
+        children.push(React.createElement('line', {
+          key: 'rule',
+          ref: ruleRef,
+          className: 'dsh-usage-curve-rule',
+          x1: lineXRef.current === null ? pts[0].x : lineXRef.current,
+          x2: lineXRef.current === null ? pts[0].x : lineXRef.current,
+          y1: pad.t,
+          y2: base,
+          visibility: hoverKey === null ? 'hidden' : 'visible',
+        }))
         for (const p of pts) {
           children.push(React.createElement('circle', {
             key: p.key,
-            className: 'dsh-usage-curve-dot',
+            className: 'dsh-usage-curve-dot' + (hoverKey === p.key ? ' is-on' : ''),
             cx: p.x,
             cy: p.y,
-            r: 3.5,
-            onMouseEnter: (event) => onTip(
-              event,
-              p.key + ' · ' + (p.tokens > 0 ? fmtTokens(p.tokens) + ' tokens' : '无用量'),
-              partsLine(p.parts)
-            ),
-            onMouseLeave: onTipEnd,
+            r: hoverKey === p.key ? 5 : 3.5,
           }))
         }
         for (const p of pts) {
@@ -357,11 +446,22 @@ window.__ModuleLoader__.load({
             textAnchor: 'middle',
           }, p.label))
         }
+        children.push(React.createElement('rect', {
+          key: 'hit',
+          className: 'dsh-usage-curve-hit',
+          x: 0,
+          y: 0,
+          width: W,
+          height: H,
+        }))
         return React.createElement('svg', {
           className: 'dsh-usage-curve-svg',
           viewBox: '0 0 ' + W + ' ' + H,
           role: 'img',
           'aria-label': '近 7 天用量曲线',
+          onMouseEnter: showAt,
+          onMouseMove: showAt,
+          onMouseLeave: hideAt,
         }, children)
       }
 
@@ -376,8 +476,18 @@ window.__ModuleLoader__.load({
         const [tip, setTip] = React.useState(null)
         const [tick, setTick] = React.useState(0)
         const pickerRef = React.useRef(null)
+        const tipRef = React.useRef(null)
+        const tipStateRef = React.useRef(null)
+        const tipPosRef = React.useRef({ x: 0, y: 0 })
         const dataRef = React.useRef(null)
         dataRef.current = data
+        tipStateRef.current = tip
+        const hideTip = () => setTip(null)
+        React.useLayoutEffect(() => {
+          if (tip === null || tipRef.current === null) return
+          applyTipPos(tipRef.current, tipPosRef.current.x, tipPosRef.current.y)
+          tipRef.current.style.visibility = 'visible'
+        })
 
         // 拉取:月份切换 / 手动刷新 / 60s 自动。查看月份已有数据时静默
         // 刷新(保留旧数不闪骨架);无数据时失败才进错误态。
@@ -475,19 +585,18 @@ window.__ModuleLoader__.load({
 
         const showTip = (event, title, sub) => {
           const rect = event.currentTarget.getBoundingClientRect()
-          const width = 280
-          const left = Math.min(
-            Math.max(rect.left + rect.width / 2, width / 2 + 8),
-            window.innerWidth - width / 2 - 8
-          )
-          setTip({
-            title,
-            sub: sub ?? null,
-            left: Math.round(left),
-            top: Math.round(Math.max(rect.top - 8, 28)),
-          })
+          const keyed = event.clientX !== 0 || event.clientY !== 0
+          const x = keyed ? event.clientX : rect.left + rect.width / 2
+          const y = keyed ? event.clientY : rect.top
+          tipPosRef.current = { x, y }
+          const nextSub = sub ?? null
+          const held = tipStateRef.current
+          if (held !== null && held.title === title && held.sub === nextSub) {
+            if (tipRef.current !== null) applyTipPos(tipRef.current, x, y)
+            return
+          }
+          setTip({ title, sub: nextSub })
         }
-        const hideTip = () => setTip(null)
 
         // ── 页头:标题 + 月份导航 + 刷新 ──────────────────────
         const monthButtons = []
@@ -656,6 +765,7 @@ window.__ModuleLoader__.load({
               className: 'dsh-usage-cell' + (level > 0 ? ' lv' + level : '') + (key === todayStr ? ' is-today' : ''),
               'aria-label': tipTitle,
               onMouseEnter: (event) => showTip(event, tipTitle, tipSub),
+              onMouseMove: (event) => showTip(event, tipTitle, tipSub),
               onMouseLeave: hideTip,
               onFocus: (event) => showTip(event, tipTitle, tipSub),
               onBlur: hideTip,
@@ -768,25 +878,63 @@ window.__ModuleLoader__.load({
         } else {
           todayBody = React.createElement('div', { key: 'rows', className: 'dsh-usage-rows' },
             modelRows.map((row) => {
-              const level = levelOf(row.total, modelMax)
               const pct = Math.max(2, Math.round((row.total / modelMax) * 100))
-              return React.createElement('div', { key: row.key, className: 'dsh-usage-row' }, [
+              const input = typeof row.input === 'number' ? row.input : 0
+              const cacheRead = typeof row.cacheRead === 'number' ? row.cacheRead : 0
+              const output = typeof row.output === 'number' ? row.output : 0
+              const partsSum = input + cacheRead + output
+              const segs = []
+              const pushSeg = (key, cls, n) => {
+                if (n <= 0 || partsSum <= 0) return
+                segs.push(React.createElement('span', {
+                  key,
+                  className: 'dsh-usage-seg ' + cls,
+                  style: { width: ((n / partsSum) * 100).toFixed(2) + '%' },
+                }))
+              }
+              pushSeg('in', 'is-in', input)
+              pushSeg('cache', 'is-cache', cacheRead)
+              pushSeg('out', 'is-out', output)
+              const rowTip = row.key + ' · ' + fmtTokens(row.total) + ' tokens'
+              return React.createElement('button', {
+                key: row.key,
+                type: 'button',
+                className: 'dsh-usage-row',
+                'aria-label': rowTip,
+                onMouseEnter: (event) => showTip(event, row.key, partsLine(row)),
+                onMouseMove: (event) => showTip(event, row.key, partsLine(row)),
+                onMouseLeave: hideTip,
+                onFocus: (event) => showTip(event, row.key, partsLine(row)),
+                onBlur: hideTip,
+              }, [
                 React.createElement('div', {
                   key: 'd',
                   className: 'dsh-usage-rowlabel',
                   title: row.key,
-                  onMouseEnter: (event) => showTip(event, row.key, partsLine(row)),
-                  onMouseLeave: hideTip,
                 }, displayName(row.key)),
                 React.createElement('div', { key: 't', className: 'dsh-usage-track' },
                   React.createElement('div', {
-                    className: 'dsh-usage-bar lv' + level,
+                    className: 'dsh-usage-bar',
                     style: { width: pct + '%' },
-                  })),
+                  }, segs)),
                 React.createElement('div', { key: 'v', className: 'dsh-usage-rowvalue' }, fmtTokens(row.total)),
               ])
             }))
         }
+        const todayLegend = modelRows.length === 0 ? null : React.createElement('div', { key: 'lg', className: 'dsh-usage-seglg' }, [
+          React.createElement('span', { key: 'in' }, [
+            React.createElement('span', { key: 'i', className: 'dsh-usage-segdot is-in' }),
+            '输入(未命中)',
+          ]),
+          React.createElement('span', { key: 'cache' }, [
+            React.createElement('span', { key: 'i', className: 'dsh-usage-segdot is-cache' }),
+            '输入(命中缓存)',
+          ]),
+          React.createElement('span', { key: 'out' }, [
+            React.createElement('span', { key: 'i', className: 'dsh-usage-segdot is-out' }),
+            '输出',
+          ]),
+        ])
         const todayPanel = React.createElement('div', { key: 'today', className: 'dsh-usage-panel' }, [
           React.createElement('div', { key: 'head', className: 'dsh-usage-panel-head' }, [
             React.createElement('span', { key: 't', className: 'dsh-usage-panel-title' }, '今日明细'),
@@ -794,6 +942,7 @@ window.__ModuleLoader__.load({
               ? null
               : React.createElement('span', { key: 's', className: 'dsh-usage-panel-side' }, todaySide),
           ]),
+          todayLegend,
           todayBody,
         ])
 
@@ -823,9 +972,10 @@ window.__ModuleLoader__.load({
 
         const tipNode = tip === null ? null : React.createElement('div', {
           key: 'tip',
+          ref: tipRef,
           className: 'dsh-usage-tip',
           role: 'tooltip',
-          style: { left: tip.left, top: tip.top, transform: 'translate(-50%, -100%)' },
+          style: { visibility: 'hidden', left: 0, top: 0 },
         }, [
           React.createElement('div', { key: 't' }, tip.title),
           tip.sub === null
