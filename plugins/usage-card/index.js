@@ -1,8 +1,8 @@
 /**
  * dizzy-dsh-usage-card 插件(Host 端)
  *
- * 职责:聚合本地会话日志(~/.dsh/sessions)的每日 token 用量,
- *      提供 GET /dizzy/usage?month=YYYY-MM —— 用量视图的数据源。
+ * 职责:聚合本地会话日志(sessionRoot,默认 ~/.dsh/sessions)的每日 token
+ *      用量,提供 GET /dizzy/usage?month=YYYY-MM —— 用量视图的数据源。
  *
  * DeepSeek 官方 API 没有按天用量接口,唯一官方数据源是每次响应的
  * usage 字段 —— DSH 已把它落进会话日志(session.jsonl.zstd 的
@@ -21,11 +21,17 @@
  *     },
  *   }
  *
- * 文件是「多帧 zstd 拼接」:每次 append 写一帧。帧边界按 zstd 规范
- * 遍历 block header 得到(不依赖 FCS 字段),逻辑复刻自
- * @deepseek-ai/dsh-session-persistence-jsonl 的 scanZstdFrames;
- * 逐帧用 node:zlib 的 zstdDecompressSync 解压(本机 Node ≥ 22.14)。
- * 插件不能 import 该包(profile 的 node_modules 里没有 @deepseek-ai/*)。
+ * 配置化(与 dsh 官方插件同一模式):
+ *   - Config(schemastery)声明可调字段(sessionRoot / scanThrottleMs),
+ *     loader 挂载时校验并填默认值
+ *   - settings 服务在场时注册命名空间 'dizzy-usage-card':settings.yaml
+ *     同名分节热重载,watch 到变化即重置缓存、下次请求按新配置重扫
+ *
+ * 生命周期:全部可变聚合状态都在 apply 内(属于本 fiber);模块级只保留
+ * 纯函数。文件是「多帧 zstd 拼接」:每次 append 写一帧,帧边界按 zstd
+ * 规范遍历 block header 得到(不依赖 FCS 字段),逻辑复刻自
+ * @deepseek-ai/dsh-session-persistence-jsonl 的 scanZstdFrames;逐帧用
+ * node:zlib 的 zstdDecompressSync 解压(本机 Node ≥ 22.14)。
  *
  * Client 半区见 client.js:会话视图「用量」Tab(conversation.view)。
  */
@@ -33,13 +39,41 @@ import { readdir, stat, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
+import Schema from 'schemastery'
+
+/** 可调配置(loader 挂载时校验;settings 命名空间复用同一 schema)。 */
+const Config = Schema.object({
+  /** 会话日志根目录(DSH_HOME 非默认时在此覆盖)。 */
+  sessionRoot: Schema.string().default(join(homedir(), '.dsh', 'sessions')),
+  /** 增量扫描节流间隔(毫秒),1s ~ 10min。 */
+  scanThrottleMs: Schema.number().min(1000).max(600000).default(30000),
+})
+
+/** settings.yaml 中本插件的命名空间(规则同官方:/^[a-z][a-z0-9-]*$/)。 */
+const SETTINGS_NS = 'dizzy-usage-card'
 
 const ZSTD_MAGIC = 4247762216
-const SESSION_ROOT = join(homedir(), '.dsh', 'sessions')
-const fileStates = new Map() // path -> { key, days: Map<'YYYY-MM-DD', DayAgg> }
-let dayTotals = new Map()    // 'YYYY-MM-DD' -> DayAgg
-let scanAt = 0
-let scanErrors = 0
+
+/**
+ * 同源校验:跨站浏览器请求(sec-fetch-site: cross-site 或 Origin 与 Host
+ * 不符)拒绝;无 Origin 的非浏览器客户端(curl 等)放行。
+ */
+function isSameOriginRequest(req) {
+  const fetchSite = req.headers['sec-fetch-site']
+  if (fetchSite === 'cross-site') return false
+  const origin = req.headers.origin
+  if (origin === undefined) return true
+  const host = req.headers.host
+  if (host === undefined) return false
+  try {
+    const parsed = new URL(origin)
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host
+  } catch {
+    return false
+  }
+}
+
+// ── 纯函数(无状态,模块级)──────────────────────────────────────────────
 
 // DayAgg = { input, output, cacheRead, models: Map<modelKey, {input, output, cacheRead}> }
 function emptyAgg() {
@@ -164,81 +198,111 @@ function parseSessionText(text) {
   return days
 }
 
-// 增量扫描:只重读 (mtime, size) 变化的文件,其余沿用缓存的分日结果
-async function refreshUsage() {
-  if (Date.now() - scanAt < 30000) return
-  const totals = new Map()
-  let errors = 0
-  const seen = new Set()
-  const mergeInto = (day, agg) => {
-    let target = totals.get(day)
-    if (target === undefined) {
-      target = emptyAgg()
-      totals.set(day, target)
-    }
-    mergeAgg(target, agg)
-  }
-  try {
-    for (const area of await readdir(SESSION_ROOT)) {
-      const areaPath = join(SESSION_ROOT, area)
-      let areaStat
-      try {
-        areaStat = await stat(areaPath)
-      } catch {
-        continue
-      }
-      if (!areaStat.isDirectory()) continue
-      for (const sessionId of await readdir(areaPath)) {
-        for (const name of ['session.jsonl.zstd', 'session.jsonl']) {
-          const file = join(areaPath, sessionId, name)
-          let fileStat
-          try {
-            fileStat = await stat(file)
-          } catch {
-            continue
-          }
-          if (!fileStat.isFile()) continue
-          seen.add(file)
-          const key = `${fileStat.mtimeMs}:${fileStat.size}`
-          const cached = fileStates.get(file)
-          if (cached !== undefined && cached.key === key) {
-            for (const [day, agg] of cached.days) mergeInto(day, agg)
-            break
-          }
-          try {
-            const days = await parseSessionFile(file)
-            fileStates.set(file, { key, days })
-            for (const [day, agg] of days) mergeInto(day, agg)
-          } catch {
-            errors += 1
-          }
-          break
-        }
-      }
-    }
-  } catch (err) {
-    // 顶层失败(如 SESSION_ROOT 不可读):dayTotals 保留上次良好快照,
-    // 错误计数计入本次已累积 errors + 本次顶层失败
-    scanErrors = errors + 1
-    scanAt = Date.now()
-    return
-  }
-  for (const file of fileStates.keys()) {
-    if (!seen.has(file)) fileStates.delete(file)
-  }
-  dayTotals = totals
-  scanAt = Date.now()
-  scanErrors = errors
-}
-
 export default {
   name: 'dizzy-dsh-usage-card',
   inject: ['webServer'],
-  apply(ctx) {
+  Config,
+  apply(ctx, config) {
+    // settings 命名空间:schema 默认值 ← entry config(base) ← settings.yaml
+    // 用户层;settings 服务不在场时退回已校验的 entry config,行为不变。
+    const settings = ctx.get('settings')
+    const scope = settings === undefined
+      ? undefined
+      : settings.register(SETTINGS_NS, Config, { base: config })
+    const current = () => (scope === undefined ? config : scope.get())
+
+    // 全部可变聚合状态都属于本 fiber:卸载/重挂后从干净的缓存重新开始。
+    const fileStates = new Map() // path -> { key, days: Map<'YYYY-MM-DD', DayAgg> }
+    let dayTotals = new Map()    // 'YYYY-MM-DD' -> DayAgg
+    let scanAt = 0
+    let scanErrors = 0
+
+    // 增量扫描:只重读 (mtime, size) 变化的文件,其余沿用缓存的分日结果
+    async function refreshUsage() {
+      const cfg = current()
+      if (Date.now() - scanAt < cfg.scanThrottleMs) return
+      const totals = new Map()
+      let errors = 0
+      const seen = new Set()
+      const mergeInto = (day, agg) => {
+        let target = totals.get(day)
+        if (target === undefined) {
+          target = emptyAgg()
+          totals.set(day, target)
+        }
+        mergeAgg(target, agg)
+      }
+      try {
+        for (const area of await readdir(cfg.sessionRoot)) {
+          const areaPath = join(cfg.sessionRoot, area)
+          let areaStat
+          try {
+            areaStat = await stat(areaPath)
+          } catch {
+            continue
+          }
+          if (!areaStat.isDirectory()) continue
+          for (const sessionId of await readdir(areaPath)) {
+            for (const name of ['session.jsonl.zstd', 'session.jsonl']) {
+              const file = join(areaPath, sessionId, name)
+              let fileStat
+              try {
+                fileStat = await stat(file)
+              } catch {
+                continue
+              }
+              if (!fileStat.isFile()) continue
+              seen.add(file)
+              const key = `${fileStat.mtimeMs}:${fileStat.size}`
+              const cached = fileStates.get(file)
+              if (cached !== undefined && cached.key === key) {
+                for (const [day, agg] of cached.days) mergeInto(day, agg)
+                break
+              }
+              try {
+                const days = await parseSessionFile(file)
+                fileStates.set(file, { key, days })
+                for (const [day, agg] of days) mergeInto(day, agg)
+              } catch {
+                errors += 1
+              }
+              break
+            }
+          }
+        }
+      } catch (err) {
+        // 顶层失败(如 sessionRoot 不可读):dayTotals 保留上次良好快照,
+        // 错误计数计入本次已累积 errors + 本次顶层失败
+        scanErrors = errors + 1
+        scanAt = Date.now()
+        return
+      }
+      for (const file of fileStates.keys()) {
+        if (!seen.has(file)) fileStates.delete(file)
+      }
+      dayTotals = totals
+      scanAt = Date.now()
+      scanErrors = errors
+    }
+
+    // 配置热应用:日志根或节流间隔变化 → 重置缓存,下次请求按新配置全量重扫。
+    const stopWatch = scope === undefined
+      ? () => {}
+      : scope.watch(() => {
+          fileStates.clear()
+          dayTotals = new Map()
+          scanAt = 0
+        })
+
     const stopUsageRoute = ctx.webServer.register({
       kind: 'exact',
       path: '/dizzy/usage',
       handler: async (req, res) => {
+        if (!isSameOriginRequest(req)) {
+          res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ error: 'forbidden: cross-site request' }))
+          return
+        }
         const url = new URL(req.url ?? '/', 'http://dizzy.local')
         const month = url.searchParams.get('month') ?? ''
         if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -309,6 +373,7 @@ export default {
     })
 
     return () => {
+      stopWatch()
       stopUsageRoute()
     }
   },
