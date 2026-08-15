@@ -193,7 +193,8 @@ export default {
 
 ### 可注入服务(先查询再使用)
 
-写代码前用 `cordis_inspect_query`(Host Service provider)确认签名:
+写代码前用 `cordis_inspect_query`(Host Service provider)确认签名
+(这些 inspect 工具只在官方「创造模式」会话里;DIY 模式不挂 `tool-cordis`):
 
 ```text
 Service.listService { }               → 服务目录
@@ -284,7 +285,7 @@ window.__ModuleLoader__.load({
     const apply = (ctx) => {
       const slots = ctx.get('slots')
       if (slots === undefined) return
-      // 注册 Slot UI(先 cordis_inspect_query 查 Slots.listSubTree)
+      // 注册 Slot UI(创造模式里先 cordis_inspect_query 查 Slots.listSubTree)
       slots.inject('conversation.input.right', () => slots.register(
         { name: 'conversation.input.right', id: 'deepseek-balance', label: 'DeepSeek 余额' },
         (props) => React.createElement(Badge, props)
@@ -310,7 +311,8 @@ const timer = setInterval(load, 60000)
 
 ### Slot 选择
 
-用 `cordis_inspect_query`(Client Slots provider)`listSubTree` 查实时插槽树,
+用 `cordis_inspect_query`(Client Slots provider)`listSubTree` 查实时插槽树
+(同样只在创造模式;DIY 对照本仓库已有 client 插件即可),
 再对精确 root 查完整契约(ownerProps / registration / occupants)。常用:
 
 | Slot | 用途 |
@@ -338,8 +340,8 @@ const timer = setInterval(load, 60000)
 }
 ```
 
-如果新 UI 依赖其他 client 包的 Slot/服务,按需追加(先查
-`cordis_inspect_list` 确认 client 服务是否存在)。
+如果新 UI 依赖其他 client 包的 Slot/服务,按需追加(创造模式里先查
+`cordis_inspect_list` 确认 client 服务是否存在;DIY 对照已有 client 插件)。
 
 ---
 
@@ -528,7 +530,11 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 ## 9. 与动态插件 / agent preset 的协作
 
 - **动态插件**仍可用于:临时调试、原型验证、需要审批流程的交互式工具
-  (`tool.view.cordis` 面板)。成熟后固化进本仓库。
+  (`tool.view.cordis` 面板)。成熟后固化进本仓库。工具集只挂在官方
+  「创造模式」(`cordis` preset 的 `tool-cordis`);`cordisInspect` 是进程
+  单例,第二个含该行的 preset standing mount 会抛 `already registered`。
+- **DIY 模式**(`presets/diy/` → `~/.dsh/.agent-presets/diy`):持久造物
+  preset,不挂 `tool-cordis`,与创造模式同进程共存。动态探测请另开创造模式。
 - **agent preset**(`~/.dsh/.agent-presets/`):管理 persona、每会话工具集、
   技能目录。本仓库是 Host 平面;两者互补,不冲突。
 - 本仓库插件发布服务时,服务名全局唯一(进程级注册表),避免与
@@ -537,4 +543,4 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 ---
 
 *文档版本:1.0(2026-08)。所有机制均经实际验证;修改架构前请先在
-`cordis_inspect_query` 确认当前运行时契约,再更新本文档。*
+创造模式用 `cordis_inspect_query` 确认当前运行时契约,再更新本文档。*

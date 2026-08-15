@@ -1,0 +1,3 @@
+name: DIY 模式
+description: 在 DSH 上做持久造物：Dizzy-DSH 子包 / agent preset / 技能。不挂动态插件工具集（那是官方创造模式的事），可与创造模式同进程共存。内置 dizzy-diy 主技能与官方创作手册快照。
+order: 6

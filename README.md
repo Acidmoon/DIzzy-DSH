@@ -27,6 +27,12 @@
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
 |  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.5.2) |
 
+### 自有预设(agent preset)
+
+| 预设 | 能力 | 怎么用 | 状态 |
+|---|---|---|---|
+|  **DIY 模式** `diy` | 持久造物：合集子包 / agent preset / 技能。不挂 `tool-cordis`，与官方「创造模式」解耦，两边可同进程共存 | 运行 `scripts/install-diy-preset.ps1` 装到 `~/.dsh/.agent-presets/diy`，重启后新会话选「DIY 模式」。动态插件探测请另开创造模式 | ✅ 稳定 |
+
 ### 收录的第三方预设(agent preset)
 
 | 预设 | 能力 | 怎么用 | 状态 |
@@ -88,6 +94,22 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 > 收录的第三方插件快照更新走独立流程(跟随上游 + 补丁重放 + 适配检查):
 > 见 [docs/THIRD-PARTY-UPDATE.md](docs/THIRD-PARTY-UPDATE.md)。
+
+### 启用 DIY 模式预设(可选)
+
+`diy` 是 **agent preset,不走 `dsh plugin add` 机制**,安装 = 把仓库
+`presets/diy/` 复制到用户预设根,并从本机 DSH 部署同步官方创作手册快照:
+
+```powershell
+# 4. (可选)安装 DIY 模式预设(持久造物,与创造模式解耦)
+powershell -ExecutionPolicy Bypass -File scripts\install-diy-preset.ps1
+```
+
+脚本幂等:目标已存在且文件齐全时跳过仓库文件(官方快照仍刷新);缺文件时补全;
+加 `-Force` 覆盖为仓库版。装完**重启 dsh web**,新会话的预设下拉选择「DIY 模式」。
+
+> ⚠️ DIY 模式没有 `cordis_define` / `cordis_run`。动态插件探测请另开官方
+> 「创造模式」。不要在已经产生内容的会话中途切换 preset。
 
 ### 启用 Anchored Standard 预设(可选)
 
