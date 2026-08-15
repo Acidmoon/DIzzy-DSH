@@ -22,6 +22,7 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 无 |
 | dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 有:exposure.js 核心工具常驻 |
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | e1277b5 | 无 |
+| dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local |
 
 各上游形态备注:
 
@@ -36,6 +37,9 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
   上游基于 rc.5/47f9438 开发,收录时已对照 rc.6 核对:agent.cordis.yml 全部 entry 与官方
   standard 一致(仅多 `tool-bootstrap` 行、persona 用 minimal 风格),`system-prompt/assemble`
   事件与 `systemPrompt` inject 在 rc.6 均存在;后续更新仍应按「适配检查」第 2 项重核。
+- **dsh-subscription-auth**:已发布 npm(0.2.1),合集走仓库快照因为有本地补丁(usage 钳零 /
+  投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer)。更新后必须
+  重放 `patches/dsh-subscription-auth-local.patch`。
 
 ## 一次性迁移(未执行;下次同步前完成)
 
@@ -69,6 +73,7 @@ node scripts/reapply-third-party-patches.mjs
 git subtree pull --squash --prefix=third-party/dsh-genui https://github.com/omdsh-dev/dsh-genui main
 git subtree pull --squash --prefix=third-party/dsh-notification https://github.com/omdsh-dev/dsh-notification main
 git subtree pull --squash --prefix=third-party/dsh-vision-toolkit https://github.com/Anionex/dsh-vision-toolkit main
+git subtree pull --squash --prefix=third-party/dsh-subscription-auth https://github.com/Khellendros97/dsh-subscription-auth main
 
 # 2. 重放补丁(上游已吸收则删除对应 .patch;冲突则手动适配)
 node scripts/reapply-third-party-patches.mjs
@@ -101,6 +106,7 @@ node scripts/reapply-third-party-patches.mjs
 | dsh-genui | 新会话让模型输出 dsh-ui 围栏 → 正常渲染;工具目录含 `render_ui` |
 | dsh-vision-toolkit | 工具目录含 `vision_glance` 等 4 个常驻工具;加载 skill 后出现全部 |
 | dsh-notification | 设置 > 通知 出现设置段;授权后测试通知可弹 |
+| dsh-subscription-auth | 设置 > 订阅服务 列出四个渠道;`GET /subscription-auth/providers` 返回 JSON;已登录渠道出现在模型选择器 |
 | 全部 | host 日志无挂载报错(duplicate entry / 缺 service) |
 
 ## 回滚

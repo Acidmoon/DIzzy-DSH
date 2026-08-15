@@ -1,0 +1,6 @@
+# 依赖（本机 junction 指向 dsh 运行时的 node_modules，不入库）
+node_modules/
+
+# 日志与系统文件
+*.log
+.DS_Store

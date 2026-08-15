@@ -22,16 +22,19 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
 │   └── node_modules/
 │       ├── dizzy-dsh → Junction → store 快照(file: 安装时生成)
 │       ├── dizzy-dsh-balance / dizzy-dsh-usage-card /
-│       │   dizzy-dsh-agent-instructions   # 自有子包(随主包 file: 依赖安装)
-│       └── dsh-better-sidebar / @dsh-external/...  # 收录的第三方
+│       │   dizzy-dsh-agent-instructions / dizzy-dsh-kimi-webbridge
+│       └── dsh-better-sidebar / dsh-subscription-auth / @dsh-external/...
 └── 仓库(本目录)
     ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/* + 第三方)
     ├── cordis.patch.yml      # bundle 插件层(insert 条目,全部插件在此挂载)
     ├── index.js              # 聚合根空插件(无功能)
-    └── plugins/              # 自有插件合集
-        ├── balance/          #   dizzy-dsh-balance:package.json + index.js(Host) + client.js(UI)
-        ├── usage-card/       #   dizzy-dsh-usage-card:同上
-        └── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
+    ├── plugins/              # 自有插件合集
+    │   ├── balance/          #   dizzy-dsh-balance:package.json + index.js(Host) + client.js(UI)
+    │   ├── usage-card/       #   dizzy-dsh-usage-card:同上
+    │   ├── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
+    │   └── kimi-webbridge/   #   dizzy-dsh-kimi-webbridge:Host 工具集
+    └── third-party/          # 收录的第三方快照
+        └── dsh-subscription-auth/ # OAuth 订阅登录(上游快照 + 本地补丁)
 ```
 
 ### 安装与生命周期
@@ -46,9 +49,9 @@ dsh plugin --profile web add file:<仓库绝对路径>
    自管依赖,已实测:link 安装的包其依赖一律不进 lockfile/node_modules),
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
-2. 主插件 `package.json` 的 `dependencies` 声明三个自有子包
-   (`file:./plugins/*`)与两个收录的第三方插件(`dsh-better-sidebar@0.10.3`
-   走 registry、`@dsh-external/dsh-vision-toolkit` 走仓库快照)—— `file:`
+2. 主插件 `package.json` 的 `dependencies` 声明自有子包
+   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.10.3`
+   走 registry、其余含 `dsh-subscription-auth` 走仓库快照)—— `file:`
    安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
    **遍历 profile 顶层 `dependencies`**,凡是解析到的包声明了
@@ -56,7 +59,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
    主插件一个,子包与第三方由主插件 patch 挂载,见第 4 步;
    子包不带 `dsh.bundle.patch`,add 时会提示 "plain dependency",属预期)
 4. 下次启动 dsh web 时,loader 读取主插件 bundle 的 `cordis.patch.yml`,
-   其中的 `- insert:` 条目列出全部插件行(三个自有子包 + 两个第三方),
+   其中的 `- insert:` 条目列出全部插件行(自有子包 + 收录的第三方),
    entry 的 name 是包名,从 profile 顶层 node_modules 按包加载:
    - Host 半区:`import('<包名>')` → 包 `main`(index.js)→ 挂载插件
    - Client 半区:`client-modules` 按 entry 的包名扫描 `dsh.client` 声明 +
@@ -79,6 +82,8 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-balance -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-usage-card -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-kimi-webbridge -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -408,12 +413,14 @@ git add -A && git commit -m "feat: ..." && git push
 
 ### 验证清单
 
-- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现五个
-      entry(balance / usage-card / dizzy-agent-instructions / better-sidebar /
-      dsh-vision-toolkit)
+- [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现全部
+      entry(balance / usage-card / dizzy-agent-instructions / kimi-webbridge /
+      dsh-subscription-auth / better-sidebar / dsh-vision-toolkit / genui /
+      dsh-notification)
 - [ ] Host:每个子包可加载且 name/inject 正确:
       `node --input-type=module -e "import('dizzy-dsh-balance')"`,
-      `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`
+      `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`、
+      `import('dizzy-dsh-kimi-webbridge')`、`import('dsh-subscription-auth')`
 - [ ] 收录的第三方可加载(依赖齐全):
       `import('dsh-better-sidebar')` 与
       `import('@dsh-external/dsh-vision-toolkit')` 均不报
@@ -506,6 +513,8 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现三个 entry 行
 | `duplicate loader entry id: agent-instructions` | patch 里用了官方已占用的 entry id | 改成 `dizzy-agent-instructions`;官方 id 即使用 `disabled: true` 也仍占着 |
 | `single slot "conversation.session.header" already has a registration at priority 0` | 误占宿主 single 槽 | 改挂 `conversation.session.header.utilities`(list);不要用换 priority 去 shadow 整条页头 |
 | `corrupt Zstandard session log: first frame is not exactly one header line` | 某份 `session.jsonl.zstd` 的第一帧明文不是单独一行 header(常见于把多帧日志解压后再一次性压回);官方 workspace `list()` 对这类文件零容忍,整棵插件树起不来。**不是** Dizzy-DSH 插件运行时逻辑错误 | 从仓库根跑 `node scripts/repair-zstd-header-frame.mjs` 先 dry-run(只报 `session.jsonl.zstd`,不改盘);确认 `actionable` 后加 `--apply`。解压明文与 `.bak` 完全一致才还原多帧备份,否则拆成「header 一帧 + 其余一帧」(能过 list,不等于恢复官方逐批追加的帧布局)。空文件/撕坏首帧官方会跳过,脚本也 leave,除非旁边有可用 `.bak`。修完仍可能因同目录残留 `session.jsonl`、重复 session id、header 路径对不上而起不来 |
+| `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0` | 订阅插件(Kimi Anthropic)曾把净增量 `input_tokens` 再减 cache,写出负 usage;DSH tokenUsage schema 非负校验会让 `session.history` 整页失败 | 已在 `third-party/dsh-subscription-auth` 写入侧 `mapUsage` 钳零,读路径 `projection-guard` 按 unit 钳非负(本地补丁,见 THIRD-PARTY-PATCHES.md)。不要改 DSH 内核。旧日志仍炸则换新会话;改完重启 `dsh --profile web` |
+| `duplicate loader entry id: dsh-subscription-auth` | profile 的 `cordis.patch.yml` 仍单独 insert 了试装行,与合集 bundle patch 撞 id | 删掉 `~/.dsh/profiles/web/cordis.patch.yml` 里那条 insert,并去掉指向仓库外的 junction |
 
 ---
 

@@ -1,0 +1,68 @@
+{
+  "name": "dsh-subscription-auth",
+  "version": "0.2.1",
+  "description": "订阅会员 OAuth 登录（ChatGPT 等）：配置中心「订阅服务」页登录/注销，自动发现订阅模型列表，按登录状态注册提供商，支持思考强度选择",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khellendros97/dsh-subscription-auth.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": { "default": "./lib/index.js" },
+    "./client": { "types": "./lib/types/client.d.ts", "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "dsh.plugin.json",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun scripts/build-bun.mjs",
+    "prepublishOnly": "bun scripts/build-bun.mjs",
+    "test": "node tests/lib-check.mjs && node tests/apply-wiring.mjs && node tests/reasoning-wire.mjs"
+  },
+  "license": "BSD-3-Clause",
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.0.1"
+  },
+  "dshx": {
+    "contributes": { "tools": [], "skills": [] }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true }
+  },
+  "dependencies": {
+    "undici": "8.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

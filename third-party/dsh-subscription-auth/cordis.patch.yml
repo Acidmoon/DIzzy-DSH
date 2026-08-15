@@ -1,0 +1,19 @@
+# dsh-subscription-auth bundle patch
+#
+# This file is the `dsh.bundle.patch` layer of the published npm package: when
+# the plugin is installed through the official CLI —
+#
+#   dsh plugin --profile <name> add dsh-subscription-auth@<version>
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages
+# and, seeing this declaration, appends `dsh-subscription-auth` to the bundle
+# stack. The profile boot then merges THIS patch (a single `insert` of the
+# plugin row) exactly like a manual cordis.patch.yml mount line. No profile
+# file edits needed — one command installs and mounts.
+#
+# If the profile still carries a manual mount line or a node_modules junction
+# for this plugin, remove them before switching to the bundle channel to
+# avoid double-mounting (two Node halves, two settings pages).
+- insert:
+    - id: dsh-subscription-auth
+      name: 'dsh-subscription-auth'

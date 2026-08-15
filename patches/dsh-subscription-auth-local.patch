@@ -1,0 +1,660 @@
+diff --git a/third-party/dsh-subscription-auth/package.json b/third-party/dsh-subscription-auth/package.json
+index d7282d2..d3583d9 100644
+--- a/third-party/dsh-subscription-auth/package.json
++++ b/third-party/dsh-subscription-auth/package.json
+@@ -53,13 +53,14 @@
+     "@deepseek-ai/cordis": "^4.0.1",
+     "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+     "@deepseek-ai/dsh-credentials": "^0.0.1-rc.1",
+-    "@deepseek-ai/dsh-settings": "^0.0.1-rc.1"
++    "@deepseek-ai/dsh-settings": "^0.0.1-rc.1",
++    "@deepseek-ai/schemastery": "^3.18.1"
+   },
+   "peerDependenciesMeta": {
+     "@deepseek-ai/cordis": { "optional": true }
+   },
+   "dependencies": {
+-    "@deepseek-ai/schemastery": "^3.18.1"
++    "undici": "8.10.0"
+   },
+   "devDependencies": {
+     "typescript": "^5.9.0"
+diff --git a/third-party/dsh-subscription-auth/src/index.ts b/third-party/dsh-subscription-auth/src/index.ts
+index 75c1861..c2efdf4 100644
+--- a/third-party/dsh-subscription-auth/src/index.ts
++++ b/third-party/dsh-subscription-auth/src/index.ts
+@@ -31,10 +31,29 @@ import { chatgptChannel } from './channels/chatgpt.js'
+ import { claudeChannel } from './channels/claude.js'
+ import { grokChannel } from './channels/grok.js'
+ import { kimiChannel } from './channels/kimi.js'
++import { installProjectionGuard } from './projection-guard.js'
+ import { appendFileSync, mkdirSync } from 'node:fs'
+ import { join } from 'node:path'
+ import os from 'node:os'
+ 
++/**
++ * 代理感知:Node 的 fetch(undici)默认不读 HTTPS_PROXY/HTTP_PROXY 环境变量,
++ * 会导致 Grok(auth.x.ai)等国外端点在需要代理的网络下连接超时。
++ * 这里在模块加载时检测环境变量并安装 EnvHttpProxyAgent 到全局 dispatcher。
++ * NO_PROXY 默认包含 localhost/127.0.0.1,回调服务器不受影响。
++ */
++async function installProxyAgent() {
++  const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy
++  if (!proxy) return
++  try {
++    const { EnvHttpProxyAgent, setGlobalDispatcher } = await import('undici')
++    setGlobalDispatcher(new EnvHttpProxyAgent())
++  } catch {
++    // undici 不可用时静默跳过(保持直连行为)
++  }
++}
++void installProxyAgent()
++
+ type Context = CordisContext & { llm: LlmRuntime }
+ 
+ export const name = 'dsh-subscription-auth'
+@@ -127,6 +146,7 @@ interface ChannelState {
+ }
+ 
+ export function apply(ctx: Context, config: Record<string, unknown> = {}): void {
++  installProjectionGuard(ctx, logLine)
+   const states = new Map<string, ChannelState>()
+   const credentials = () => ctx.get('credentials') as CredentialProvider | undefined
+   /** 插件卸载后停止启动门控轮询。 */
+diff --git a/third-party/dsh-subscription-auth/src/adapter.ts b/third-party/dsh-subscription-auth/src/adapter.ts
+index 270f217..95d61e9 100644
+--- a/third-party/dsh-subscription-auth/src/adapter.ts
++++ b/third-party/dsh-subscription-auth/src/adapter.ts
+@@ -152,12 +152,27 @@ function httpErrorCode(status: number): string {
+   return `HTTP_${status}`
+ }
+ 
+-function mapUsage(usage: any): TokenUsage {
++function mapUsage(usage: any): TokenUsage | undefined {
+   const cacheRead = usage?.input_tokens_details?.cached_tokens
+   const reasoning = usage?.output_tokens_details?.reasoning_tokens
++  // input_tokens is the total prompt size including the cached prefix, so the
++  // uncached remainder is the difference. Clamp at zero: if a provider ever
++  // reports input_tokens as the already-netted increment (smaller than
++  // cached_tokens), the raw subtraction would go negative and a negative
++  // token count poisons DSH's usage projection (it fails the nonnegative
++  // schema and takes the session history down with it).
++  const inputTokens = Math.max(0, (usage?.input_tokens ?? 0) - (cacheRead ?? 0))
++  const outputTokens = usage?.output_tokens ?? 0
++  // No real metering: every counter is zero and no cache/reasoning detail was
++  // reported. Emitting a synthetic all-zero usage sample would be folded into
++  // the session's token projection as a genuine (0,0,0,0) report, and DSH's
++  // last-sample-replacing fold treats it as the step's authoritative value —
++  // poisoning the running totals when the real sample later replaces it.
++  // Withhold the sample instead of fabricating one.
++  if (inputTokens === 0 && outputTokens === 0 && cacheRead === undefined && reasoning === undefined) return undefined
+   return {
+-    inputTokens: (usage?.input_tokens ?? 0) - (cacheRead ?? 0),
+-    outputTokens: usage?.output_tokens ?? 0,
++    inputTokens,
++    outputTokens,
+     ...(cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {}),
+     ...(reasoning !== undefined ? { reasoningTokens: reasoning } : {}),
+   }
+@@ -352,7 +367,8 @@ async function* translate(body: ReadableStream<Uint8Array>): AsyncIterable<Strea
+     }
+   }
+   if (pendingUsage !== undefined) {
+-    yield { type: 'usage', usage: mapUsage(pendingUsage) }
++    const usage = mapUsage(pendingUsage)
++    if (usage !== undefined) yield { type: 'usage', usage }
+   }
+   const status = mapStatus(pendingStatus)
+   let reason: any
+diff --git a/third-party/dsh-subscription-auth/src/oauth.ts b/third-party/dsh-subscription-auth/src/oauth.ts
+index f30213c..3cb6100 100644
+--- a/third-party/dsh-subscription-auth/src/oauth.ts
++++ b/third-party/dsh-subscription-auth/src/oauth.ts
+@@ -50,6 +50,15 @@ export function generatePkce(): { verifier: string; challenge: string } {
+   return { verifier, challenge }
+ }
+ 
++/**
++ * 独立随机的 OAuth state。必须与 code_verifier 分离:授权 URL 会携带 state
++ * 出现在浏览器地址栏/历史记录,若 state 复用 verifier,能看到授权 URL 的人
++ * (或本地端口抢占后截获回调的攻击者)可直接解 PKCE 并兑换令牌。
++ */
++export function generateState(): string {
++  return base64url(randomBytes(32))
++}
++
+ function decodeJwt(token: string): any | undefined {
+   const parts = token.split('.')
+   if (parts.length !== 3) return undefined
+diff --git a/third-party/dsh-subscription-auth/src/adapters/anthropic.ts b/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
+index c840f43..e55a2dd 100644
+--- a/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
++++ b/third-party/dsh-subscription-auth/src/adapters/anthropic.ts
+@@ -139,11 +139,26 @@ function httpErrorCode(status: number): string {
+   return `HTTP_${status}`
+ }
+ 
+-function mapUsage(usage: any): TokenUsage {
++function mapUsage(usage: any): TokenUsage | undefined {
+   const cacheRead = usage?.cache_read_input_tokens
++  // input_tokens is the total prompt size including the cached prefix, so the
++  // uncached remainder is the difference. Clamp at zero: if a provider ever
++  // reports input_tokens as the already-netted increment (smaller than
++  // cache_read_input_tokens), the raw subtraction would go negative and a
++  // negative token count poisons DSH's usage projection (it fails the
++  // nonnegative schema and takes the session history down with it).
++  const inputTokens = Math.max(0, (usage?.input_tokens ?? 0) - (cacheRead ?? 0))
++  const outputTokens = usage?.output_tokens ?? 0
++  // No real metering: every counter is zero and no cache detail was reported.
++  // Emitting a synthetic all-zero usage sample would be folded into the
++  // session's token projection as a genuine (0,0,0,0) report, and DSH's
++  // last-sample-replacing fold treats it as the step's authoritative value —
++  // poisoning the running totals when the real sample later replaces it.
++  // Withhold the sample instead of fabricating one.
++  if (inputTokens === 0 && outputTokens === 0 && cacheRead === undefined) return undefined
+   return {
+-    inputTokens: (usage?.input_tokens ?? 0) - (cacheRead ?? 0),
+-    outputTokens: usage?.output_tokens ?? 0,
++    inputTokens,
++    outputTokens,
+     ...(cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {}),
+   }
+ }
+@@ -323,7 +338,8 @@ async function* translate(
+     }
+   }
+   if (pendingUsage !== undefined) {
+-    yield { type: 'usage', usage: mapUsage(pendingUsage) }
++    const usage = mapUsage(pendingUsage)
++    if (usage !== undefined) yield { type: 'usage', usage }
+   }
+   const status = mapStopReason(pendingStop)
+   let reason: any
+diff --git a/third-party/dsh-subscription-auth/src/channels/chatgpt.ts b/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
+index 26cb621..b6e9c87 100644
+--- a/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
++++ b/third-party/dsh-subscription-auth/src/channels/chatgpt.ts
+@@ -10,6 +10,7 @@ import {
+   buildAuthorizeUrl,
+   exchangeCode,
+   generatePkce,
++  generateState,
+   openBrowser,
+   refreshAccessToken,
+   waitForCallback,
+@@ -88,7 +89,7 @@ export const chatgptChannel: ChannelDefinition = {
+         this.cancelLogin()
+         const port = ctx.options().redirectPort
+         const { verifier, challenge } = generatePkce()
+-        const state = verifier
++        const state = generateState()
+         const url = buildAuthorizeUrl(port, challenge, state)
+         controller = new AbortController()
+         pending = { url }
+diff --git a/third-party/dsh-subscription-auth/src/channels/claude.ts b/third-party/dsh-subscription-auth/src/channels/claude.ts
+index 2ab4c3a..31d9b57 100644
+--- a/third-party/dsh-subscription-auth/src/channels/claude.ts
++++ b/third-party/dsh-subscription-auth/src/channels/claude.ts
+@@ -7,7 +7,7 @@
+ import { LlmError } from '@deepseek-ai/dsh-llm'
+ import { AnthropicMessagesAdapter } from '../adapters/anthropic.js'
+ import type { AdapterModel } from '../adapter.js'
+-import { generatePkce, openBrowser, waitForCallback } from '../oauth.js'
++import { generatePkce, generateState, openBrowser, waitForCallback } from '../oauth.js'
+ import type { ChannelContext, ChannelDefinition, ChannelReasoning, ChannelRuntime } from '../channel.js'
+ import type { StoredToken } from '../channel.js'
+ 
+@@ -73,7 +73,7 @@ function buildAuthorizeUrl(port: number, challenge: string, state: string): stri
+   return AUTHORIZE + '?' + params.toString()
+ }
+ 
+-async function exchangeClaudeCode(code: string, port: number, verifier: string): Promise<StoredToken> {
++async function exchangeClaudeCode(code: string, port: number, verifier: string, state: string): Promise<StoredToken> {
+   const res = await fetch(TOKEN_ENDPOINT, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+@@ -81,7 +81,7 @@ async function exchangeClaudeCode(code: string, port: number, verifier: string):
+       grant_type: 'authorization_code',
+       client_id: CLIENT_ID,
+       code,
+-      state: verifier,
++      state,
+       redirect_uri: redirectUri(port),
+       code_verifier: verifier,
+     }),
+@@ -187,14 +187,14 @@ export const claudeChannel: ChannelDefinition = {
+         this.cancelLogin()
+         const port = ctx.options().redirectPort
+         const { verifier, challenge } = generatePkce()
+-        const state = verifier
++        const state = generateState()
+         const url = buildAuthorizeUrl(port, challenge, state)
+         controller = new AbortController()
+         pending = { url }
+         waitForCallback(port, state, controller.signal, 10 * 60 * 1000, CALLBACK_PATH)
+           .then(async (code) => {
+             ctx.log('收到授权回调，开始换取令牌…')
+-            const token = await exchangeClaudeCode(code, port, verifier)
++            const token = await exchangeClaudeCode(code, port, verifier, state)
+             await ctx.writeToken(token)
+             ctx.log('登录成功' + (token.accountId !== undefined ? '（account: ' + token.accountId + '）' : '') + '，开始发现模型列表…')
+             ctx.afterLogin()
+diff --git a/third-party/dsh-subscription-auth/src/channels/grok.ts b/third-party/dsh-subscription-auth/src/channels/grok.ts
+index 6e805a6..7133924 100644
+--- a/third-party/dsh-subscription-auth/src/channels/grok.ts
++++ b/third-party/dsh-subscription-auth/src/channels/grok.ts
+@@ -105,8 +105,9 @@ async function exchangeDeviceCode(
+       device_code: deviceCode,
+     }).toString(),
+   })
+-  // 设备流轮询即使逻辑失败通常也返回 HTTP 200（body 里带 error 字段）
+-  if (!res.ok) return { status: 'failed', message: `设备授权轮询失败 (HTTP ${res.status})` }
++  // Grok/xAI 的设备流轮询在 authorization_pending / slow_down / access_denied 等
++  // 所有逻辑失败时都返回 HTTP 400,错误信息在 body.error 字段里,必须先解析 body
++  // 再判断,不能只看 HTTP 状态码。
+   const body = await res.json().catch(() => ({})) as any
+   if (typeof body?.access_token === 'string' && body.access_token !== '') {
+     return { status: 'complete', value: body }
+@@ -123,7 +124,7 @@ async function exchangeDeviceCode(
+     default:
+       return {
+         status: 'failed',
+-        message: `设备授权失败${body?.error ? `: ${body.error}` : ''}`,
++        message: `设备授权失败${body?.error ? `: ${body.error}` : ''}${body?.error_description ? ` (${body.error_description})` : ''}`,
+       }
+   }
+ }
+diff --git a/third-party/dsh-subscription-auth/src/projection-guard.ts b/third-party/dsh-subscription-auth/src/projection-guard.ts
+new file mode 100644
+index 0000000..091a8d7
+--- /dev/null
++++ b/third-party/dsh-subscription-auth/src/projection-guard.ts
+@@ -0,0 +1,90 @@
++/**
++ * 只修本插件写下的脏 usage，不改 DSH 内核、不重写整个投影表。
++ *
++ * Kimi 可能把 input_tokens 报成已扣除 cache 的净增量，再减 cache_read
++ * 会得到负数。写入侧 mapUsage 已钳零；旧日志里的负值仍会在
++ * tokenUsage / contextPressure 的 nonnegative schema 上炸掉 session.history。
++ *
++ * 这里只包装这两个 unit 的 view：读路径一律把计数收成非负整数。
++ * snapshot / restore / drive / viewCheckpoint 都会走 view，其它投影不动。
++ */
++type Logger = (message: string) => void
++
++type UsageDef = {
++  key: string
++  view: (state: unknown) => unknown
++  __subscriptionUsageClamped?: boolean
++}
++
++type ProjectionRegistry = {
++  registrations: Map<string, { def: UsageDef }>
++  register: (definition: UsageDef) => () => void
++}
++
++const USAGE_KEYS = new Set(['tokenUsage', 'contextPressure'])
++const COUNT_FIELDS = [
++  'uncachedInputTokens',
++  'outputTokens',
++  'cacheReadTokens',
++  'cacheWriteTokens',
++  'pressureTokens',
++  'projectedTokens',
++] as const
++
++function clampCount(value: unknown): number {
++  const n = typeof value === 'number' ? value : Number(value)
++  if (!Number.isFinite(n)) return 0
++  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(n)))
++}
++
++function clampView(value: unknown): unknown {
++  if (value === null || typeof value !== 'object') return value
++  const input = value as Record<string, unknown>
++  const output: Record<string, unknown> = { ...input }
++  for (const field of COUNT_FIELDS) {
++    if (field in output && output[field] !== undefined) {
++      output[field] = clampCount(output[field])
++    }
++  }
++  return output
++}
++
++function wrapUsageView(def: UsageDef, log: Logger): void {
++  if (!USAGE_KEYS.has(def.key) || def.__subscriptionUsageClamped) return
++  const original = def.view.bind(def)
++  def.view = (state: unknown) => {
++    try {
++      return clampView(original(state))
++    } catch (error) {
++      log(`session projection ${def.key} view failed: ${String(error)}`)
++      throw error
++    }
++  }
++  def.__subscriptionUsageClamped = true
++}
++
++export function installProjectionGuard(
++  ctx: {
++    inject(deps: string[], fn: (injected: { sessionProjections: ProjectionRegistry }) => void): void
++  },
++  log: Logger,
++): void {
++  ctx.inject(['sessionProjections'], (projCtx) => {
++    const registry = projCtx.sessionProjections
++    if (registry === undefined || typeof registry.register !== 'function') return
++
++    for (const registration of registry.registrations.values()) {
++      wrapUsageView(registration.def, log)
++    }
++
++    const originalRegister = registry.register.bind(registry)
++    registry.register = (definition) => {
++      wrapUsageView(definition, log)
++      return originalRegister(definition)
++    }
++    const injected = projCtx as { effect?: (fn: () => () => void, name?: string) => void }
++    injected.effect?.(() => () => {
++      registry.register = originalRegister
++    }, 'subscription-auth.projection-guard')
++  })
++}
+diff --git a/third-party/dsh-subscription-auth/lib/index.js b/third-party/dsh-subscription-auth/lib/index.js
+index feea6a6..af425a8 100644
+--- a/third-party/dsh-subscription-auth/lib/index.js
++++ b/third-party/dsh-subscription-auth/lib/index.js
+@@ -5,9 +5,20 @@ import { chatgptChannel } from "./channels/chatgpt.js";
+ import { claudeChannel } from "./channels/claude.js";
+ import { grokChannel } from "./channels/grok.js";
+ import { kimiChannel } from "./channels/kimi.js";
++import { installProjectionGuard } from "./projection-guard.js";
+ import { appendFileSync, mkdirSync } from "node:fs";
+ import { join } from "node:path";
+ import os from "node:os";
++async function installProxyAgent() {
++  const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
++  if (!proxy)
++    return;
++  try {
++    const { EnvHttpProxyAgent, setGlobalDispatcher } = await import("undici");
++    setGlobalDispatcher(new EnvHttpProxyAgent);
++  } catch {}
++}
++installProxyAgent();
+ export const name = "dsh-subscription-auth";
+ export const inject = ["llm"];
+ const channelNamespace = (id) => settingsNamespace(`subscription-auth-${id}`);
+@@ -58,6 +69,7 @@ function resolveOptions(raw, discovered, def) {
+   };
+ }
+ export function apply(ctx, config = {}) {
++  installProjectionGuard(ctx, logLine);
+   const states = new Map;
+   const credentials = () => ctx.get("credentials");
+   const gateStopped = new Map;
+diff --git a/third-party/dsh-subscription-auth/lib/adapter.js b/third-party/dsh-subscription-auth/lib/adapter.js
+index 7fe4d56..399075c 100644
+--- a/third-party/dsh-subscription-auth/lib/adapter.js
++++ b/third-party/dsh-subscription-auth/lib/adapter.js
+@@ -98,9 +98,13 @@ function httpErrorCode(status) {
+ function mapUsage(usage) {
+   const cacheRead = usage?.input_tokens_details?.cached_tokens;
+   const reasoning = usage?.output_tokens_details?.reasoning_tokens;
++  const inputTokens = Math.max(0, (usage?.input_tokens ?? 0) - (cacheRead ?? 0));
++  const outputTokens = usage?.output_tokens ?? 0;
++  if (inputTokens === 0 && outputTokens === 0 && cacheRead === undefined && reasoning === undefined)
++    return;
+   return {
+-    inputTokens: (usage?.input_tokens ?? 0) - (cacheRead ?? 0),
+-    outputTokens: usage?.output_tokens ?? 0,
++    inputTokens,
++    outputTokens,
+     ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {},
+     ...reasoning !== undefined ? { reasoningTokens: reasoning } : {}
+   };
+@@ -284,7 +288,9 @@ async function* translate(body) {
+     }
+   }
+   if (pendingUsage !== undefined) {
+-    yield { type: "usage", usage: mapUsage(pendingUsage) };
++    const usage = mapUsage(pendingUsage);
++    if (usage !== undefined)
++      yield { type: "usage", usage };
+   }
+   const status = mapStatus(pendingStatus);
+   let reason;
+diff --git a/third-party/dsh-subscription-auth/lib/oauth.js b/third-party/dsh-subscription-auth/lib/oauth.js
+index 1bf2cc3..7647e9b 100644
+--- a/third-party/dsh-subscription-auth/lib/oauth.js
++++ b/third-party/dsh-subscription-auth/lib/oauth.js
+@@ -14,6 +14,9 @@ export function generatePkce() {
+   const challenge = base64url(createHash("sha256").update(verifier).digest());
+   return { verifier, challenge };
+ }
++export function generateState() {
++  return base64url(randomBytes(32));
++}
+ function decodeJwt(token) {
+   const parts = token.split(".");
+   if (parts.length !== 3)
+diff --git a/third-party/dsh-subscription-auth/lib/adapters/anthropic.js b/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
+index 10283d2..90391c8 100644
+--- a/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
++++ b/third-party/dsh-subscription-auth/lib/adapters/anthropic.js
+@@ -90,9 +90,13 @@ function httpErrorCode(status) {
+ }
+ function mapUsage(usage) {
+   const cacheRead = usage?.cache_read_input_tokens;
++  const inputTokens = Math.max(0, (usage?.input_tokens ?? 0) - (cacheRead ?? 0));
++  const outputTokens = usage?.output_tokens ?? 0;
++  if (inputTokens === 0 && outputTokens === 0 && cacheRead === undefined)
++    return;
+   return {
+-    inputTokens: (usage?.input_tokens ?? 0) - (cacheRead ?? 0),
+-    outputTokens: usage?.output_tokens ?? 0,
++    inputTokens,
++    outputTokens,
+     ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {}
+   };
+ }
+@@ -256,7 +260,9 @@ async function* translate(body, label) {
+     }
+   }
+   if (pendingUsage !== undefined) {
+-    yield { type: "usage", usage: mapUsage(pendingUsage) };
++    const usage = mapUsage(pendingUsage);
++    if (usage !== undefined)
++      yield { type: "usage", usage };
+   }
+   const status = mapStopReason(pendingStop);
+   let reason;
+diff --git a/third-party/dsh-subscription-auth/lib/channels/chatgpt.js b/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
+index b5bd5ea..152b798 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
++++ b/third-party/dsh-subscription-auth/lib/channels/chatgpt.js
+@@ -4,6 +4,7 @@ import {
+   buildAuthorizeUrl,
+   exchangeCode,
+   generatePkce,
++  generateState,
+   openBrowser,
+   refreshAccessToken,
+   waitForCallback
+@@ -73,7 +74,7 @@ export const chatgptChannel = {
+         this.cancelLogin();
+         const port = ctx.options().redirectPort;
+         const { verifier, challenge } = generatePkce();
+-        const state = verifier;
++        const state = generateState();
+         const url = buildAuthorizeUrl(port, challenge, state);
+         controller = new AbortController;
+         pending = { url };
+diff --git a/third-party/dsh-subscription-auth/lib/channels/claude.js b/third-party/dsh-subscription-auth/lib/channels/claude.js
+index fe99797..38edb5f 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/claude.js
++++ b/third-party/dsh-subscription-auth/lib/channels/claude.js
+@@ -1,6 +1,6 @@
+ import { LlmError } from "@deepseek-ai/dsh-llm";
+ import { AnthropicMessagesAdapter } from "../adapters/anthropic.js";
+-import { generatePkce, openBrowser, waitForCallback } from "../oauth.js";
++import { generatePkce, generateState, openBrowser, waitForCallback } from "../oauth.js";
+ const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+ const AUTHORIZE = "https://claude.ai/oauth/authorize";
+ const TOKEN_ENDPOINT = "https://api.anthropic.com/v1/oauth/token";
+@@ -54,7 +54,7 @@ function buildAuthorizeUrl(port, challenge, state) {
+   });
+   return AUTHORIZE + "?" + params.toString();
+ }
+-async function exchangeClaudeCode(code, port, verifier) {
++async function exchangeClaudeCode(code, port, verifier, state) {
+   const res = await fetch(TOKEN_ENDPOINT, {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+@@ -62,7 +62,7 @@ async function exchangeClaudeCode(code, port, verifier) {
+       grant_type: "authorization_code",
+       client_id: CLIENT_ID,
+       code,
+-      state: verifier,
++      state,
+       redirect_uri: redirectUri(port),
+       code_verifier: verifier
+     })
+@@ -163,13 +163,13 @@ export const claudeChannel = {
+         this.cancelLogin();
+         const port = ctx.options().redirectPort;
+         const { verifier, challenge } = generatePkce();
+-        const state = verifier;
++        const state = generateState();
+         const url = buildAuthorizeUrl(port, challenge, state);
+         controller = new AbortController;
+         pending = { url };
+         waitForCallback(port, state, controller.signal, 10 * 60 * 1000, CALLBACK_PATH).then(async (code) => {
+           ctx.log("收到授权回调，开始换取令牌…");
+-          const token = await exchangeClaudeCode(code, port, verifier);
++          const token = await exchangeClaudeCode(code, port, verifier, state);
+           await ctx.writeToken(token);
+           ctx.log("登录成功" + (token.accountId !== undefined ? "（account: " + token.accountId + "）" : "") + "，开始发现模型列表…");
+           ctx.afterLogin();
+diff --git a/third-party/dsh-subscription-auth/lib/channels/grok.js b/third-party/dsh-subscription-auth/lib/channels/grok.js
+index 7deb84d..fcf4fe4 100644
+--- a/third-party/dsh-subscription-auth/lib/channels/grok.js
++++ b/third-party/dsh-subscription-auth/lib/channels/grok.js
+@@ -81,8 +81,6 @@ async function exchangeDeviceCode(tokenEndpoint, deviceCode) {
+       device_code: deviceCode
+     }).toString()
+   });
+-  if (!res.ok)
+-    return { status: "failed", message: `设备授权轮询失败 (HTTP ${res.status})` };
+   const body = await res.json().catch(() => ({}));
+   if (typeof body?.access_token === "string" && body.access_token !== "") {
+     return { status: "complete", value: body };
+@@ -99,7 +97,7 @@ async function exchangeDeviceCode(tokenEndpoint, deviceCode) {
+     default:
+       return {
+         status: "failed",
+-        message: `设备授权失败${body?.error ? `: ${body.error}` : ""}`
++        message: `设备授权失败${body?.error ? `: ${body.error}` : ""}${body?.error_description ? ` (${body.error_description})` : ""}`
+       };
+   }
+ }
+diff --git a/third-party/dsh-subscription-auth/lib/projection-guard.js b/third-party/dsh-subscription-auth/lib/projection-guard.js
+new file mode 100644
+index 0000000..75fe4f1
+--- /dev/null
++++ b/third-party/dsh-subscription-auth/lib/projection-guard.js
+@@ -0,0 +1,60 @@
++const USAGE_KEYS = new Set(["tokenUsage", "contextPressure"]);
++const COUNT_FIELDS = [
++  "uncachedInputTokens",
++  "outputTokens",
++  "cacheReadTokens",
++  "cacheWriteTokens",
++  "pressureTokens",
++  "projectedTokens"
++];
++function clampCount(value) {
++  const n = typeof value === "number" ? value : Number(value);
++  if (!Number.isFinite(n))
++    return 0;
++  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(n)));
++}
++function clampView(value) {
++  if (value === null || typeof value !== "object")
++    return value;
++  const input = value;
++  const output = { ...input };
++  for (const field of COUNT_FIELDS) {
++    if (field in output && output[field] !== undefined) {
++      output[field] = clampCount(output[field]);
++    }
++  }
++  return output;
++}
++function wrapUsageView(def, log) {
++  if (!USAGE_KEYS.has(def.key) || def.__subscriptionUsageClamped)
++    return;
++  const original = def.view.bind(def);
++  def.view = (state) => {
++    try {
++      return clampView(original(state));
++    } catch (error) {
++      log(`session projection ${def.key} view failed: ${String(error)}`);
++      throw error;
++    }
++  };
++  def.__subscriptionUsageClamped = true;
++}
++export function installProjectionGuard(ctx, log) {
++  ctx.inject(["sessionProjections"], (projCtx) => {
++    const registry = projCtx.sessionProjections;
++    if (registry === undefined || typeof registry.register !== "function")
++      return;
++    for (const registration of registry.registrations.values()) {
++      wrapUsageView(registration.def, log);
++    }
++    const originalRegister = registry.register.bind(registry);
++    registry.register = (definition) => {
++      wrapUsageView(definition, log);
++      return originalRegister(definition);
++    };
++    const injected = projCtx;
++    injected.effect?.(() => () => {
++      registry.register = originalRegister;
++    }, "subscription-auth.projection-guard");
++  });
++}
+diff --git a/third-party/dsh-subscription-auth/tests/smoke.mjs b/third-party/dsh-subscription-auth/tests/smoke.mjs
+index b7a68c4..344a9b8 100644
+--- a/third-party/dsh-subscription-auth/tests/smoke.mjs
++++ b/third-party/dsh-subscription-auth/tests/smoke.mjs
+@@ -404,6 +404,29 @@ const anthFinish = anthChunks.find((c) => c.type === 'finish')
+ assert.equal(anthFinish.reason.kind, 'stop')
+ assert.ok(anthChunks[anthChunks.length - 1].type === 'finish', 'finish 是最后一个 chunk')
+ console.log('✓ 9. Anthropic Messages 适配器序列化 + SSE 翻译正确')
++
++// Kimi 会把 input_tokens 报成已扣除 cache 的净增量；再减 cache_read 会变负。
++// 写入侧必须钳零，否则 DSH tokenUsage schema 会把整段历史打成 unavailable。
++globalThis.fetch = async () => sseResponse([
++  'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":876,"output_tokens":0,"cache_read_input_tokens":127488}}}',
++  'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
++  'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
++  'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
++  'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}}',
++  'event: message_stop\ndata: {"type":"message_stop"}',
++])
++const kimiUsageChunks = []
++for await (const c of anthAdapter.stream({
++  provider: 'kimi',
++  model: 'k3',
++  messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
++})) {
++  kimiUsageChunks.push(c)
++}
++const kimiUsage = kimiUsageChunks.find((c) => c.type === 'usage')
++assert.deepEqual(kimiUsage.usage, { inputTokens: 0, outputTokens: 8, cacheReadTokens: 127488 })
++assert.ok(kimiUsage.usage.inputTokens >= 0, '负 inputTokens 不得写入会话日志')
++console.log('✓ 9b. Kimi 净增量 usage 钳零，不写负 inputTokens')
+ globalThis.fetch = originalFetch
+ 
+ // ---------- 10. 渠道模块：Claude OAuth URL / Grok·Kimi 设备流结构 ----------

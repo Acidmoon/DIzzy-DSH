@@ -33,6 +33,26 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 **重放失败时的处理**:上游若已重构 exposure.js(如版本升级),补丁冲突 → 手动按上面 4 条改动适配新文件,
 更新补丁后重新提交。
 
+### `patches/dsh-subscription-auth-local.patch`
+
+**插件**:dsh-subscription-auth
+**上游**:https://github.com/Khellendros97/dsh-subscription-auth @ `338c02e`(v0.2.1)
+**登记日期**:2026-08-15(已应用在快照内)
+
+**改动内容**(相对上游原版):
+
+1. **usage 钳零 + 全零样本不写**:`src/adapter.ts` 与 `src/adapters/anthropic.ts` 的 `mapUsage` 把 `input_tokens - cache` 钳到 ≥0;若全部计数为 0 且无 cache/reasoning 细节则返回 `undefined`,不向会话投影写入合成的全零 usage。
+2. **读路径投影守卫**:新增 `src/projection-guard.ts`,包装 `tokenUsage` / `contextPressure` 的 view,旧日志里的负计数读出来也钳成非负,避免 `session.history` 整页失败。
+3. **独立 OAuth state**:`src/oauth.ts` 新增 `generateState()`;`chatgpt` / `claude` 不再把 PKCE verifier 当 state(授权 URL 里的 state 会进浏览器历史)。
+4. **Grok 设备流**:`src/channels/grok.ts` 先解析 body 再判断,不再把 HTTP 400 的 `authorization_pending` 当成失败。
+5. **代理感知**:`src/index.ts` 在检测到 `HTTPS_PROXY`/`HTTP_PROXY` 时给 Node fetch 装 `undici` 的 `EnvHttpProxyAgent`。
+6. **合集依赖适配**:`package.json` 把 `@deepseek-ai/schemastery` 改成 peer(走 DSH heal 层同实例),运行时依赖只留 `undici@8.10.0`。
+7. **测试**:`tests/smoke.mjs` 增加 Kimi 净增量 usage 钳零用例。
+
+`lib/` 产物与 `src/` 同步入库,重放后不必再构建。
+
+**重放失败时的处理**:上游若已吸收对应修复,删除本补丁并更新登记;冲突则按上面 7 条适配新文件后再提交。
+
 ## 重放工具
 
 ```sh

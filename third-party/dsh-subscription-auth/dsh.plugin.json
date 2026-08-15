@@ -1,0 +1,14 @@
+{
+  "id": "@dsh-external/dsh-subscription-auth",
+  "version": "0.2.1",
+  "main": "./lib/index.js",
+  "description": "订阅会员 OAuth 登录（ChatGPT 等）：配置中心「订阅服务」页登录/注销，自动发现订阅模型列表，按登录状态注册提供商，支持思考强度选择",
+  "engines": { "dsh": ">=0.0.1" },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

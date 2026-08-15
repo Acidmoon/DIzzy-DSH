@@ -9,9 +9,10 @@
     "dsh-better-sidebar": "0.10.3",
     "@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit",
     "@omdsh-dev/dsh-genui": "file:./third-party/dsh-genui",
-    "dsh-notification": "file:./third-party/dsh-notification"
+    "dsh-notification": "file:./third-party/dsh-notification",
+    "dsh-subscription-auth": "file:./third-party/dsh-subscription-auth"
   },
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Dizzy-DSH 插件合集仓库:git clone 后 dsh plugin add 即装,无需 npm 发布。",
   "type": "module",
   "main": "./index.js",

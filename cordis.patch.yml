@@ -61,3 +61,10 @@
     # 规则)。纯 UI,对模型零影响(无工具、无提示词、无日志写入)。
     - id: dsh-notification
       name: 'dsh-notification'
+
+    # 订阅会员 OAuth 登录(第三方,有本地补丁):设置 → 订阅服务 登录
+    # ChatGPT / Claude / Grok / Kimi,按登录状态注册提供商与适配器。
+    # 包名保持 dsh-subscription-auth,与已有 credential / settings
+    # 命名空间一致;勿改成 dizzy-dsh-* 以免冲掉本机登录态。
+    - id: dsh-subscription-auth
+      name: 'dsh-subscription-auth'

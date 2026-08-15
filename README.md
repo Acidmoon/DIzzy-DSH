@@ -1,7 +1,7 @@
 # 🌀 Dizzy-DSH —— DSH 插件合集
 
 一个「克隆即装」的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件合集:
-**一条命令装完,重启即用** —— 余额、用量、Agent 规则、视觉识别、生成式 UI、桌面通知、IDE 侧边栏,一次到位。
+**一条命令装完,重启即用** —— 余额、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏,一次到位。
 
 无需 npm 发布;仓库本身作为 bundle 层安装,重启后依然生效。
 
@@ -24,6 +24,7 @@
 |  **生成式 UI** `dsh-genui` | 模型的回答中直接渲染可交互组件:数据卡片、图表、表格、表单、试卷判分、mermaid 流程图、3D 场景 | 模型回答时自动输出 `dsh-ui` 围栏;`render_ui` 工具可把界面渲染到工具行 | ✅ 稳定(v0.8.1) |
 |  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.1) |
 |  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.10.3) |
+|  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
 
 ### 收录的第三方预设(agent preset)
 
@@ -44,6 +45,7 @@
 | dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.1 | 仓库快照 |
 | dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.10.3 | npm registry |
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
+| dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
 
 ##  快速开始
 
@@ -69,6 +71,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 ```powershell
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh* -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -129,6 +132,28 @@ dsh web**,新会话的预设下拉选择「Anchored Standard (experimental)」�
 「Please update the Kimi WebBridge extension」→ 让用户更新扩展;
 daemon 无法连接且自动启动失败 → 让用户手动运行
 `& "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" start`。
+
+### 0.5 订阅登录 dsh-subscription-auth(第三方,有本地补丁)
+
+**需用户提供**:对应渠道的订阅账号(ChatGPT Plus/Pro、Claude Pro/Max、Grok SuperGrok / X Premium+、Kimi Code)。**不要向用户索取 API key**;登录走 OAuth,令牌由插件写入 DSH credentials。
+
+**配置步骤**:
+
+1. 打开 **设置 → 订阅服务**:四个渠道始终列出,显示登录状态、账号与可用模型;
+2. 点对应渠道的「登录」:
+   - **ChatGPT / Claude**(授权码 + PKCE):本机浏览器打开授权页 → 用户授权 → 跳回 `127.0.0.1` 回调。**必须在本机跑 dsh**,远程/无桌面环境收不到回调;
+   - **Grok / Kimi**(设备授权流):页面展示验证链接 + 设备码 → 用户在浏览器打开并输入代码;
+3. 登录成功后该提供商出现在模型选择器;可选手动思考强度(ChatGPT 默认 `medium`;Claude 默认 `medium`;Grok / Kimi 不设默认);
+4. 可选:在 `settings.yaml` 的 `subscription-auth-<id>` 段覆盖 `apiBaseURL` / `redirectPort` / `maxTokens`,或用 `models` 手动固定模型列表。密钥只进 credentials,settings 里不要写令牌。
+
+**验证**:设置页该渠道显示「已登录」;模型选择器出现对应提供商;新会话切到该模型能发出一轮请求。日志:`~/.dsh/tmp/subscription-auth.log`;状态:`GET /subscription-auth/providers`。
+
+**排查**:
+
+- 设置页有渠道、模型选择器没有:未登录或令牌失效——重新登录。未登录渠道故意不注册 provider;
+- ChatGPT / Claude 点登录无反应或一直 pending:`rundll32` 打开浏览器失败,或本机 1455 / 54545 端口被占;不要用 `cmd /c start`(URL 里的 `&` 会被截断);
+- `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0`:旧会话日志里有负 usage。写入侧已钳零,读路径有投影守卫;仍炸则换新会话,不要改 DSH 内核;
+- 已有本机 junction 试装(`~/.dsh/profiles/web/cordis.patch.yml` 再 insert 一次同 id):会与合集 patch 撞 `duplicate loader entry id`。合集接管后删掉 profile 那条 insert,并删掉指向仓库外的 junction。
 
 ### 1. 视觉识别 dsh-vision-toolkit
 
