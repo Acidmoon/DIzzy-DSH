@@ -1,7 +1,7 @@
 # 🌀 Dizzy-DSH —— DSH 插件合集
 
 一个「克隆即装」的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件合集:
-**一条命令装完,重启即用** —— 余额、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏、界面换装,一次到位。
+**一条命令装完,重启即用** —— 余额/额度、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏、界面换装,一次到位。
 
 无需 npm 发布;仓库本身作为 bundle 层安装,重启后依然生效。
 
@@ -11,7 +11,7 @@
 
 | 插件 | 能力 | 怎么用 | 状态 |
 |---|---|---|---|
-|  **余额查询** `dizzy-dsh-balance` | DeepSeek 官方账户余额实时显示,每分钟自动刷新 | 输入栏右侧常驻徽章;对话中直接问「余额」或调用 `balance_check` 工具;`/dizzy/balance` 命令 | ✅ 稳定 |
+|  **余额/额度** `dizzy-dsh-balance` | 输入栏同一徽章:DeepSeek 显示人民币余额,Grok 显示 SuperGrok 周额度剩余%。Grok 凭证读订阅插件 `GROK_SUBSCRIPTION_TOKEN` | 切到对应模型即显示;问「余额」/`balance_check` 或「Grok 额度」/`grok_quota_check` | ✅ 稳定 |
 |  **本月用量** `dizzy-dsh-usage-card` | 本地会话日志聚合 token 用量:月度热力图 / 近 7 天趋势 / 今日分模型堆叠条(输入未命中 / 命中缓存 / 输出) / 峰谷时段 | 对话区右侧「用量」Tab(对话、轨迹并列);曲线按横坐标吸附最近一天;悬浮弹窗看分项并跟随鼠标;支持月份切换 + 60s 自动刷新 | ✅ 稳定 |
 |  **Agent 规则注入** `dizzy-dsh-agent-instructions` | 向每个会话注入 Agent 规则:用户哨兵规则(第一性原理 / 对抗式审查 / 子代理优先 / 喵字开头)+ 开发规范(不重复造轮子 / 核心约定 / 防御性模式 / 类型安全) | 装完即全局生效,所有会话、所有工作区;编辑规则文本**下一轮对话即生效**,无需重启 | ✅ 稳定 |
 |  **浏览器控制** `dizzy-dsh-kimi-webbridge` | 通过 Kimi WebBridge(daemon + 浏览器扩展)控制你的**真实浏览器**:打开网页、读取页面、点击、填表、截图、抓包、存 PDF —— 带登录态的会话直接可用 | 渐进式披露:模型先调用 `kimi_browser_activate` 引导工具,随后获得全套 `kimi_browser_*` 工具(导航/快照/点击/输入/截图/标签管理) | ✅ 稳定 |
@@ -178,7 +178,7 @@ daemon 无法连接且自动启动失败 → 让用户手动运行
 3. 登录成功后该提供商出现在模型选择器;可选手动思考强度(ChatGPT 默认 `medium`,最高 `max`;Claude 默认 `high`,最高 `max`;Grok 最高 `xhigh`;Kimi 默认/最高 `max`);
 4. 可选:在 `settings.yaml` 的 `subscription-auth-<id>` 段覆盖 `apiBaseURL` / `redirectPort` / `maxTokens`,或用 `models` 手动固定模型列表。密钥只进 credentials,settings 里不要写令牌。
 
-**验证**:设置页该渠道显示「已登录」;模型选择器出现对应提供商;新会话切到该模型能发出一轮请求。日志:`~/.dsh/tmp/subscription-auth.log`;状态:`GET /subscription-auth/providers`。
+**验证**:设置页该渠道显示「已登录」;模型选择器出现对应提供商;新会话切到该模型能发出一轮请求。日志:`~/.dsh/tmp/subscription-auth.log`;状态:`GET /subscription-auth/providers`。切到 Grok 模型后,输入栏原余额位置应显示周额度剩余百分比。
 
 **排查**:
 
@@ -186,6 +186,25 @@ daemon 无法连接且自动启动失败 → 让用户手动运行
 - ChatGPT / Claude 点登录无反应或一直 pending:`rundll32` 打开浏览器失败,或本机 1455 / 54545 端口被占;不要用 `cmd /c start`(URL 里的 `&` 会被截断);
 - `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0`:旧会话日志里有负 usage。写入侧已钳零,读路径有投影守卫;仍炸则换新会话,不要改 DSH 内核;
 - 已有本机 junction 试装(`~/.dsh/profiles/web/cordis.patch.yml` 再 insert 一次同 id):会与合集 patch 撞 `duplicate loader entry id`。合集接管后删掉 profile 那条 insert,并删掉指向仓库外的 junction。
+
+### 0.6 余额/额度徽章 dizzy-dsh-balance(自有)
+
+**需用户提供**:DeepSeek 走 `DEEPSEEK_API_KEY`;Grok **无单独密钥**,凭证复用订阅插件写入的 `GROK_SUBSCRIPTION_TOKEN`(先完成 §0.5 的 Grok 登录)。
+
+**配置步骤**:
+
+1. DeepSeek:在 credentials 配好 `DEEPSEEK_API_KEY`,切到官方模型即可看到 ¥;
+2. Grok:确认设置 → 订阅服务 → Grok 为「已登录」,再把模型切到 Grok —— 同一位置显示剩余百分比;
+3. 可选:`settings.yaml` 的 `dizzy-balance` 段覆盖 `refreshIntervalMs` / `grokBillingBaseURL`(企业代理)。不要改 `grokCredentialName`,除非你自己换了凭据引用。
+
+**验证**:DeepSeek 时 `GET /dizzy/balance` 有 `balanceCny`;Grok 时 `GET /dizzy/grok-quota` 有 `remainingPercent`。问「Grok 额度」应调用 `grok_quota_check`。未登录提示去订阅服务。
+
+**排查**:
+
+- 徽章不出现:当前既不是 `deepseek-official` 也不是 `grok`,或 client 半区未加载(删 `node_modules/dizzy-dsh-balance` 后重装合集并重启);
+- Grok 显示「未登录」:先走 §0.5 登录,不要向用户要 cookie / API key;
+- HTTP 401 反复失败:refresh token 失效,重新在订阅服务登录;
+- 数字对不上 grok.com 网页:网页还有 2h 查询桶,本插件只读 CLI 周额度账本。
 
 ### 1. 视觉识别 dsh-vision-toolkit
 

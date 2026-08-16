@@ -423,12 +423,14 @@ git add -A && git commit -m "feat: ..." && git push
 
 - [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现全部
       entry(balance / usage-card / dizzy-agent-instructions / kimi-webbridge /
-      dsh-subscription-auth / better-sidebar / dsh-vision-toolkit / genui /
-      dsh-notification / ui-gui-customization)
+      dsh-subscription-auth / better-sidebar / dsh-vision-toolkit /
+      genui / dsh-notification / ui-gui-customization)
 - [ ] Host:每个子包可加载且 name/inject 正确:
       `node --input-type=module -e "import('dizzy-dsh-balance')"`,
       `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`、
-      `import('dizzy-dsh-kimi-webbridge')`、`import('dsh-subscription-auth')`
+      `import('dizzy-dsh-kimi-webbridge')`、
+      `import('dsh-subscription-auth')`
+- [ ] `node --test plugins/balance/grok-parse.test.js` 全绿
 - [ ] 收录的第三方可加载(依赖齐全):
       `import('dsh-better-sidebar')`、
       `import('@anionex/dsh-vision-toolkit')` 与
@@ -510,6 +512,24 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 ---
 
+## 7.7 余额徽章的 Grok 模式(dizzy-dsh-balance)
+
+输入栏右侧**同一**徽章(`conversation.input.right` / `id: deepseek-balance`):
+`deepseek-official` 显示 ¥,`grok` 显示 SuperGrok **周额度剩余百分比**。
+不是 grok.com 网页的 2h 查询桶。
+
+| 面 | 实现 |
+|---|---|
+| 凭证 | 读订阅插件写入的 `GROK_SUBSCRIPTION_TOKEN`(JSON:`refresh`/`access`/`expires`);过期或 401 时 `POST https://auth.x.ai/oauth2/token` 续期,写回前再读盘合并,热登录换了 refresh 不覆盖 |
+| 上游 | `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`,头 `Authorization: Bearer` + `X-XAI-Token-Auth: xai-grok-cli` + `x-grok-client-mode: interactive`。可选再打 `/v1/settings` 取 `subscription_tier_display` |
+| 账本 | 只用 `config.creditUsagePercent` + `config.currentPeriod`;省略 percent 且有 period = 真实 0%;**禁止**用 `monthlyLimit`/`used` 反推。展示已用 `floor`,剩余 `100 - floor(已用)` |
+| 路由 | `GET /dizzy/grok-quota` → `{ status, remainingPercent, creditUsagePercent, periodEnd, subscriptionTier, error, at }`。同源校验;响应不含 token / email / accountId |
+| 工具 | `grok_quota_check`(无参);未登录提示去设置 → 订阅服务 |
+| 挂载 | 仍是 `dizzy-dsh-balance` 的同一 slot,不另开插件 |
+
+> 企业代理把 `dizzy-balance.grokBillingBaseURL` 指到自建 cli-chat-proxy(`/v1`
+> 结尾)。不要读 `~/.grok/auth.json`,也不要打 grok.com gRPC-web。
+
 ## 8. 常见问题排查
 
 | 症状 | 原因 | 处理 |
@@ -518,6 +538,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 | 客户端 UI 不加载 | entry name 不是包名 / `exports["./client"]` 缺失 / client.js 文件缺失 | 对照 §6.5 扫描链逐环检查 |
 | `export default` 语法错误 | 缺 `"type": "module"` | package.json 补声明 |
 | 余额显示 `…` 不更新 | Host 路由未注册 / 缓存未刷新 | 检查 webServer 路由与 interval |
+| Grok 徽章不出现 / 一直「未登录」 | 当前模型不是 `provider === grok`,或尚未走订阅登录,或 file: 快照未同步 | 切到 Grok 模型;设置 → 订阅服务登录;删 `node_modules/dizzy-dsh-balance` 后重装合集 |
 | 401 授权失败 | 敏感 env 被 scrub / key 未配置 | 用 credentials + fetch,检查 `DEEPSEEK_API_KEY` |
 | patch 不生效 | 改完没重启 / link 指向旧路径 | 重启 dsh web;确认 bundles 列表 |
 | 重复路由报错 | (kind, path) 重复注册 | 换路径或复用已有注册 |

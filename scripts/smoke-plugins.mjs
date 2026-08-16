@@ -6,6 +6,7 @@
  *   - settings 命名空间注册(ns 正确,watch 返回 disposer)
  *   - webServer 路由同源校验(跨站 403,同源/无 Origin 200)
  *   - 工具注册与 agent 作用域披露(kimi-webbridge)
+ *   - balance 同时注册 DeepSeek 余额与 Grok 额度路由/工具
  *   - apply 返回的 disposer 完整清理
  *
  * 被测模块从 profile 安装副本导入(那里能解析 schemastery);
@@ -117,7 +118,7 @@ async function testBalance() {
   const plugin = await importPlugin('dizzy-dsh-balance')
   check('Config 挂在默认导出对象上', typeof plugin.Config === 'function' || typeof plugin.Config?.['~standard']?.validate === 'function')
   const defaults = plugin.Config(undefined)
-  check('Config(undefined) 填默认值', defaults.credentialName === 'DEEPSEEK_API_KEY' && defaults.refreshIntervalMs === 60000)
+  check('Config(undefined) 填默认值', defaults.credentialName === 'DEEPSEEK_API_KEY' && defaults.grokCredentialName === 'GROK_SUBSCRIPTION_TOKEN' && defaults.refreshIntervalMs === 60000)
   let threw = false
   try { plugin.Config({ refreshIntervalMs: 100 }) } catch { threw = true }
   check('越界 refreshIntervalMs 加载期报错', threw)
@@ -130,8 +131,11 @@ async function testBalance() {
 
   check('注册 settings 命名空间 dizzy-balance', settings.registrations[0]?.ns === 'dizzy-balance')
   check('注册 balance_check 工具', tools.registered.has('balance_check'))
+  check('注册 grok_quota_check 工具', tools.registered.has('grok_quota_check'))
   const route = webServer.routes.get('/dizzy/balance')
   check('注册 /dizzy/balance 路由', route !== undefined)
+  const grokRoute = webServer.routes.get('/dizzy/grok-quota')
+  check('注册 /dizzy/grok-quota 路由', grokRoute !== undefined)
 
   await new Promise((resolve) => setTimeout(resolve, 20)) // 等首次 refresh(无凭据路径)落定
 
@@ -155,9 +159,19 @@ async function testBalance() {
   const reply = await tools.registered.get('balance_check').execute()
   check('无凭据时工具返回可读错误', typeof reply === 'string' && reply.includes('未配置 DEEPSEEK_API_KEY'))
 
+  let grokRes = mockRes()
+  await grokRoute.handler({ url: '/dizzy/grok-quota', headers: {} }, grokRes)
+  check('Grok 未登录状态', JSON.parse(grokRes.body).status === 'unauthenticated')
+  const grokReply = await tools.registered.get('grok_quota_check').execute()
+  check('未登录 Grok 工具指向订阅服务', typeof grokReply === 'string' && grokReply.includes('订阅服务'))
+
+  grokRes = mockRes()
+  await grokRoute.handler({ url: '/dizzy/grok-quota', headers: { 'sec-fetch-site': 'cross-site' } }, grokRes)
+  check('Grok 路由 cross-site 403', grokRes.status === 403)
+
   dispose()
-  check('dispose 后工具注销', !tools.registered.has('balance_check'))
-  check('dispose 后路由摘除', !webServer.routes.has('/dizzy/balance'))
+  check('dispose 后工具注销', !tools.registered.has('balance_check') && !tools.registered.has('grok_quota_check'))
+  check('dispose 后路由摘除', !webServer.routes.has('/dizzy/balance') && !webServer.routes.has('/dizzy/grok-quota'))
 }
 
 // ── usage-card ─────────────────────────────────────────────────────────

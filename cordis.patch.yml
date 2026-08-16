@@ -18,8 +18,8 @@
 
 - insert:
     # ── 自有插件(子包,随主包 file: 依赖安装)────────────────────
-    # 余额:Host 每分钟刷新余额 + /dizzy/balance + balance_check 工具;
-    #       Client: conversation.input.right 徽章。
+    # 余额/额度:Host 刷新 DeepSeek 人民币 + Grok 周额度;
+    #       /dizzy/balance + /dizzy/grok-quota;Client 同一输入栏徽章。
     - id: balance
       name: 'dizzy-dsh-balance'
 

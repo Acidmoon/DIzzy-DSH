@@ -1,8 +1,8 @@
 {
   "name": "dizzy-dsh-balance",
   "private": true,
-  "version": "0.2.0",
-  "description": "DeepSeek 余额查询:Host 每分钟刷新余额 + /dizzy/balance 路由 + balance_check 工具;Client 输入栏余额徽章。",
+  "version": "0.3.0",
+  "description": "账户额度徽章:DeepSeek 人民币余额 + Grok 周额度(凭证读订阅插件 GROK_SUBSCRIPTION_TOKEN)。同一输入栏位置按当前模型切换;Host /dizzy/balance 与 /dizzy/grok-quota + balance_check / grok_quota_check。",
   "type": "module",
   "main": "./index.js",
   "dependencies": {
@@ -11,6 +11,7 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./grok-parse": "./grok-parse.js",
     "./package.json": "./package.json"
   },
   "dsh": {
