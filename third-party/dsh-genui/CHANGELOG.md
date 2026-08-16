@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.8.5] - 2026-08-16
+### 发布
+- **发布规范对齐 `plugin_check`（issue #15）**：
+  - 新增 bundle 源码入口 `src/index.ts`（`import type {}` 先引入 dsh client runtime 的 cordis Context 增广再重导出 `src/plugin/index`，规避 TS 5.9 从根入口进入时全局增广顺序不稳定的类型错误）；tsdown node 入口改为命名入口 `{ index: 'src/index.ts', invariant: 'src/plugin/invariant.ts' }` 并固定 `entryFileNames`，保持发布布局 `lib/index.js` + `lib/invariant.js` 不变；
+  - `tsconfig`：`outDir` 改为 `lib`（与 `main` 的 `lib/` 前缀对齐）、新增 `declarationDir: "lib/types"`（类型输出布局不变）、显式 `types: ["node"]`（devDependencies 同步补 `@types/node`，消除隐式 Node 类型依赖）；
+  - `files` 增补 `lib`、`src` 目录声明；新增 `scripts.prepack = pnpm run build`，发布 tarball 前强制重建 lib，clean checkout 可复现发布产物。
+  - 已知非本仓库可修项：`plugin_check` 的 org-name 政策目前只放行 `@deepseek-ai/*`/`@dsh-external/*`/`dsh-*`，`@omdsh-dev/dsh-genui` 为社区组织公开发布名，保持不变；其 `missing-peer: cordis` 提示基于旧 cordis 键名，本包实际依赖 `@deepseek-ai/cordis@^4.0.1`，不添加幻影 peer。
+### 测试
+- 全量 373 项（271 passed / 102 skipped）0 失败；`plugin_check` 从 3 errors / 4 warnings 收敛为 1 error / 1 warning（仅剩上述命名政策与旧 peer 键提示）。
+
+## [0.8.4] - 2026-08-16
+### 修复
+- **genui 与普通代码块共存时整条消息被吞（issue #13）**：同一消息容器里 `dsh-ui` 围栏和 python/ts/bash 等普通代码块共存时，DOM 通道的结构兜底从普通代码块的 `<pre>` 向上回溯，越过它自己的 `.md-code-block` 把共享的 `.markdown` 根容器误判为「dsh-ui 围栏」→ 整条消息 `display:none`、只剩 GenUI，普通代码块丢失。修复两层：① 兜底循环跳过已由已知表面选择器命中的 `<pre>`（这些块已处理，不再向上回溯）；② 标签判定不认领「属于嵌套已知代码块」的 banner（`owner !== block` 即跳过），共享容器不能再通过嵌套围栏的标签自证。未知类名表面的结构兜底能力保持不变（回归测试覆盖：未知表面 + 已知 python 块并存时仍照常渲染）
+### 测试
+- 275 → 278（+3 issue #13 回归：dsh-ui + python 并存时 dsh-ui 正常接管、python 与共享根容器不被隐藏/接管且无漂移误报；同根两个 dsh-ui 块各自渲染、面板 fold 以第二个为准；未知表面 + 已知 python 块并存时兜底仍生效）
+
+## [0.8.3] - 2026-08-14
+### 修复
+- **DOM 通道在异形宿主上静默不渲染（issue #6）**：DOM 通道的围栏发现此前依赖单一表面契约——选择器只认 `.md-code-block`，语言标签只认 banner 里的**叶子 `div`**。部分 DSH 0.1.0-rc.6 部署（deepsuite 风格渲染栈）把围栏渲染成 `.code-block` / `.code-block-small`，标签是 `span`，正文还可能被 content div 包裹 → 插件完全找不到围栏：保持代码块、控制台零报错（与报告完全一致）。修复为**多表面发现**：
+  - 选择器并集 `.md-code-block, .code-block, .code-block-small`（最外层去重，修饰类子元素不会双计）；
+  - **结构兜底**：任何 banner 叶子元素文本恰为 `dsh-ui`（div/span 均可、且必须在 `<pre>` 正文之外——代码体里出现 `dsh-ui` 字面量不得误判）且含 `<pre>` 的元素都会被识别为围栏表面，未知类名的宿主照样渲染；
+  - **漂移诊断**：结构兜底命中未知类名时一次性 `console.warn`（`[dsh-genui]` 前缀，每次安装一条），「静默失败」不再可能无迹可查；
+  - 已知类名表面保留完整流式能力（按内容流式接管 + 落定标签复核）；未知类名表面在标签出现（落定）后立即渲染，不丢内容。
+### 测试
+- 268 → 275（+7 多表面回归：`.code-block` 接管（span 标签 + 包裹正文）/`.code-block-small` 接管/未知类名结构兜底 + 漂移告警恰好一次/代码体含 `dsh-ui` 字面量不误判/嵌套修饰类只接管最外层/同行两个异形围栏各自渲染且身份不折叠/异形表面流式接管与落定复核）；370 全绿
+
+## [0.8.2] - 2026-08-14
+### 修复
+- **页面刷新后面板 dock 冻结（issue #4）**：宿主 anchor key 格式为 `<kindlen>:<kind><id>`（assistant step 的 id 是 `<turn>:<step>`，如 `14:assistant-step3:0`）。DOM 通道 `anchorSeqOf` 旧实现取 key 里**第一个数字 = kind 名称长度常量**（所有 assistant step 都是同一个值）→ 面板 store 的持久化重放屏障（刷新后 replayBarrier = 持久化 maxSeenSeq = 该常量）拒绝一切新 panel 围栏：dock 停在旧快照、`[genui-action]` 还活着、控制台零日志；清 `localStorage['dsh.genui.panel']` 恢复但刷新复发（与报告完全一致）。修复：`anchorSeqOf` 改从 assistant-step key 解析 `<turn>:<step>`，seq = `turn*1000+step`（随消息顺序严格单调，刷新后新消息必然大于持久化屏障）；非 assistant 行 / 无锚点（Safari）行保留文档序兜底。同类隐患一并修复：`/panel` 本地覆盖的 localBarrier 同样依赖该 seq，此前也会冻结后续更新
+- **面板静默拒绝可观测（issue #4 建议 3）**：`applyPanelOperation` 的 barrier 拒绝路径加一次性 `console.warn`（`[genui] 面板操作被重放屏障拒绝…`，每 source 每页面会话一条；预算 overflow 后置 append 拒绝仍走既有的 budget 诊断，不重复告警）；`clearSessionPanel` 同步清理 blocked 诊断集
+### 测试
+- 263 → 266（+3：DOM 通道刷新回归「turn 2/3 面板 → 模拟刷新 → 历史重放保持旧快照 → turn 4 新围栏更新 dock」（旧代码上该测试失败于 `expected '面板B' to be '面板C'`，精确复现报告症状）/同 turn 内 step 单调性；panel-store 屏障拒绝告警一次/条）；363 全绿
+
 ## [0.8.1] - 2026-08-14
 ### 修复
 - **Safari 围栏全部静默丢失（issue #1）**：Safari 宿主渲染消息行时不带 `data-chat-anchor-key`（该属性是 React key 派生值，key 为 undefined 时 React 直接不渲染该属性；Chrome 同页 14 个代码块全有锚点、Safari 0 个）→ DOM 通道 `rowOf` 落空 → 每个 `dsh-ui` 围栏在静默 return 点被放弃，控制台零报错。修复：行解析降级链 `[data-chat-anchor-key]` → `[data-chat-flow-key]/[data-chat-flow-kind]`（宿主同一行 div 上的路由属性，kind 与 key 相互独立、可幸存）→ 代码块自身（身份降级为 `dom:unknown:<序数>`，`contextOf` 的 `?? 'unknown'` 分支本就存在）；`fenceIndexOf` 在无行兜底时改按全文档已落定 dsh-ui 块的序数计数，同行兄弟围栏不会撞同一个 `dom:unknown:N`；`anchorSeqOf` 文档序兜底改用联合选择器（锚点行 + flow 行），无锚点行仍得单调 seq 估计。**所有静默 return 点加一次性 `console.warn`（`[dsh-genui]` 前缀，WeakSet 每块一次，1s sweep 不刷屏）**：无锚点降级、落定空体、落定不可修复体各一条诊断

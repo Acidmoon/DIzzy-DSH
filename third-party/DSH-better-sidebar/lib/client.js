@@ -16,17 +16,32 @@ window.__ModuleLoader__.load({
 			autoOpenJobs: true,
 			agentTerminalTools: false,
 			bottomPanelAutoTerminal: true,
+			terminalFontFamily: "",
+			terminalFontSize: 13,
 			interceptOpenPath: true,
+			titleBarCompat: false,
+			titleBarStripPx: 40,
 			htmlViewerNoSandbox: false,
 			htmlViewerDefaultUnsafe: false,
 			browserNoSandbox: false,
 			browserInterceptLinks: true,
+			browserInterceptHttp: true,
+			browserInterceptHttps: false,
 			tabsEnabled: {},
-			viewersEnabled: {}
+			viewersEnabled: {},
+			pluginSettings: {}
 		};
 		/** Clamp one width percent into the contract range (shared by schema and client reads). */
 		function clampWidthPercent(value) {
 			return Math.min(60, Math.max(20, Math.round(value)));
+		}
+		/** Clamp one terminal font size into the contract range (shared by schema and client reads). */
+		function clampTerminalFontSize(value) {
+			return Math.min(32, Math.max(9, Math.round(value)));
+		}
+		/** Clamp one title-bar strip height into the contract range (shared by schema and client reads). */
+		function clampTitleBarStrip(value) {
+			return Math.min(120, Math.max(0, Math.round(value)));
 		}
 		/** Whether a viewport width is narrow (mobile). */
 		function isNarrowWidth(width) {
@@ -383,7 +398,7 @@ window.__ModuleLoader__.load({
 				})
 			};
 		}
-		/** Update the display fields of one open tab (title / path) without
+		/** Update the display fields of one open tab (title / path / meta) without
 		*  re-opening it. The browser tab persists its current URL and hostname
 		*  title through this reducer so a reload restores the visited page. A
 		*  missing tab id is a no-op. The tab may live in either tree. */
@@ -397,7 +412,8 @@ window.__ModuleLoader__.load({
 						return {
 							...tab,
 							...patch.title !== void 0 ? { title: patch.title } : {},
-							...patch.path !== void 0 ? { path: patch.path } : {}
+							...patch.path !== void 0 ? { path: patch.path } : {},
+							...patch.meta !== void 0 ? { meta: patch.meta } : {}
 						};
 					});
 					return tabs === node.tabs ? node : {
@@ -777,7 +793,8 @@ window.__ModuleLoader__.load({
 						id: candidate.id,
 						type: candidate.type,
 						title: candidate.title,
-						...typeof candidate.path === "string" ? { path: candidate.path } : {}
+						...typeof candidate.path === "string" ? { path: candidate.path } : {},
+						...candidate.meta !== void 0 ? { meta: candidate.meta } : {}
 					});
 				}
 				const active = typeof record.active === "string" ? record.active : null;
@@ -818,7 +835,9 @@ window.__ModuleLoader__.load({
 				prefs: { ...SIDEBAR_PREFS_DEFAULTS }
 			};
 			listeners = /* @__PURE__ */ new Set();
-			persistTimer;
+			/** Per-session persist debounce timers (v0.12.0+: one per session, so a
+			*  targeted open never cancels another session's pending write). */
+			persistTimers = /* @__PURE__ */ new Map();
 			/** User-facing side card prefs seeding brand-new session states (defaults until the settings RPC resolves). */
 			prefs = { ...SIDEBAR_PREFS_DEFAULTS };
 			/**
@@ -905,6 +924,7 @@ window.__ModuleLoader__.load({
 				const state = this.snapshot.state;
 				if (sessionId === void 0 || state === void 0) return;
 				const next = reducer(state);
+				if (next === state) return;
 				this.bySession.set(sessionId, next);
 				this.snapshot = {
 					sessionId,
@@ -914,13 +934,36 @@ window.__ModuleLoader__.load({
 				this.schedulePersist(sessionId, next);
 				this.notify();
 			}
+			/**
+			* Apply a pure reducer to a TARGET session's state (not the active one),
+			* loading it on demand and persisting the result — WITHOUT switching the
+			* active snapshot or notifying (the UI must not follow along). Used by the
+			* service's targeted `openTab(seed, scope)`: the open lands in the target
+			* session's layout and is visible whenever the user switches to it.
+			*/
+			reduceFor(sessionId, reducer) {
+				const counterBefore = nextIdCounter;
+				let state = this.bySession.get(sessionId);
+				if (state === void 0) {
+					state = loadState(sessionId, this.prefs);
+					this.bySession.set(sessionId, state);
+				} else nextIdCounter = maxCounterId(state);
+				const next = reducer(state);
+				nextIdCounter = Math.max(nextIdCounter, counterBefore);
+				if (next === state) return;
+				this.bySession.set(sessionId, next);
+				this.schedulePersist(sessionId, next);
+			}
 			schedulePersist(sessionId, state) {
-				window.clearTimeout(this.persistTimer);
-				this.persistTimer = window.setTimeout(() => {
+				const existing = this.persistTimers.get(sessionId);
+				if (existing !== void 0) window.clearTimeout(existing);
+				const timer = window.setTimeout(() => {
+					this.persistTimers.delete(sessionId);
 					try {
 						localStorage.setItem(`${STORAGE_PREFIX}:${sessionId}`, JSON.stringify(state));
 					} catch {}
 				}, 200);
+				this.persistTimers.set(sessionId, timer);
 			}
 			notify() {
 				for (const listener of [...this.listeners]) listener();
@@ -944,6 +987,73 @@ window.__ModuleLoader__.load({
 			if (at === -1) return "";
 			const base = path.slice(at + 1).toLowerCase();
 			return base.includes("/") || base.includes("\\") ? "" : base;
+		}
+		/** The file name of a path (both separators). */
+		function baseNameOf(path) {
+			const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+			return at === -1 ? path : path.slice(at + 1);
+		}
+		/**
+		* Find the tab type that claims an intercepted external-link URL (v0.13.0+).
+		* Walks the descriptors in REGISTRATION order and returns the first one
+		* that declares `urlTarget` and matches `url`; a throwing predicate is
+		* swallowed (console.error, type skipped) so one broken plugin can never
+		* break the whole link pipeline. The caller passes the ENABLED tab
+		* descriptors (enablement is the caller's prefs domain — filter
+		* `service.getTabs()` through `tabsEnabled` before matching) and falls
+		* back to the built-in browser tab when nothing claims the URL (the
+		* browser never declares `urlTarget` itself, so it can never shadow a
+		* plugin claim).
+		*/
+		function matchUrlTarget(tabs, url) {
+			for (const tab of tabs) {
+				if (tab.urlTarget === void 0) continue;
+				let claimed = false;
+				try {
+					claimed = tab.urlTarget(url) === true;
+				} catch (error) {
+					console.error("[dsh-better-sidebar] urlTarget error:", error);
+					continue;
+				}
+				if (claimed) return tab;
+			}
+		}
+		/**
+		* The plugin version this service instance reports. Keep in lockstep with
+		* `package.json`'s version — `tests/service.spec.ts` asserts the pair.
+		*/
+		const SIDEBAR_SERVICE_VERSION = "0.12.2";
+		/**
+		* Monotonic capability list consumers use to gate new API usage (features
+		* are never removed). Each string names a v0.12.0+ capability:
+		* - 'badge': TabDescriptor.badge
+		* - 'tabLifecycle': TabDescriptor.onOpen/onActivate/onClose
+		* - 'updateTab': BetterSidebarService.updateTab
+		* - 'openFile': BetterSidebarService.openFile
+		* - 'targetedOpen': BetterSidebarService.openTab(seed, scope?)
+		* - 'stateSubscription': getSnapshot/subscribeState
+		* - 'tabMeta': SidebarTab.meta (seeds, createTab, updateTab, persistence)
+		* - 'pluginSettings': SidebarSettingsDeclaration.pluginToggles/render
+		* - 'urlTarget' (v0.13.0): TabDescriptor.urlTarget (external-link claims)
+		*/
+		const SIDEBAR_FEATURES = [
+			"badge",
+			"tabLifecycle",
+			"updateTab",
+			"openFile",
+			"targetedOpen",
+			"stateSubscription",
+			"tabMeta",
+			"pluginSettings",
+			"urlTarget"
+		];
+		/** Run one plugin callback; a throw is logged and never breaks the caller. */
+		function safeCall(fn) {
+			try {
+				fn();
+			} catch (error) {
+				console.error("[dsh-better-sidebar] plugin callback error:", error);
+			}
 		}
 		/**
 		* Create one BetterSidebar service bound to a store. The service owns the
@@ -1004,14 +1114,21 @@ window.__ModuleLoader__.load({
 					if (v.exts.includes(ext)) return v;
 				}
 			};
-			const openTab = (seed) => {
+			const openTab = (seed, scope) => {
 				if (!isTabEnabled(seed.type)) {
 					console.warn(`[dsh-better-sidebar] tab type "${seed.type}" is disabled in the side card settings`);
 					return;
 				}
-				store.reduce((state) => {
-					const descriptor = tabs.get(seed.type);
-					if (descriptor === void 0) return state;
+				const descriptor = tabs.get(seed.type);
+				if (descriptor === void 0) return;
+				const targetSessionId = scope?.sessionId ?? store.getSnapshot().sessionId;
+				if (targetSessionId === void 0) return;
+				const callbackScope = scope ?? { sessionId: targetSessionId };
+				const activeSessionId = store.getSnapshot().sessionId;
+				const targetsInactiveSession = scope !== void 0 && scope.sessionId !== activeSessionId;
+				let created;
+				let activated;
+				const reducer = (state) => {
 					let tab;
 					let next;
 					if (descriptor.createTab !== void 0) {
@@ -1029,17 +1146,29 @@ window.__ModuleLoader__.load({
 							type: seed.type,
 							title: seed.title ?? (typeof descriptor.title === "function" ? descriptor.title() : descriptor.title),
 							...seed.path !== void 0 ? { path: seed.path } : {},
-							...seed.diff !== void 0 ? { diff: seed.diff } : {}
+							...seed.diff !== void 0 ? { diff: seed.diff } : {},
+							...seed.meta !== void 0 ? { meta: seed.meta } : {}
 						};
 						next = applyDedupe(state, tab, descriptor);
 					}
-					let landed;
-					if (seed.url !== void 0) landed = patchTab(next, tab.id, {
+					const dedupeKey = descriptor.dedupeKey ?? (descriptor.single === true ? () => descriptor.id : void 0);
+					const key = dedupeKey?.(tab);
+					const inputTabs = allLeaves(state.splits).concat(allLeaves(state.bottomSplits)).flatMap((leaf) => leaf.tabs);
+					const existedByKey = key !== void 0 && inputTabs.some((candidate) => candidate.type === tab.type && dedupeKey(candidate) === key);
+					const existedById = tabOpenIn(state, tab.id);
+					const isCreation = !existedByKey && !existedById;
+					let landed = next;
+					if (seed.url !== void 0 && isCreation) landed = patchTab(next, tab.id, {
 						path: seed.url,
 						...seed.title !== void 0 ? { title: seed.title } : {}
 					});
-					else landed = next;
-					if (typeof window !== "undefined" && (seed.path !== void 0 || seed.url !== void 0)) {
+					if (isCreation) created = allLeaves(landed.splits).concat(allLeaves(landed.bottomSplits)).flatMap((leaf) => leaf.tabs).find((candidate) => candidate.id === tab.id) ?? tab;
+					else {
+						const candidates = allLeaves(landed.splits).concat(allLeaves(landed.bottomSplits)).flatMap((leaf) => leaf.tabs);
+						activated = key !== void 0 ? candidates.find((candidate) => candidate.type === tab.type && dedupeKey(candidate) === key) : candidates.find((candidate) => candidate.id === tab.id);
+						activated ??= tab;
+					}
+					if (!targetsInactiveSession && typeof window !== "undefined" && (seed.path !== void 0 || seed.url !== void 0)) {
 						if (isNarrowWidth(window.innerWidth)) {
 							if (!landed.panelOpen) return togglePanel(landed);
 						} else if (treeOf(landed, landed.activePane ?? "") === "bottomSplits") {
@@ -1050,14 +1179,67 @@ window.__ModuleLoader__.load({
 						} else if (!landed.panelOpen) return togglePanel(landed);
 					}
 					return landed;
-				});
+				};
+				if (targetsInactiveSession) store.reduceFor(scope.sessionId, reducer);
+				else store.reduce(reducer);
+				if (created !== void 0) safeCall(() => descriptor.onOpen?.(created, callbackScope));
+				else if (activated !== void 0) safeCall(() => descriptor.onActivate?.(activated, callbackScope));
 			};
-			const closeTab$1 = (tabId) => {
+			const closeTab$1 = (tabId, scope) => {
+				let closed;
 				store.reduce((state) => {
+					if (!tabOpenIn(state, tabId)) return state;
 					const paneId = findPaneIdOf(state, tabId);
-					if (paneId === "") return state;
+					closed = leafWithTab(state[treeOf(state, paneId)], tabId)?.tabs.find((tab) => tab.id === tabId);
 					return closeTab(state, paneId, tabId);
 				});
+				if (closed !== void 0) {
+					const sessionId = scope?.sessionId ?? store.getSnapshot().sessionId;
+					if (sessionId !== void 0) {
+						const descriptor = tabs.get(closed.type);
+						safeCall(() => descriptor?.onClose?.(closed, scope ?? { sessionId }));
+					}
+				}
+			};
+			/** The snapshot the store publishes (state/prefs carry the active session). */
+			const getSnapshot = () => store.getSnapshot();
+			/** Store changes: session switch, state mutations, prefs writes. */
+			const subscribeState = (listener) => store.subscribe(listener);
+			/** Patch an open tab's display fields (a missing tab id is a no-op). */
+			const updateTab = (tabId, patch) => {
+				store.reduce((state) => patchTab(state, tabId, {
+					...patch.title !== void 0 ? { title: patch.title } : {},
+					...patch.path !== void 0 ? { path: patch.path } : {},
+					...patch.meta !== void 0 ? { meta: patch.meta } : {}
+				}));
+			};
+			/** Activate an open tab (the tab-bar activation path; fires onActivate). */
+			const activateTab$1 = (tabId, scope) => {
+				let activated;
+				store.reduce((state) => {
+					if (!tabOpenIn(state, tabId)) return state;
+					const paneId = findPaneIdOf(state, tabId);
+					activated = leafWithTab(state[treeOf(state, paneId)], tabId)?.tabs.find((tab) => tab.id === tabId);
+					return activateTab(state, paneId, tabId);
+				});
+				if (activated !== void 0) {
+					const sessionId = scope?.sessionId ?? store.getSnapshot().sessionId;
+					if (sessionId !== void 0) {
+						const descriptor = tabs.get(activated.type);
+						safeCall(() => descriptor?.onActivate?.(activated, scope ?? { sessionId }));
+					}
+				}
+			};
+			/** Open a file in the sidebar editor of `scope`'s session (title defaults
+			*  to the file name; the tab id is path-derived, like the internal
+			*  open-path interception, so distinct files open side by side). */
+			const openFile = (scope, path, title) => {
+				openTab({
+					type: "editor",
+					title: title ?? baseNameOf(path),
+					path,
+					id: `editor:${path}`
+				}, scope);
 			};
 			return {
 				registerTab,
@@ -1070,7 +1252,14 @@ window.__ModuleLoader__.load({
 				matchFileViewer,
 				openTab,
 				closeTab: closeTab$1,
-				subscribe
+				subscribe,
+				version: SIDEBAR_SERVICE_VERSION,
+				features: SIDEBAR_FEATURES,
+				getSnapshot,
+				subscribeState,
+				updateTab,
+				activateTab: activateTab$1,
+				openFile
 			};
 		}
 		/**
@@ -1307,6 +1496,9 @@ window.__ModuleLoader__.load({
 			copyAbsolute: "复制绝对地址",
 			download: "下载",
 			settingsNav: "侧边卡片",
+			settingsIntro: "管理侧边卡片的显示内容与默认行为",
+			settingsPopupDesc: "为「{feature}」配置相关选项",
+			settingsDone: "完成",
 			settingsOpenTitle: "新会话默认打开",
 			settingsOpenDesc: "新建会话时自动展开侧边卡片；已存在的会话保持各自布局",
 			settingsWidthTitle: "默认宽度占比",
@@ -1314,18 +1506,14 @@ window.__ModuleLoader__.load({
 			settingsWidthSuffix: "%",
 			settingsOpenPathTitle: "聊天区文件在侧边栏打开",
 			settingsOpenPathDesc: "在聊天里点击文件链接（工具行、产物列表、文件提及）时，在侧边栏编辑器中打开，不再调用系统默认应用",
+			settingsTitleBarTitle: "位置兼容模式",
+			settingsTitleBarDesc: "为 Windows 右上角的原生标题栏预留空间：侧边栏按钮与侧边栏内容整体下移，避免被标题栏遮挡",
+			settingsTitleBarStripTitle: "下移距离",
+			settingsTitleBarStripDesc: "标题栏条带高度：侧边栏按钮与内容下移的像素数（0–120，默认 40）",
 			settingsSaveFailed: "保存失败",
 			settingsConflict: "设置已被其他窗口修改，请重试",
 			binaryNoPreview: "此文件类型不支持预览",
 			downloadToView: "下载查看",
-			officeTooLarge: "文件过大，无法预览",
-			officeCorrupt: "文件损坏或格式无效",
-			officeEncrypted: "不支持加密文件",
-			officeLoadFailed: "Office 预览组件加载失败",
-			previousSlide: "上一页",
-			nextSlide: "下一页",
-			zoom: "缩放",
-			zoomHint: "Alt + 滚轮",
 			settingsSubagentTitle: "检测到子代理时自动展开任务管理页",
 			settingsSubagentDesc: "当前会话产生新的子代理时，自动展开侧边栏并打开任务管理页；关闭后需手动打开",
 			settingsJobsTitle: "有新后台任务时自动展开后台任务页",
@@ -1334,6 +1522,12 @@ window.__ModuleLoader__.load({
 			settingsToolsDesc: "开启后，模型可通过 terminal_create 等 8 个工具创建并操作侧边栏终端（默认关闭）",
 			settingsBottomTerminalTitle: "底部面板首次展开自动开终端",
 			settingsBottomTerminalDesc: "每次会话中第一次展开底部面板时，尝试在底部面板自动打开一个新终端标签（终端数量上限仍会限制；默认开启）",
+			settingsFontFamilyTitle: "终端字体",
+			settingsFontFamilyDesc: "自定义终端字体族（CSS font-family，如 \"JetBrains Mono\", monospace；留空跟随主题等宽字体）",
+			settingsFontFamilyPlaceholder: "\"JetBrains Mono\", monospace",
+			settingsFontSizeTitle: "终端字号",
+			settingsFontSizeDesc: "终端字号（9–32，默认 13）",
+			settingsFontSizeSuffix: "px",
 			settingsTabsTitle: "侧边栏内容",
 			settingsViewersTitle: "文件预览",
 			settingsGeneralTitle: "常规",
@@ -1341,9 +1535,6 @@ window.__ModuleLoader__.load({
 			settingsViewerCatchAll: "兜底：任意文件",
 			viewerImage: "图片",
 			viewerPdf: "PDF",
-			viewerDocx: "Word 文档",
-			viewerXlsx: "Excel 表格",
-			viewerPptx: "PPT 演示",
 			viewerMarkdown: "Markdown",
 			viewerCode: "代码",
 			viewerBinary: "二进制下载",
@@ -1369,7 +1560,11 @@ window.__ModuleLoader__.load({
 			settingsBrowserSandboxTitle: "关闭浏览器沙箱（不安全）",
 			settingsBrowserSandboxDesc: "关闭后，访问的任何网站都将与界面同源运行，可读取会话数据并冒充你的登录状态。仅对完全可信的站点开启",
 			settingsBrowserLinksTitle: "聊天区外链在侧边栏打开",
-			settingsBrowserLinksDesc: "开启后，点击聊天或界面中的 http/https 外链时在侧边栏浏览器中打开，不再弹出新窗口；Ctrl/Cmd 点击可临时放行",
+			settingsBrowserLinksDesc: "开启后，点击聊天或界面中的外链时在侧边栏打开，不再弹出新窗口；HTTP 与 HTTPS 可分别通过下方开关控制；Ctrl/Cmd 点击可临时放行",
+			settingsBrowserHttpTitle: "侧边打开HTTP网页",
+			settingsBrowserHttpDesc: "开启后，点击聊天或界面中的 HTTP 外链时在侧边栏打开（声明了 urlTarget 的插件页面优先）；Ctrl/Cmd 点击可临时放行",
+			settingsBrowserHttpsTitle: "侧边打开HTTPS网页",
+			settingsBrowserHttpsDesc: "开启后，点击聊天或界面中的 HTTPS 外链时在侧边栏打开。默认关闭：多数 HTTPS 站点拒绝被嵌入，走系统浏览器更顺畅",
 			browserOpenExternal: "在浏览器中打开",
 			browserEmbedBlocked: "{host} 拒绝了嵌入请求",
 			browserEmbedBlockedDesc: "该站点通过 X-Frame-Options / frame-ancestors 禁止在其它页面中显示，无法在侧边栏内加载。可在浏览器中直接打开",
@@ -1408,7 +1603,21 @@ window.__ModuleLoader__.load({
 			jobOutputError: "输出读取失败",
 			jobKill: "终止",
 			jobKillConfirm: "再次点击确认终止",
-			jobKillError: "终止失败"
+			jobKillError: "终止失败",
+			addPluginsTabCard: "添加 Tab 插件",
+			addPluginsTabCardDesc: "注册新的侧边栏页面",
+			addPluginsViewerCard: "添加预览插件",
+			addPluginsViewerCardDesc: "注册新的文件类型预览",
+			addPluginsTabDesc: "侧边栏页面（Tab）可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。",
+			addPluginsViewerDesc: "文件预览器可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。",
+			addPluginsBrowseMore: "在 GitHub 上浏览更多插件（topic: dsh-better-sidebar）",
+			addPluginsRecommended: "推荐插件",
+			addPluginsEmpty: "暂未收录插件，欢迎在 GitHub topic 下发布你的插件",
+			openPlugin: "跳转",
+			copyInstall: "复制安装命令",
+			pluginOfficeDesc: "为 better-sidebar 编辑器提供 Office 三件套预览（.docx / .xlsx / .pptx），把重型 Office 渲染库拆出主包、按需安装",
+			pluginSentinelDesc: "条件驱动的 agent 唤醒系统：文件/进程/端口/HTTP/命令/webhook 传感器，条件达成自动唤醒休眠会话；注册「哨兵」Tab 展示服务器全局监控表",
+			pluginSidebarQaDesc: "基于 better-sidebar 的划选提问tab分页: 对话划选 → 右侧面板提问 → 同工作区独立追问会话（❓追问·主题）：快速无思考模型压缩主对话上下文后与引文一起注入，不打断主对话；追问可嵌套、可继续、可归档"
 		};
 		/** The en dictionary (key-set-equal to zh, enforced by the type annotation). */
 		const en = {
@@ -1507,6 +1716,9 @@ window.__ModuleLoader__.load({
 			copyAbsolute: "Copy absolute path",
 			download: "Download",
 			settingsNav: "Side card",
+			settingsIntro: "Manage what the side card shows and how it behaves",
+			settingsPopupDesc: "Configure related options for {feature}",
+			settingsDone: "Done",
 			settingsOpenTitle: "Open by default for new conversations",
 			settingsOpenDesc: "Expand the side card automatically for brand-new conversations; existing conversations keep their own layouts",
 			settingsWidthTitle: "Default width share",
@@ -1514,18 +1726,14 @@ window.__ModuleLoader__.load({
 			settingsWidthSuffix: "%",
 			settingsOpenPathTitle: "Open chat files in the sidebar",
 			settingsOpenPathDesc: "Open file links in the chat (tool rows, produced files, mentions) in the sidebar editor instead of the system default app",
+			settingsTitleBarTitle: "Position compatibility mode",
+			settingsTitleBarDesc: "Reserve space for the native Windows title bar at the top-right so the sidebar buttons and content sit below it instead of underneath",
+			settingsTitleBarStripTitle: "Shift distance",
+			settingsTitleBarStripDesc: "Title-bar strip height: how far the sidebar buttons and content move down in px (0–120, default 40)",
 			settingsSaveFailed: "Failed to save",
 			settingsConflict: "The setting changed in another window — please retry",
 			binaryNoPreview: "This file type cannot be previewed",
 			downloadToView: "Download to view",
-			officeTooLarge: "File too large to preview",
-			officeCorrupt: "File is corrupt or in an invalid format",
-			officeEncrypted: "Encrypted files are not supported",
-			officeLoadFailed: "Office preview component failed to load",
-			previousSlide: "Previous",
-			nextSlide: "Next",
-			zoom: "Zoom",
-			zoomHint: "Alt + wheel",
 			settingsSubagentTitle: "Auto-open the Tasks page when a subagent appears",
 			settingsSubagentDesc: "Expand the side card and open the Tasks page when the current conversation spawns a new subagent; turn off to open it manually",
 			settingsJobsTitle: "Auto-open the Jobs page on a new background job",
@@ -1534,6 +1742,12 @@ window.__ModuleLoader__.load({
 			settingsToolsDesc: "When enabled, the model can create and drive sidebar terminals through the 8 terminal_* tools (off by default)",
 			settingsBottomTerminalTitle: "Auto-open a terminal on the bottom panel's first expansion",
 			settingsBottomTerminalDesc: "When the bottom panel is expanded for the first time in a session, try to open a fresh terminal tab there (the terminal quota still applies; on by default)",
+			settingsFontFamilyTitle: "Terminal font family",
+			settingsFontFamilyDesc: "Custom terminal font family (a CSS font-family stack like \"JetBrains Mono\", monospace; leave empty to follow the theme's monospace font)",
+			settingsFontFamilyPlaceholder: "\"JetBrains Mono\", monospace",
+			settingsFontSizeTitle: "Terminal font size",
+			settingsFontSizeDesc: "Terminal font size in px (9–32, default 13)",
+			settingsFontSizeSuffix: "px",
 			settingsTabsTitle: "Sidebar content",
 			settingsViewersTitle: "File viewers",
 			settingsGeneralTitle: "General",
@@ -1541,9 +1755,6 @@ window.__ModuleLoader__.load({
 			settingsViewerCatchAll: "Catch-all: any file",
 			viewerImage: "Image",
 			viewerPdf: "PDF",
-			viewerDocx: "Word",
-			viewerXlsx: "Excel",
-			viewerPptx: "PowerPoint",
 			viewerMarkdown: "Markdown",
 			viewerCode: "Code",
 			viewerBinary: "Binary download",
@@ -1569,7 +1780,11 @@ window.__ModuleLoader__.load({
 			settingsBrowserSandboxTitle: "Disable browser sandbox (unsafe)",
 			settingsBrowserSandboxDesc: "With the sandbox off, any visited site runs with the same origin as the GUI: it can read session data and act as your logged-in session. Only enable for fully trusted sites",
 			settingsBrowserLinksTitle: "Open chat external links in the sidebar",
-			settingsBrowserLinksDesc: "When on, clicking an http/https external link in the chat or GUI opens the sidebar browser instead of a new window; Ctrl/Cmd+click always bypasses",
+			settingsBrowserLinksDesc: "When on, clicking an external link in the chat or GUI opens the sidebar instead of a new window; HTTP and HTTPS are controlled separately by the switches below; Ctrl/Cmd+click always bypasses",
+			settingsBrowserHttpTitle: "Open HTTP pages in the sidebar",
+			settingsBrowserHttpDesc: "When on, clicking an HTTP external link in the chat or GUI opens the sidebar (plugin pages declaring urlTarget win); Ctrl/Cmd+click always bypasses",
+			settingsBrowserHttpsTitle: "Open HTTPS pages in the sidebar",
+			settingsBrowserHttpsDesc: "When on, clicking an HTTPS external link in the chat or GUI opens the sidebar. Off by default: most HTTPS sites refuse to be embedded, so the system browser is the smoother default",
 			browserOpenExternal: "Open in browser",
 			browserEmbedBlocked: "{host} refused to be embedded",
 			browserEmbedBlockedDesc: "The site forbids being displayed inside other pages (X-Frame-Options / frame-ancestors), so it cannot load in the sidebar. Open it directly in your browser instead.",
@@ -1608,7 +1823,21 @@ window.__ModuleLoader__.load({
 			jobOutputError: "Failed to read output",
 			jobKill: "Kill",
 			jobKillConfirm: "Click again to confirm kill",
-			jobKillError: "Kill failed"
+			jobKillError: "Kill failed",
+			addPluginsTabCard: "Add tab plugins",
+			addPluginsTabCardDesc: "Register a new sidebar page",
+			addPluginsViewerCard: "Add preview plugins",
+			addPluginsViewerCardDesc: "Register a file-type preview",
+			addPluginsTabDesc: "Sidebar pages (tabs) can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.",
+			addPluginsViewerDesc: "File previewers can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.",
+			addPluginsBrowseMore: "Browse more plugins on GitHub (topic: dsh-better-sidebar)",
+			addPluginsRecommended: "Recommended plugins",
+			addPluginsEmpty: "No plugins curated yet — publish yours under the GitHub topic",
+			openPlugin: "Open",
+			copyInstall: "Copy install command",
+			pluginOfficeDesc: "Office-suite preview (.docx / .xlsx / .pptx) for the better-sidebar editor, keeping the heavy Office render libraries out of the core bundle",
+			pluginSentinelDesc: "Condition-driven agent wakeup: file/process/port/http/command/webhook sensors wake dormant sessions when conditions fire; registers a \"Sentinel\" tab with the server-wide watch table",
+			pluginSidebarQaDesc: "Select-and-ask: Select conversation text → ask in the right-side panel → a dedicated follow-up session (❓追问) in the same workspace; a fast no-thinking model compresses the main context and injects it with the quote, without interrupting the main conversation. Follow-ups nest, continue, and archive"
 		};
 		/**
 		* The dictionary namespace this plugin owns in the DSH locale registry
@@ -1761,7 +1990,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:/Users/menghuan/Code/DSH-better-sidebar/src/client/sidebar.module.css.mjs
-		const css$3 = ".W-zNGW_toggleCluster{z-index:55;flex-direction:row;gap:4px;display:flex;position:fixed;top:3px;right:10px}.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:72px}.W-zNGW_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.W-zNGW_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_toggleButton:disabled{opacity:.4;cursor:default}.W-zNGW_panel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-left:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;top:0;bottom:0;right:0}.W-zNGW_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.W-zNGW_panel[data-dragging]{transition:none}.W-zNGW_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.W-zNGW_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_panelBody{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_bottomPanel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-top:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;bottom:0}.W-zNGW_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.W-zNGW_bottomPanel[data-dragging]{transition:none}.W-zNGW_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.W-zNGW_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.W-zNGW_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_bottomPanel .W-zNGW_tabBar{padding-right:40px}.W-zNGW_cornerHandle{z-index:52;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:fixed}.W-zNGW_cornerHandle:hover,.W-zNGW_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_iconButton:disabled{opacity:.4;cursor:default}.W-zNGW_workbench,.W-zNGW_split{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_splitRow{flex-direction:row}.W-zNGW_splitCol{flex-direction:column}.W-zNGW_splitChild{display:flex;position:relative;overflow:hidden}.W-zNGW_divider{z-index:3;touch-action:none;flex:none;position:relative}.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.W-zNGW_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.W-zNGW_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.W-zNGW_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.W-zNGW_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.W-zNGW_divider:hover:after,.W-zNGW_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.W-zNGW_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.W-zNGW_dropLeft{width:25%;top:0;bottom:0;left:0}.W-zNGW_dropRight{width:25%;top:0;bottom:0;right:0}.W-zNGW_dropUp{height:25%;top:0;left:0;right:0}.W-zNGW_dropDown{height:25%;bottom:0;left:0;right:0}.W-zNGW_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.W-zNGW_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.W-zNGW_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_paneTabHidden{display:none}.W-zNGW_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.W-zNGW_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.W-zNGW_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.W-zNGW_paneCard:disabled{opacity:.45;cursor:default}.W-zNGW_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.W-zNGW_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.W-zNGW_tabList::-webkit-scrollbar{display:none}.W-zNGW_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.W-zNGW_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.W-zNGW_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow-y:auto}.W-zNGW_explorerRow{width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.W-zNGW_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_explorerDir{font:var(--dsw-font-s-strong-14)}.W-zNGW_explorerHidden{opacity:.45}.W-zNGW_explorerName{text-overflow:ellipsis;overflow:hidden}.W-zNGW_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.W-zNGW_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorerRow:hover .W-zNGW_explorerRef,.W-zNGW_explorerRow:focus-within .W-zNGW_explorerRef{display:inline-flex}.W-zNGW_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes W-zNGW_dsh-row-in{0%{opacity:0}}.W-zNGW_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_editor{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.W-zNGW_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.W-zNGW_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorStatusError{color:var(--dsw-alias-state-error-primary)}.W-zNGW_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.W-zNGW_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.W-zNGW_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.W-zNGW_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.W-zNGW_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.W-zNGW_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.W-zNGW_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.W-zNGW_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.W-zNGW_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.W-zNGW_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.W-zNGW_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.W-zNGW_sandboxStatusOff .W-zNGW_sandboxDot{background:var(--dsw-alias-state-error-primary)}.W-zNGW_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.W-zNGW_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browser{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.W-zNGW_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.W-zNGW_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.W-zNGW_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.W-zNGW_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.W-zNGW_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.W-zNGW_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.W-zNGW_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.W-zNGW_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.W-zNGW_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.W-zNGW_editorCmHidden{display:none}.W-zNGW_editorCm .cm-editor{height:100%}.W-zNGW_editorCm .cm-editor.cm-focused{outline:none}.W-zNGW_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.W-zNGW_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.W-zNGW_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.W-zNGW_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.W-zNGW_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.W-zNGW_editorImage{object-fit:contain;max-width:100%;max-height:100%}.W-zNGW_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.W-zNGW_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.W-zNGW_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorDocx{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorDocxViewport{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;overflow:auto}.W-zNGW_editorDocxWrap{flex:none;padding:16px}.W-zNGW_editorDocxZoom{border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:center;gap:8px;min-height:34px;padding:4px 10px;display:flex}.W-zNGW_editorDocxZoomHint,.W-zNGW_editorDocxZoomValue{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_editorDocxZoomValue{text-align:right;width:36px}.W-zNGW_editorDocxZoomRange{min-width:72px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer;flex:1}.W-zNGW_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.W-zNGW_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.W-zNGW_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_editorPdfFrameBlocked{pointer-events:none}.W-zNGW_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.W-zNGW_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .W-zNGW_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .W-zNGW_editorPdfDragShield{pointer-events:auto!important}.W-zNGW_editorXlsx{background:var(--dsw-alias-bg-base);flex:1;min-height:0;position:relative;overflow:hidden}.W-zNGW_editorUniverHost{width:100%;min-width:0;height:100%;min-height:0}.W-zNGW_editorOfficeOverlay{z-index:2;background:var(--dsw-alias-bg-base);display:flex;position:absolute;inset:0}.W-zNGW_editorPptx{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorPptxToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:center;align-items:center;gap:8px;padding:6px 8px;display:flex}.W-zNGW_editorPptxToolbar .W-zNGW_editorDownloadLink{margin-left:auto}.W-zNGW_editorPptxButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border-radius:6px;padding:0 10px}.W-zNGW_editorPptxButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_editorPptxButton:disabled{opacity:.4;cursor:default}.W-zNGW_editorPptxPosition{text-align:center;min-width:64px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorPptxStage{flex:1;min-height:0;position:relative;overflow:hidden}.W-zNGW_editorPptxHost{width:100%;min-width:0;height:100%;min-height:0;overflow:auto}.W-zNGW_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.W-zNGW_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.W-zNGW_terminal .xterm{height:100%}.W-zNGW_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.W-zNGW_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.W-zNGW_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.W-zNGW_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.W-zNGW_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.W-zNGW_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.W-zNGW_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.W-zNGW_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.W-zNGW_gitLink:hover:not(:disabled){text-decoration:underline}.W-zNGW_gitLink:disabled{opacity:.4;cursor:default}.W-zNGW_gitRow{min-height:34px;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.W-zNGW_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.W-zNGW_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.W-zNGW_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.W-zNGW_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.W-zNGW_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.W-zNGW_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.W-zNGW_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.W-zNGW_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.W-zNGW_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.W-zNGW_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.W-zNGW_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.W-zNGW_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.W-zNGW_gitDiffCode{flex:1;min-width:0;overflow:visible}.W-zNGW_gitDiffCtx{color:var(--dsw-alias-label-primary)}.W-zNGW_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.W-zNGW_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.W-zNGW_gitDiffMeta{padding-left:2px}.W-zNGW_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.W-zNGW_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.W-zNGW_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.W-zNGW_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.W-zNGW_gitCommitInput{flex:1;min-width:0}.W-zNGW_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.W-zNGW_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.W-zNGW_gitCommitButton:disabled{opacity:.45;cursor:default}.W-zNGW_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.W-zNGW_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.W-zNGW_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.W-zNGW_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.W-zNGW_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.W-zNGW_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_gitLogMore:disabled{opacity:.5;cursor:default}.W-zNGW_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.W-zNGW_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.W-zNGW_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_toggleButton:focus-visible,.W-zNGW_bottomClose:focus-visible,.W-zNGW_iconButton:focus-visible,.W-zNGW_tab:focus-visible,.W-zNGW_tabClose:focus-visible,.W-zNGW_tabBarPlus:focus-visible,.W-zNGW_paneCard:focus-visible,.W-zNGW_explorerRow:focus-visible,.W-zNGW_explorerRef:focus-visible,.W-zNGW_gitRowMain:focus-visible,.W-zNGW_gitLink:focus-visible,.W-zNGW_gitCommitButton:focus-visible,.W-zNGW_gitLogRow:focus-visible,.W-zNGW_gitLogMore:focus-visible,.W-zNGW_gitDiffExpand:focus-visible,.W-zNGW_terminalRetry:focus-visible,.W-zNGW_editorModeButton:focus-visible,.W-zNGW_editorDownloadLink:focus-visible,.W-zNGW_editorPptxButton:focus-visible,.W-zNGW_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.W-zNGW_panel,.W-zNGW_panelHidden,.W-zNGW_bottomPanel,.W-zNGW_bottomPanelHidden,.W-zNGW_toggleCluster,.W-zNGW_toggleButton,.W-zNGW_tab,.W-zNGW_tabBarPlus,.W-zNGW_paneCard,.W-zNGW_explorerRow,.W-zNGW_gitRow,.W-zNGW_divider,.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:40px}.W-zNGW_tab{min-width:48px;max-width:128px}}";
+		const css$3 = ".W-zNGW_toggleCluster{z-index:55;flex-direction:row;gap:4px;display:flex;position:fixed;top:3px;right:10px}.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:72px}.W-zNGW_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.W-zNGW_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_toggleButton:disabled{opacity:.4;cursor:default}.W-zNGW_panel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-left:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;top:0;bottom:0;right:0}.W-zNGW_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.W-zNGW_panel[data-dragging]{transition:none}.W-zNGW_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.W-zNGW_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_panelBody{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_bottomPanel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-top:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;bottom:0}.W-zNGW_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.W-zNGW_bottomPanel[data-dragging]{transition:none}.W-zNGW_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.W-zNGW_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.W-zNGW_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_bottomPanel .W-zNGW_tabBar{padding-right:40px}body[data-dsh-title-bar-compat] .W-zNGW_toggleCluster{top:calc(var(--dsh-title-bar-strip,40px) + 3px)}body[data-dsh-title-bar-compat] .W-zNGW_panel{padding-top:var(--dsh-title-bar-strip,40px)}.W-zNGW_cornerHandle{z-index:52;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:fixed}.W-zNGW_cornerHandle:hover,.W-zNGW_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_iconButton:disabled{opacity:.4;cursor:default}.W-zNGW_workbench,.W-zNGW_split{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_splitRow{flex-direction:row}.W-zNGW_splitCol{flex-direction:column}.W-zNGW_splitChild{display:flex;position:relative;overflow:hidden}.W-zNGW_divider{z-index:3;touch-action:none;flex:none;position:relative}.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.W-zNGW_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.W-zNGW_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.W-zNGW_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.W-zNGW_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.W-zNGW_divider:hover:after,.W-zNGW_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.W-zNGW_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.W-zNGW_dropLeft{width:25%;top:0;bottom:0;left:0}.W-zNGW_dropRight{width:25%;top:0;bottom:0;right:0}.W-zNGW_dropUp{height:25%;top:0;left:0;right:0}.W-zNGW_dropDown{height:25%;bottom:0;left:0;right:0}.W-zNGW_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.W-zNGW_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.W-zNGW_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_paneTabHidden{display:none}.W-zNGW_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.W-zNGW_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.W-zNGW_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.W-zNGW_paneCard:disabled{opacity:.45;cursor:default}.W-zNGW_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.W-zNGW_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.W-zNGW_tabList::-webkit-scrollbar{display:none}.W-zNGW_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.W-zNGW_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_tabBadge{min-width:16px;height:15px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary);border-radius:8px;flex:none;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.W-zNGW_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.W-zNGW_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow-y:auto}.W-zNGW_explorerRow{width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.W-zNGW_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_explorerDir{font:var(--dsw-font-s-strong-14)}.W-zNGW_explorerHidden{opacity:.45}.W-zNGW_explorerName{text-overflow:ellipsis;overflow:hidden}.W-zNGW_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.W-zNGW_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorerRow:hover .W-zNGW_explorerRef,.W-zNGW_explorerRow:focus-within .W-zNGW_explorerRef{display:inline-flex}.W-zNGW_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes W-zNGW_dsh-row-in{0%{opacity:0}}.W-zNGW_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_editor{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.W-zNGW_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.W-zNGW_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorStatusError{color:var(--dsw-alias-state-error-primary)}.W-zNGW_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.W-zNGW_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.W-zNGW_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.W-zNGW_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.W-zNGW_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.W-zNGW_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.W-zNGW_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.W-zNGW_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.W-zNGW_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.W-zNGW_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.W-zNGW_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.W-zNGW_sandboxStatusOff .W-zNGW_sandboxDot{background:var(--dsw-alias-state-error-primary)}.W-zNGW_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.W-zNGW_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browser{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.W-zNGW_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.W-zNGW_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.W-zNGW_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.W-zNGW_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.W-zNGW_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.W-zNGW_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.W-zNGW_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.W-zNGW_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.W-zNGW_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.W-zNGW_editorCmHidden{display:none}.W-zNGW_editorCm .cm-editor{height:100%}.W-zNGW_editorCm .cm-editor.cm-focused{outline:none}.W-zNGW_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.W-zNGW_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.W-zNGW_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.W-zNGW_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.W-zNGW_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.W-zNGW_editorImage{object-fit:contain;max-width:100%;max-height:100%}.W-zNGW_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.W-zNGW_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.W-zNGW_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.W-zNGW_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.W-zNGW_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_editorPdfFrameBlocked{pointer-events:none}.W-zNGW_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.W-zNGW_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .W-zNGW_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .W-zNGW_editorPdfDragShield{pointer-events:auto!important}.W-zNGW_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.W-zNGW_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.W-zNGW_terminal .xterm{height:100%}.W-zNGW_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.W-zNGW_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.W-zNGW_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.W-zNGW_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.W-zNGW_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_tabBoundaryError{min-height:0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;flex:1;align-items:flex-start;gap:8px;padding:12px 16px;display:flex;overflow:auto}.W-zNGW_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.W-zNGW_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.W-zNGW_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.W-zNGW_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.W-zNGW_gitLink:hover:not(:disabled){text-decoration:underline}.W-zNGW_gitLink:disabled{opacity:.4;cursor:default}.W-zNGW_gitRow{min-height:34px;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.W-zNGW_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.W-zNGW_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.W-zNGW_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.W-zNGW_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.W-zNGW_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.W-zNGW_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.W-zNGW_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.W-zNGW_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.W-zNGW_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.W-zNGW_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.W-zNGW_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.W-zNGW_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.W-zNGW_gitDiffCode{flex:1;min-width:0;overflow:visible}.W-zNGW_gitDiffCtx{color:var(--dsw-alias-label-primary)}.W-zNGW_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.W-zNGW_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.W-zNGW_gitDiffMeta{padding-left:2px}.W-zNGW_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.W-zNGW_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.W-zNGW_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.W-zNGW_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.W-zNGW_gitCommitInput{flex:1;min-width:0}.W-zNGW_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.W-zNGW_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.W-zNGW_gitCommitButton:disabled{opacity:.45;cursor:default}.W-zNGW_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.W-zNGW_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.W-zNGW_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.W-zNGW_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.W-zNGW_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.W-zNGW_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_gitLogMore:disabled{opacity:.5;cursor:default}.W-zNGW_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.W-zNGW_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.W-zNGW_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_toggleButton:focus-visible,.W-zNGW_bottomClose:focus-visible,.W-zNGW_iconButton:focus-visible,.W-zNGW_tab:focus-visible,.W-zNGW_tabClose:focus-visible,.W-zNGW_tabBarPlus:focus-visible,.W-zNGW_paneCard:focus-visible,.W-zNGW_explorerRow:focus-visible,.W-zNGW_explorerRef:focus-visible,.W-zNGW_gitRowMain:focus-visible,.W-zNGW_gitLink:focus-visible,.W-zNGW_gitCommitButton:focus-visible,.W-zNGW_gitLogRow:focus-visible,.W-zNGW_gitLogMore:focus-visible,.W-zNGW_gitDiffExpand:focus-visible,.W-zNGW_terminalRetry:focus-visible,.W-zNGW_editorModeButton:focus-visible,.W-zNGW_editorDownloadLink:focus-visible,.W-zNGW_editorPptxButton:focus-visible,.W-zNGW_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.W-zNGW_panel,.W-zNGW_panelHidden,.W-zNGW_bottomPanel,.W-zNGW_bottomPanelHidden,.W-zNGW_toggleCluster,.W-zNGW_toggleButton,.W-zNGW_tab,.W-zNGW_tabBarPlus,.W-zNGW_paneCard,.W-zNGW_explorerRow,.W-zNGW_gitRow,.W-zNGW_divider,.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:40px}.W-zNGW_tab{min-width:48px;max-width:128px}}";
 		const tagId$3 = "dsh-better-sidebar/sidebar.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$3) + "]") === null) {
 			const tag = document.createElement("style");
@@ -1771,182 +2000,170 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var sidebar_module_css_default = {
-			"editorPdfDragShieldActive": "W-zNGW_editorPdfDragShieldActive",
-			"editorDocxZoom": "W-zNGW_editorDocxZoom",
-			"gitDiffExpand": "W-zNGW_gitDiffExpand",
-			"gitDiffAdd": "W-zNGW_gitDiffAdd",
-			"explorerHidden": "W-zNGW_explorerHidden",
-			"tabBarDrop": "W-zNGW_tabBarDrop",
-			"editorPlaceholder": "W-zNGW_editorPlaceholder",
-			"editorCm": "W-zNGW_editorCm",
-			"tabBar": "W-zNGW_tabBar",
-			"gitDiffMetaText": "W-zNGW_gitDiffMetaText",
-			"producedMore": "W-zNGW_producedMore",
-			"gitDiffDel": "W-zNGW_gitDiffDel",
-			"editorModeButton": "W-zNGW_editorModeButton",
-			"editorBinaryNotice": "W-zNGW_editorBinaryNotice",
-			"split": "W-zNGW_split",
-			"dividerRow": "W-zNGW_dividerRow",
-			"editorPdfToolbar": "W-zNGW_editorPdfToolbar",
-			"dividerCol": "W-zNGW_dividerCol",
-			"bottomPanel": "W-zNGW_bottomPanel",
-			"dropDown": "W-zNGW_dropDown",
-			"editorPptxButton": "W-zNGW_editorPptxButton",
-			"editorPptxHost": "W-zNGW_editorPptxHost",
-			"splitRow": "W-zNGW_splitRow",
-			"browserBlockedTitle": "W-zNGW_browserBlockedTitle",
-			"editorDocxWrap": "W-zNGW_editorDocxWrap",
-			"browserBlockedActions": "W-zNGW_browserBlockedActions",
-			"gitPlaceholder": "W-zNGW_gitPlaceholder",
-			"panelBody": "W-zNGW_panelBody",
-			"explorerRef": "W-zNGW_explorerRef",
-			"gitLogRef": "W-zNGW_gitLogRef",
-			"dirtyDot": "W-zNGW_dirtyDot",
-			"boundaryError": "W-zNGW_boundaryError",
-			"gitBranchSelect": "W-zNGW_gitBranchSelect",
-			"gitDiffFileTag": "W-zNGW_gitDiffFileTag",
-			"panelResizeActive": "W-zNGW_panelResizeActive",
-			"gitDiff": "W-zNGW_gitDiff",
-			"gitCommit": "W-zNGW_gitCommit",
-			"explorerName": "W-zNGW_explorerName",
-			"editorPptxToolbar": "W-zNGW_editorPptxToolbar",
-			"editorError": "W-zNGW_editorError",
-			"gitSection": "W-zNGW_gitSection",
-			"terminalWrap": "W-zNGW_terminalWrap",
-			"tab": "W-zNGW_tab",
-			"editorHtml": "W-zNGW_editorHtml",
-			"browserInput": "W-zNGW_browserInput",
-			"panelResize": "W-zNGW_panelResize",
-			"browserBlockedDesc": "W-zNGW_browserBlockedDesc",
-			"paneTabHidden": "W-zNGW_paneTabHidden",
-			"gitDiffMeta": "W-zNGW_gitDiffMeta",
-			"editorImage": "W-zNGW_editorImage",
-			"gitSectionHeader": "W-zNGW_gitSectionHeader",
-			"gitDiffHunkSection": "W-zNGW_gitDiffHunkSection",
-			"gitRow": "W-zNGW_gitRow",
-			"gitConfirmDesc": "W-zNGW_gitConfirmDesc",
-			"editorStatusError": "W-zNGW_editorStatusError",
-			"panelHidden": "W-zNGW_panelHidden",
-			"gitDiffTabHeader": "W-zNGW_gitDiffTabHeader",
-			"sandboxStatusOn": "W-zNGW_sandboxStatusOn",
-			"gitDiffNum": "W-zNGW_gitDiffNum",
-			"gitCommitInput": "W-zNGW_gitCommitInput",
-			"gitLogSubject": "W-zNGW_gitLogSubject",
-			"producedLabel": "W-zNGW_producedLabel",
-			"bottomPanelHidden": "W-zNGW_bottomPanelHidden",
-			"bottomResize": "W-zNGW_bottomResize",
-			"gitLogRow": "W-zNGW_gitLogRow",
-			"editorModeToggle": "W-zNGW_editorModeToggle",
-			"explorerRow": "W-zNGW_explorerRow",
-			"editorCmHidden": "W-zNGW_editorCmHidden",
-			"editorPdfFrame": "W-zNGW_editorPdfFrame",
-			"bottomClose": "W-zNGW_bottomClose",
-			"tabClose": "W-zNGW_tabClose",
-			"editorDocxZoomValue": "W-zNGW_editorDocxZoomValue",
-			"pane": "W-zNGW_pane",
-			"gitLogLine1": "W-zNGW_gitLogLine1",
-			"explorerEmpty": "W-zNGW_explorerEmpty",
-			"paneCard": "W-zNGW_paneCard",
-			"sandboxStatusOff": "W-zNGW_sandboxStatusOff",
-			"explorerError": "W-zNGW_explorerError",
-			"gitDiffHunkHeader": "W-zNGW_gitDiffHunkHeader",
-			"paneTab": "W-zNGW_paneTab",
-			"gitCommitButton": "W-zNGW_gitCommitButton",
-			"toggleButton": "W-zNGW_toggleButton",
-			"browserStart": "W-zNGW_browserStart",
-			"editorDocx": "W-zNGW_editorDocx",
-			"gitEmpty": "W-zNGW_gitEmpty",
-			"panel": "W-zNGW_panel",
-			"editorMd": "W-zNGW_editorMd",
-			"editorUniverHost": "W-zNGW_editorUniverHost",
-			"terminal": "W-zNGW_terminal",
-			"paneEmptyCards": "W-zNGW_paneEmptyCards",
-			"gitLogHash": "W-zNGW_gitLogHash",
-			"explorerDir": "W-zNGW_explorerDir",
-			"gitDiffTabTitle": "W-zNGW_gitDiffTabTitle",
-			"editorDownloadLink": "W-zNGW_editorDownloadLink",
-			"browserBar": "W-zNGW_browserBar",
-			"browserBlocked": "W-zNGW_browserBlocked",
-			"selectionPopup": "W-zNGW_selectionPopup",
-			"editorDocxViewport": "W-zNGW_editorDocxViewport",
-			"gitError": "W-zNGW_gitError",
-			"gitLogLine2": "W-zNGW_gitLogLine2",
-			"editorPdfStage": "W-zNGW_editorPdfStage",
-			"orphanedType": "W-zNGW_orphanedType",
-			"editorPptxStage": "W-zNGW_editorPptxStage",
-			"gitName": "W-zNGW_gitName",
-			"gitDiffFilePath": "W-zNGW_gitDiffFilePath",
-			"dropCenter": "W-zNGW_dropCenter",
-			"editorBinary": "W-zNGW_editorBinary",
-			"paneDrop": "W-zNGW_paneDrop",
-			"gitBadge": "W-zNGW_gitBadge",
-			"gitLink": "W-zNGW_gitLink",
-			"workbench": "W-zNGW_workbench",
-			"terminalRetry": "W-zNGW_terminalRetry",
-			"git": "W-zNGW_git",
-			"editor": "W-zNGW_editor",
-			"gitDiffHunk": "W-zNGW_gitDiffHunk",
-			"browserFrame": "W-zNGW_browserFrame",
 			"gitLogMore": "W-zNGW_gitLogMore",
-			"toggleCluster": "W-zNGW_toggleCluster",
-			"bottomResizeActive": "W-zNGW_bottomResizeActive",
-			"editorPdfFrameBlocked": "W-zNGW_editorPdfFrameBlocked",
-			"editorPptxPosition": "W-zNGW_editorPptxPosition",
-			"gitRowSelected": "W-zNGW_gitRowSelected",
-			"iconButton": "W-zNGW_iconButton",
-			"sandboxAction": "W-zNGW_sandboxAction",
-			"editorTitle": "W-zNGW_editorTitle",
-			"editorDocxZoomRange": "W-zNGW_editorDocxZoomRange",
-			"sandboxStatusText": "W-zNGW_sandboxStatusText",
-			"splitChild": "W-zNGW_splitChild",
-			"dividerActive": "W-zNGW_dividerActive",
-			"terminalBannerUrl": "W-zNGW_terminalBannerUrl",
-			"gitHeader": "W-zNGW_gitHeader",
-			"gitDiffCode": "W-zNGW_gitDiffCode",
-			"gitDiffCtx": "W-zNGW_gitDiffCtx",
-			"editorBanner": "W-zNGW_editorBanner",
-			"editorImageWrap": "W-zNGW_editorImageWrap",
-			"dropLeft": "W-zNGW_dropLeft",
-			"paneContent": "W-zNGW_paneContent",
-			"dsh-row-in": "W-zNGW_dsh-row-in",
+			"browserBlockedActions": "W-zNGW_browserBlockedActions",
+			"paneEmptyCards": "W-zNGW_paneEmptyCards",
+			"gitLogRef": "W-zNGW_gitLogRef",
+			"paneDrop": "W-zNGW_paneDrop",
 			"sandboxStatus": "W-zNGW_sandboxStatus",
-			"editorDocxZoomHint": "W-zNGW_editorDocxZoomHint",
-			"editorPptx": "W-zNGW_editorPptx",
-			"terminalBanner": "W-zNGW_terminalBanner",
-			"browser": "W-zNGW_browser",
-			"tabActive": "W-zNGW_tabActive",
-			"gitDiffTab": "W-zNGW_gitDiffTab",
-			"producedChip": "W-zNGW_producedChip",
-			"tabList": "W-zNGW_tabList",
-			"producedRow": "W-zNGW_producedRow",
-			"cornerHandle": "W-zNGW_cornerHandle",
-			"tabTitle": "W-zNGW_tabTitle",
-			"editorXlsx": "W-zNGW_editorXlsx",
+			"sandboxAction": "W-zNGW_sandboxAction",
 			"explorerCopied": "W-zNGW_explorerCopied",
-			"editorPdfDragShield": "W-zNGW_editorPdfDragShield",
-			"splitCol": "W-zNGW_splitCol",
-			"sandboxDot": "W-zNGW_sandboxDot",
-			"gitDiffFile": "W-zNGW_gitDiffFile",
-			"tabBarPlus": "W-zNGW_tabBarPlus",
-			"explorerBody": "W-zNGW_explorerBody",
-			"browserMessage": "W-zNGW_browserMessage",
-			"editorStatus": "W-zNGW_editorStatus",
-			"editorPdf": "W-zNGW_editorPdf",
-			"explorerRoot": "W-zNGW_explorerRoot",
-			"browserBlockedButton": "W-zNGW_browserBlockedButton",
-			"gitRowMain": "W-zNGW_gitRowMain",
-			"dropOverlay": "W-zNGW_dropOverlay",
-			"explorer": "W-zNGW_explorer",
+			"editorCm": "W-zNGW_editorCm",
+			"gitError": "W-zNGW_gitError",
+			"browserStart": "W-zNGW_browserStart",
+			"browserBlockedTitle": "W-zNGW_browserBlockedTitle",
 			"gitDiffLine": "W-zNGW_gitDiffLine",
-			"gitLogMeta": "W-zNGW_gitLogMeta",
-			"explorerHeader": "W-zNGW_explorerHeader",
-			"gitDiffFileOld": "W-zNGW_gitDiffFileOld",
-			"editorHeader": "W-zNGW_editorHeader",
+			"dropOverlay": "W-zNGW_dropOverlay",
+			"panelResizeActive": "W-zNGW_panelResizeActive",
+			"tabBarPlus": "W-zNGW_tabBarPlus",
+			"editorBinaryNotice": "W-zNGW_editorBinaryNotice",
+			"gitDiff": "W-zNGW_gitDiff",
+			"gitDiffFile": "W-zNGW_gitDiffFile",
+			"editorPdfToolbar": "W-zNGW_editorPdfToolbar",
+			"browser": "W-zNGW_browser",
+			"gitRowMain": "W-zNGW_gitRowMain",
+			"tabBarDrop": "W-zNGW_tabBarDrop",
+			"gitDiffFilePath": "W-zNGW_gitDiffFilePath",
+			"browserBlocked": "W-zNGW_browserBlocked",
+			"dropDown": "W-zNGW_dropDown",
+			"editorModeToggle": "W-zNGW_editorModeToggle",
 			"divider": "W-zNGW_divider",
-			"dropUp": "W-zNGW_dropUp",
-			"editorOfficeOverlay": "W-zNGW_editorOfficeOverlay",
+			"gitDiffFileOld": "W-zNGW_gitDiffFileOld",
+			"producedLabel": "W-zNGW_producedLabel",
+			"tabBar": "W-zNGW_tabBar",
+			"editorDownloadLink": "W-zNGW_editorDownloadLink",
+			"explorerName": "W-zNGW_explorerName",
+			"editorError": "W-zNGW_editorError",
+			"sandboxStatusOn": "W-zNGW_sandboxStatusOn",
+			"gitDiffFileTag": "W-zNGW_gitDiffFileTag",
+			"editorHeader": "W-zNGW_editorHeader",
+			"explorerDir": "W-zNGW_explorerDir",
+			"terminalWrap": "W-zNGW_terminalWrap",
+			"dsh-row-in": "W-zNGW_dsh-row-in",
+			"terminalBanner": "W-zNGW_terminalBanner",
+			"tab": "W-zNGW_tab",
+			"gitDiffHunkSection": "W-zNGW_gitDiffHunkSection",
+			"gitPlaceholder": "W-zNGW_gitPlaceholder",
+			"gitEmpty": "W-zNGW_gitEmpty",
+			"gitDiffCtx": "W-zNGW_gitDiffCtx",
+			"paneContent": "W-zNGW_paneContent",
+			"editorCmHidden": "W-zNGW_editorCmHidden",
+			"gitDiffTab": "W-zNGW_gitDiffTab",
+			"editorTitle": "W-zNGW_editorTitle",
+			"tabClose": "W-zNGW_tabClose",
+			"editorPdfFrameBlocked": "W-zNGW_editorPdfFrameBlocked",
+			"editorPdfDragShieldActive": "W-zNGW_editorPdfDragShieldActive",
+			"terminal": "W-zNGW_terminal",
+			"gitDiffCode": "W-zNGW_gitDiffCode",
+			"boundaryError": "W-zNGW_boundaryError",
+			"editorBinary": "W-zNGW_editorBinary",
+			"sandboxStatusOff": "W-zNGW_sandboxStatusOff",
+			"explorerEmpty": "W-zNGW_explorerEmpty",
+			"editorPdfDragShield": "W-zNGW_editorPdfDragShield",
+			"gitCommit": "W-zNGW_gitCommit",
+			"editorBanner": "W-zNGW_editorBanner",
+			"producedRow": "W-zNGW_producedRow",
+			"toggleCluster": "W-zNGW_toggleCluster",
+			"dividerCol": "W-zNGW_dividerCol",
+			"explorer": "W-zNGW_explorer",
+			"gitDiffExpand": "W-zNGW_gitDiffExpand",
+			"bottomResizeActive": "W-zNGW_bottomResizeActive",
+			"dividerRow": "W-zNGW_dividerRow",
+			"gitDiffMetaText": "W-zNGW_gitDiffMetaText",
+			"bottomClose": "W-zNGW_bottomClose",
+			"explorerHidden": "W-zNGW_explorerHidden",
+			"explorerHeader": "W-zNGW_explorerHeader",
+			"editor": "W-zNGW_editor",
+			"sandboxDot": "W-zNGW_sandboxDot",
+			"browserFrame": "W-zNGW_browserFrame",
+			"dirtyDot": "W-zNGW_dirtyDot",
+			"editorImage": "W-zNGW_editorImage",
+			"bottomPanelHidden": "W-zNGW_bottomPanelHidden",
+			"editorPlaceholder": "W-zNGW_editorPlaceholder",
+			"editorHtml": "W-zNGW_editorHtml",
+			"git": "W-zNGW_git",
+			"split": "W-zNGW_split",
+			"gitLink": "W-zNGW_gitLink",
+			"browserBar": "W-zNGW_browserBar",
+			"terminalRetry": "W-zNGW_terminalRetry",
+			"gitBadge": "W-zNGW_gitBadge",
+			"gitDiffNum": "W-zNGW_gitDiffNum",
+			"bottomPanel": "W-zNGW_bottomPanel",
+			"terminalBannerUrl": "W-zNGW_terminalBannerUrl",
+			"gitLogSubject": "W-zNGW_gitLogSubject",
+			"explorerRow": "W-zNGW_explorerRow",
+			"gitRow": "W-zNGW_gitRow",
+			"splitRow": "W-zNGW_splitRow",
+			"iconButton": "W-zNGW_iconButton",
+			"editorMd": "W-zNGW_editorMd",
+			"gitRowSelected": "W-zNGW_gitRowSelected",
+			"cornerHandle": "W-zNGW_cornerHandle",
+			"producedChip": "W-zNGW_producedChip",
+			"gitDiffDel": "W-zNGW_gitDiffDel",
+			"gitDiffHunk": "W-zNGW_gitDiffHunk",
+			"browserInput": "W-zNGW_browserInput",
+			"explorerError": "W-zNGW_explorerError",
 			"dropRight": "W-zNGW_dropRight",
-			"editorModeActive": "W-zNGW_editorModeActive"
+			"gitDiffAdd": "W-zNGW_gitDiffAdd",
+			"dropUp": "W-zNGW_dropUp",
+			"editorImageWrap": "W-zNGW_editorImageWrap",
+			"paneTab": "W-zNGW_paneTab",
+			"gitCommitInput": "W-zNGW_gitCommitInput",
+			"gitBranchSelect": "W-zNGW_gitBranchSelect",
+			"selectionPopup": "W-zNGW_selectionPopup",
+			"gitLogLine1": "W-zNGW_gitLogLine1",
+			"editorDocxZoomRange": "W-zNGW_editorDocxZoomRange",
+			"gitHeader": "W-zNGW_gitHeader",
+			"explorerBody": "W-zNGW_explorerBody",
+			"gitLogMeta": "W-zNGW_gitLogMeta",
+			"browserBlockedButton": "W-zNGW_browserBlockedButton",
+			"browserBlockedDesc": "W-zNGW_browserBlockedDesc",
+			"explorerRef": "W-zNGW_explorerRef",
+			"gitDiffHunkHeader": "W-zNGW_gitDiffHunkHeader",
+			"panelBody": "W-zNGW_panelBody",
+			"dividerActive": "W-zNGW_dividerActive",
+			"tabActive": "W-zNGW_tabActive",
+			"tabList": "W-zNGW_tabList",
+			"browserMessage": "W-zNGW_browserMessage",
+			"editorStatusError": "W-zNGW_editorStatusError",
+			"editorPdf": "W-zNGW_editorPdf",
+			"producedMore": "W-zNGW_producedMore",
+			"gitCommitButton": "W-zNGW_gitCommitButton",
+			"sandboxStatusText": "W-zNGW_sandboxStatusText",
+			"editorPdfStage": "W-zNGW_editorPdfStage",
+			"panelHidden": "W-zNGW_panelHidden",
+			"gitConfirmDesc": "W-zNGW_gitConfirmDesc",
+			"gitSectionHeader": "W-zNGW_gitSectionHeader",
+			"editorPptxButton": "W-zNGW_editorPptxButton",
+			"gitDiffTabHeader": "W-zNGW_gitDiffTabHeader",
+			"editorModeButton": "W-zNGW_editorModeButton",
+			"tabBoundaryError": "W-zNGW_tabBoundaryError",
+			"tabBadge": "W-zNGW_tabBadge",
+			"editorStatus": "W-zNGW_editorStatus",
+			"gitLogLine2": "W-zNGW_gitLogLine2",
+			"panel": "W-zNGW_panel",
+			"pane": "W-zNGW_pane",
+			"dropCenter": "W-zNGW_dropCenter",
+			"gitLogRow": "W-zNGW_gitLogRow",
+			"toggleButton": "W-zNGW_toggleButton",
+			"gitDiffMeta": "W-zNGW_gitDiffMeta",
+			"paneCard": "W-zNGW_paneCard",
+			"gitDiffTabTitle": "W-zNGW_gitDiffTabTitle",
+			"gitLogHash": "W-zNGW_gitLogHash",
+			"bottomResize": "W-zNGW_bottomResize",
+			"editorPdfFrame": "W-zNGW_editorPdfFrame",
+			"splitChild": "W-zNGW_splitChild",
+			"dropLeft": "W-zNGW_dropLeft",
+			"panelResize": "W-zNGW_panelResize",
+			"paneTabHidden": "W-zNGW_paneTabHidden",
+			"tabTitle": "W-zNGW_tabTitle",
+			"editorModeActive": "W-zNGW_editorModeActive",
+			"gitSection": "W-zNGW_gitSection",
+			"gitName": "W-zNGW_gitName",
+			"orphanedType": "W-zNGW_orphanedType",
+			"workbench": "W-zNGW_workbench",
+			"explorerRoot": "W-zNGW_explorerRoot",
+			"splitCol": "W-zNGW_splitCol"
 		};
 		//#endregion
 		//#region src/client/intercept.tsx
@@ -2584,6 +2801,7 @@ window.__ModuleLoader__.load({
 			const [load, setLoad] = (0, react.useState)({ status: "loading" });
 			(0, react.useEffect)(() => {
 				let cancelled = false;
+				const controller = new AbortController();
 				setLoad({ status: "loading" });
 				const mediaUrlOf = () => mediaUrl(scope, path);
 				const apply = (action) => {
@@ -2603,7 +2821,7 @@ window.__ModuleLoader__.load({
 							});
 							return;
 						case "customLoad":
-							action.viewer.load?.(path, scope).then((data) => {
+							action.viewer.load?.(path, scope, controller.signal).then((data) => {
 								if (cancelled) return;
 								setLoad({
 									status: "ready",
@@ -2641,6 +2859,7 @@ window.__ModuleLoader__.load({
 				apply(planFirstMatch(ctx.betterSidebar?.matchFileViewer(path), mediaUrlOf));
 				return () => {
 					cancelled = true;
+					controller.abort();
 				};
 			}, [
 				scope.sessionId,
@@ -4287,96 +4506,6 @@ window.__ModuleLoader__.load({
 				})
 			]
 		});
-		/** Word viewer glyph: a document frame with a "W". */
-		const IconDocxOutline16 = ({ size = 16, className }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-			width: size,
-			height: size,
-			className,
-			viewBox: "0 0 16 16",
-			fill: "none",
-			xmlns: "http://www.w3.org/2000/svg",
-			children: [
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "M3.5 1.5h6.5L13.5 5v9.5h-10z",
-					stroke: "currentColor",
-					strokeWidth: "1.5",
-					strokeLinejoin: "round"
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "M9.5 1.5V5h4",
-					stroke: "currentColor",
-					strokeWidth: "1.5",
-					strokeLinejoin: "round"
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "M6.2 13.4 7.4 10l1.2 3.4M7.4 10.6l-.35-1.1c-.2-.62.2-1.25.85-1.25h.2c.65 0 1.05.63.85 1.25l-.35 1.1",
-					stroke: "currentColor",
-					strokeWidth: "1.25",
-					strokeLinecap: "round",
-					strokeLinejoin: "round"
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "M8.75 10.6 9.2 9.4",
-					stroke: "currentColor",
-					strokeWidth: "1.25",
-					strokeLinecap: "round"
-				})
-			]
-		});
-		/** Excel viewer glyph: a spreadsheet grid. */
-		const IconXlsxOutline16 = ({ size = 16, className }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-			width: size,
-			height: size,
-			className,
-			viewBox: "0 0 16 16",
-			fill: "none",
-			xmlns: "http://www.w3.org/2000/svg",
-			children: [
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-					x: "1.5",
-					y: "2",
-					width: "13",
-					height: "12",
-					rx: "2",
-					stroke: "currentColor",
-					strokeWidth: "1.5"
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "M1.5 6h13M1.5 9.5h13M6 6v8M10.5 6v8",
-					stroke: "currentColor",
-					strokeWidth: "1.25"
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-					d: "m3.8 13.2 2-3M5.8 13.2l-2-3",
-					stroke: "currentColor",
-					strokeWidth: "1.25",
-					strokeLinecap: "round"
-				})
-			]
-		});
-		/** PowerPoint viewer glyph: a chart with rising bars. */
-		const IconPptxOutline16 = ({ size = 16, className }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-			width: size,
-			height: size,
-			className,
-			viewBox: "0 0 16 16",
-			fill: "none",
-			xmlns: "http://www.w3.org/2000/svg",
-			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-				x: "1.5",
-				y: "2.5",
-				width: "13",
-				height: "11",
-				rx: "2",
-				stroke: "currentColor",
-				strokeWidth: "1.5"
-			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-				d: "M4 12.5v-3M7 12.5V7M10 12.5V4.5M13 12.5v-1.5",
-				stroke: "currentColor",
-				strokeWidth: "1.5",
-				strokeLinecap: "round"
-			})]
-		});
 		/** Markdown viewer glyph: the classic "M with a down arrow" badge. */
 		const IconMarkdownOutline16 = ({ size = 16, className }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 			width: size,
@@ -4475,57 +4604,57 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var SubagentView_module_css_default = {
-			"subagentTitle": "mub3NW_subagentTitle",
-			"jobsPaneHint": "mub3NW_jobsPaneHint",
-			"subagentDot": "mub3NW_subagentDot",
-			"subagentRowLoading": "mub3NW_subagentRowLoading",
-			"subagentLabel": "mub3NW_subagentLabel",
 			"jobsPaneStatus": "mub3NW_jobsPaneStatus",
-			"subagentLiveText": "mub3NW_subagentLiveText",
 			"subagentBody": "mub3NW_subagentBody",
-			"jobsRowMain": "mub3NW_jobsRowMain",
+			"subagentLive": "mub3NW_subagentLive",
+			"subagentLiveText": "mub3NW_subagentLiveText",
+			"subagentDot": "mub3NW_subagentDot",
+			"jobsPaneHint": "mub3NW_jobsPaneHint",
 			"subagentContent": "mub3NW_subagentContent",
+			"subagentRowLoading": "mub3NW_subagentRowLoading",
+			"subagentEmptyHint": "mub3NW_subagentEmptyHint",
+			"jobsPaneDot": "mub3NW_jobsPaneDot",
+			"jobsRowSelected": "mub3NW_jobsRowSelected",
+			"subagentCount": "mub3NW_subagentCount",
+			"subagentNode": "mub3NW_subagentNode",
+			"jobsRowMain": "mub3NW_jobsRowMain",
+			"jobsDot": "mub3NW_jobsDot",
+			"jobsKill": "mub3NW_jobsKill",
+			"subagentLabel": "mub3NW_subagentLabel",
+			"subagentSecondary": "mub3NW_subagentSecondary",
+			"subagentTitle": "mub3NW_subagentTitle",
+			"subagent": "mub3NW_subagent",
+			"subagentChildren": "mub3NW_subagentChildren",
+			"jobsList": "mub3NW_jobsList",
+			"jobsRow": "mub3NW_jobsRow",
+			"jobsRowSettled": "mub3NW_jobsRowSettled",
 			"jobsLabelLine": "mub3NW_jobsLabelLine",
+			"jobsPane": "mub3NW_jobsPane",
 			"jobsHeader": "mub3NW_jobsHeader",
 			"jobsTitle": "mub3NW_jobsTitle",
-			"jobsKillArmed": "mub3NW_jobsKillArmed",
-			"jobsKillError": "mub3NW_jobsKillError",
-			"jobsRowSettled": "mub3NW_jobsRowSettled",
-			"jobsList": "mub3NW_jobsList",
-			"subagentLiveArgs": "mub3NW_subagentLiveArgs",
-			"subagentEmptyHint": "mub3NW_subagentEmptyHint",
-			"jobsPanePre": "mub3NW_jobsPanePre",
-			"subagentCount": "mub3NW_subagentCount",
-			"subagentSecondary": "mub3NW_subagentSecondary",
-			"subagentRefresh": "mub3NW_subagentRefresh",
-			"subagentRowActive": "mub3NW_subagentRowActive",
-			"subagentLive": "mub3NW_subagentLive",
-			"subagentNode": "mub3NW_subagentNode",
-			"subagentLiveTool": "mub3NW_subagentLiveTool",
-			"jobsKind": "mub3NW_jobsKind",
-			"subagentError": "mub3NW_subagentError",
-			"subagentEmpty": "mub3NW_subagentEmpty",
-			"jobs": "mub3NW_jobs",
-			"jobsLabel": "mub3NW_jobsLabel",
-			"subagentRowDisabled": "mub3NW_subagentRowDisabled",
-			"jobsRowSelected": "mub3NW_jobsRowSelected",
-			"jobsSecondary": "mub3NW_jobsSecondary",
-			"jobsPaneLabel": "mub3NW_jobsPaneLabel",
-			"jobsPaneError": "mub3NW_jobsPaneError",
-			"subagentChildren": "mub3NW_subagentChildren",
-			"subagent": "mub3NW_subagent",
-			"subagentErrorRetry": "mub3NW_subagentErrorRetry",
-			"jobsRow": "mub3NW_jobsRow",
-			"jobsPane": "mub3NW_jobsPane",
-			"jobsPaneDot": "mub3NW_jobsPaneDot",
-			"jobsPaneClose": "mub3NW_jobsPaneClose",
-			"jobsCount": "mub3NW_jobsCount",
-			"jobsKill": "mub3NW_jobsKill",
-			"subagentRow": "mub3NW_subagentRow",
-			"jobsDot": "mub3NW_jobsDot",
-			"jobsContent": "mub3NW_jobsContent",
 			"jobsPaneHeader": "mub3NW_jobsPaneHeader",
-			"subagentHeader": "mub3NW_subagentHeader"
+			"jobs": "mub3NW_jobs",
+			"jobsKind": "mub3NW_jobsKind",
+			"jobsKillError": "mub3NW_jobsKillError",
+			"jobsCount": "mub3NW_jobsCount",
+			"subagentRowDisabled": "mub3NW_subagentRowDisabled",
+			"subagentRowActive": "mub3NW_subagentRowActive",
+			"subagentEmpty": "mub3NW_subagentEmpty",
+			"jobsPanePre": "mub3NW_jobsPanePre",
+			"subagentRow": "mub3NW_subagentRow",
+			"jobsLabel": "mub3NW_jobsLabel",
+			"subagentLiveArgs": "mub3NW_subagentLiveArgs",
+			"subagentLiveTool": "mub3NW_subagentLiveTool",
+			"subagentHeader": "mub3NW_subagentHeader",
+			"jobsPaneClose": "mub3NW_jobsPaneClose",
+			"subagentRefresh": "mub3NW_subagentRefresh",
+			"jobsKillArmed": "mub3NW_jobsKillArmed",
+			"jobsSecondary": "mub3NW_jobsSecondary",
+			"jobsContent": "mub3NW_jobsContent",
+			"jobsPaneError": "mub3NW_jobsPaneError",
+			"subagentError": "mub3NW_subagentError",
+			"subagentErrorRetry": "mub3NW_subagentErrorRetry",
+			"jobsPaneLabel": "mub3NW_jobsPaneLabel"
 		};
 		//#endregion
 		//#region src/client/SubagentView.tsx
@@ -5779,15 +5908,34 @@ window.__ModuleLoader__.load({
 					icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconTerminalOutline16, { size }),
 					order: 40,
 					available: (_ctx, _scope, state) => uiTerminalCount(state) < 3,
-					settings: { toggles: [{
-						key: "agentTerminalTools",
-						title: () => t("settingsToolsTitle"),
-						desc: () => t("settingsToolsDesc")
-					}, {
-						key: "bottomPanelAutoTerminal",
-						title: () => t("settingsBottomTerminalTitle"),
-						desc: () => t("settingsBottomTerminalDesc")
-					}] },
+					settings: { toggles: [
+						{
+							key: "agentTerminalTools",
+							title: () => t("settingsToolsTitle"),
+							desc: () => t("settingsToolsDesc")
+						},
+						{
+							key: "bottomPanelAutoTerminal",
+							title: () => t("settingsBottomTerminalTitle"),
+							desc: () => t("settingsBottomTerminalDesc")
+						},
+						{
+							key: "terminalFontFamily",
+							type: "text",
+							title: () => t("settingsFontFamilyTitle"),
+							desc: () => t("settingsFontFamilyDesc"),
+							placeholder: t("settingsFontFamilyPlaceholder")
+						},
+						{
+							key: "terminalFontSize",
+							type: "number",
+							title: () => t("settingsFontSizeTitle"),
+							desc: () => t("settingsFontSizeDesc"),
+							min: 9,
+							max: 32,
+							unit: "px"
+						}
+					] },
 					createTab: (state) => {
 						if (uiTerminalCount(state) >= 3) return null;
 						return {
@@ -5810,15 +5958,28 @@ window.__ModuleLoader__.load({
 					title: () => t("browser"),
 					icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconGlobeOutline16, { size }),
 					order: 50,
-					settings: { toggles: [{
-						key: "browserNoSandbox",
-						title: () => t("settingsBrowserSandboxTitle"),
-						desc: () => t("settingsBrowserSandboxDesc")
-					}, {
-						key: "browserInterceptLinks",
-						title: () => t("settingsBrowserLinksTitle"),
-						desc: () => t("settingsBrowserLinksDesc")
-					}] },
+					settings: { toggles: [
+						{
+							key: "browserNoSandbox",
+							title: () => t("settingsBrowserSandboxTitle"),
+							desc: () => t("settingsBrowserSandboxDesc")
+						},
+						{
+							key: "browserInterceptLinks",
+							title: () => t("settingsBrowserLinksTitle"),
+							desc: () => t("settingsBrowserLinksDesc")
+						},
+						{
+							key: "browserInterceptHttp",
+							title: () => t("settingsBrowserHttpTitle"),
+							desc: () => t("settingsBrowserHttpDesc")
+						},
+						{
+							key: "browserInterceptHttps",
+							title: () => t("settingsBrowserHttpsTitle"),
+							desc: () => t("settingsBrowserHttpsDesc")
+						}
+					] },
 					createTab: (state) => ({
 						tab: {
 							id: `browser:${state.nextBrowser}`,
@@ -5956,36 +6117,37 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region src/client/builtins/viewers.tsx
 		/**
-		* The 9 built-in file viewer descriptors: every preview surface is a
-		* registered viewer (image / pdf / docx / xlsx / pptx / markdown / html /
-		* code / binary-download), exactly like external plugins register theirs.
-		* The `binary-download` viewer sniffs NUL bytes via `detect` for unknown
-		* binaries and serves doc/xls/ppt by extension; `code` is the catch-all
-		* (`exts: []`, lowest priority) that claims any file no other viewer did.
+		* The 6 built-in file viewer descriptors: every preview surface is a
+		* registered viewer (image / pdf / markdown / html / code /
+		* binary-download), exactly like external plugins register theirs. Office
+		* previews (.docx / .xlsx / .pptx) are NOT built in anymore — they moved to
+		* the recommended office plugin (see plugins-viewers.ts), which registers
+		* the same ids through this service.
 		*
-		* The heavy viewers (docx/xlsx/pptx and the CodeMirror-backed
-		* markdown/html/code) render through {@link lazyChunkComponent} wrappers —
-		* their libraries are fetched only when such a file is first opened (see
-		* chunk-loader.ts). The descriptor metadata (id/exts/priority/detect) is
-		* identical either way, so matching semantics and external-plugin
-		* overrides are unaffected; the `component` wrapper keeps the descriptor
-		* contract `(props) => ReactNode`.
+		* The `binary-download` viewer sniffs NUL bytes via `detect` for unknown
+		* binaries and serves legacy doc/xls/ppt by extension; `code` is the
+		* catch-all (`exts: []`, lowest priority) that claims any file no other
+		* viewer did.
+		*
+		* The heavy viewers (the CodeMirror-backed markdown/html/code) render
+		* through {@link lazyChunkComponent} wrappers — their libraries are fetched
+		* only when such a file is first opened (see chunk-loader.ts). The
+		* descriptor metadata (id/exts/priority/detect) is identical either way,
+		* so matching semantics and external-plugin overrides are unaffected; the
+		* `component` wrapper keeps the descriptor contract `(props) => ReactNode`.
 		*
 		* Every viewer carries the declarative settings-surface fields — `title`
 		* and `icon` — so the Side card settings page can render the enable/disable
 		* inventory without hardcoding (eating our own dogfood).
 		*/
 		/**
-		* Lazy wrappers over the chunk-resident viewer components. The `pick`
-		* functions are module-level (stable identity — the wrapper effect depends
-		* on them); the cast bridges the chunk exports record to the descriptor
-		* prop shape (the views read only their own subset of FileViewerProps).
+		* Lazy wrapper over the chunk-resident viewer component. The `pick`
+		* function is module-level (stable identity — the wrapper effect depends
+		* on it); the cast bridges the chunk exports record to the descriptor prop
+		* shape (the view reads only its own subset of FileViewerProps).
 		*/
-		const LazyDocx = lazyChunkComponent("docx", (mod) => mod.DocxView);
-		const LazyXlsx = lazyChunkComponent("xlsx", (mod) => mod.XlsxView);
-		const LazyPptx = lazyChunkComponent("pptx", (mod) => mod.PptxView);
 		const LazyTextEditor = lazyChunkComponent("editor", (mod) => mod.TextEditor);
-		/** The 9 built-in file viewer descriptors. */
+		/** The 6 built-in file viewer descriptors. */
 		function builtinViewers() {
 			return [
 				{
@@ -6024,30 +6186,6 @@ window.__ModuleLoader__.load({
 						path,
 						title
 					})
-				},
-				{
-					id: "docx",
-					title: () => t("viewerDocx"),
-					icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconDocxOutline16, { size }),
-					exts: ["docx"],
-					fetchStrategy: "mediaUrl",
-					component: (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LazyDocx, { ...props })
-				},
-				{
-					id: "xlsx",
-					title: () => t("viewerXlsx"),
-					icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconXlsxOutline16, { size }),
-					exts: ["xlsx"],
-					fetchStrategy: "mediaUrl",
-					component: (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LazyXlsx, { ...props })
-				},
-				{
-					id: "pptx",
-					title: () => t("viewerPptx"),
-					icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconPptxOutline16, { size }),
-					exts: ["pptx"],
-					fetchStrategy: "mediaUrl",
-					component: (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LazyPptx, { ...props })
 				},
 				{
 					id: "markdown",
@@ -6171,9 +6309,25 @@ window.__ModuleLoader__.load({
 			else document.body.removeAttribute("data-dsh-tab-dragging");
 		}
 		function TabBar(props) {
-			const { paneId, tabs, active, onActivate, onClose, onNewTab, newTabOptions, onDropTab, getTabIcon } = props;
+			const { paneId, tabs, active, onActivate, onClose, onNewTab, newTabOptions, onDropTab, getTabIcon, getTabBadge } = props;
 			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
 			const [dragOver, setDragOver] = (0, react.useState)(false);
+			const listRef = (0, react.useRef)(null);
+			(0, react.useEffect)(() => {
+				const el = listRef.current;
+				if (el === null) return;
+				const onWheel = (event) => {
+					if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+					if (el.scrollWidth <= el.clientWidth) return;
+					event.preventDefault();
+					const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1;
+					el.scrollLeft += (event.deltaX + event.deltaY) * unit;
+				};
+				el.addEventListener("wheel", onWheel, { passive: false });
+				return () => {
+					el.removeEventListener("wheel", onWheel);
+				};
+			}, []);
 			(0, react.useEffect)(() => {
 				const clear = () => {
 					setTabDragging(false);
@@ -6207,6 +6361,7 @@ window.__ModuleLoader__.load({
 					if (payload !== null) onDropTab(payload, null);
 				},
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					ref: listRef,
 					className: sidebar_module_css_default.tabList,
 					children: [tabs.map((tab) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: clsx(sidebar_module_css_default.tab, active === tab.id && sidebar_module_css_default.tabActive),
@@ -6246,6 +6401,7 @@ window.__ModuleLoader__.load({
 						},
 						children: [
 							getTabIcon?.(tab) ?? null,
+							getTabBadge?.(tab) ?? null,
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: sidebar_module_css_default.tabTitle,
 								children: tab.title
@@ -6380,7 +6536,7 @@ window.__ModuleLoader__.load({
 		}
 		/** A leaf: tab strip + active content + VSCode-style drop target for tabs. */
 		function LeafView(props) {
-			const { leaf, newTabOptions, actions, onNewTab, renderTab, getTabIcon } = props;
+			const { leaf, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props;
 			const [dropZone, setDropZone] = (0, react.useState)(null);
 			const activeTab = leaf.tabs.find((tab) => tab.id === leaf.active) ?? leaf.tabs[leaf.tabs.length - 1];
 			(0, react.useEffect)(() => {
@@ -6431,6 +6587,7 @@ window.__ModuleLoader__.load({
 						onNewTab,
 						newTabOptions,
 						getTabIcon,
+						getTabBadge,
 						onDropTab: (payload, before) => {
 							if (before === null) actions.moveTabToEdge(payload, leaf.id, "center");
 							else actions.moveTabBefore(payload, leaf.id, before);
@@ -6451,14 +6608,15 @@ window.__ModuleLoader__.load({
 		}
 		/** Recursive node renderer. */
 		function NodeView(props) {
-			const { node, state, newTabOptions, actions, onNewTab, renderTab, getTabIcon } = props;
+			const { node, state, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props;
 			if (node.kind === "leaf") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LeafView, {
 				leaf: node,
 				newTabOptions,
 				actions,
 				onNewTab,
 				renderTab,
-				getTabIcon
+				getTabIcon,
+				getTabBadge
 			});
 			const isRow = node.dir === "row";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -6483,7 +6641,8 @@ window.__ModuleLoader__.load({
 						actions,
 						onNewTab,
 						renderTab,
-						getTabIcon
+						getTabIcon,
+						getTabBadge
 					})
 				})] }, child.id))
 			});
@@ -6493,7 +6652,7 @@ window.__ModuleLoader__.load({
 		*  `state.bottomSplits` — the actions route by pane id, so one action set
 		*  serves both). */
 		function Workbench(props) {
-			const { state, tree, newTabOptions, actions, onNewTab, renderTab, getTabIcon } = props;
+			const { state, tree, newTabOptions, actions, onNewTab, renderTab, getTabIcon, getTabBadge } = props;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: sidebar_module_css_default.workbench,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NodeView, {
@@ -6503,7 +6662,8 @@ window.__ModuleLoader__.load({
 					actions,
 					onNewTab,
 					renderTab,
-					getTabIcon
+					getTabIcon,
+					getTabBadge
 				})
 			});
 		}
@@ -6529,6 +6689,47 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
+		//#endregion
+		//#region src/client/RenderBoundary.tsx
+		/**
+		* The generic render error boundary for the sidebar tree: a render error in
+		* the wrapped subtree shows a dismissible error strip (retry re-renders the
+		* children) instead of blanking the shell. Used at two scopes:
+		*
+		* - ROOT (index.tsx, `css.boundaryError`): last-resort containment for
+		*   errors in the sidebar shell itself (Workbench, drag layout, …) — a full
+		*   swap keeps the page alive.
+		* - PER-TAB (Sidebar.tsx TabContent, `css.tabBoundaryError`): a crashing
+		*   viewer/editor shows a strip inside ITS OWN pane; the toggle cluster, the
+		*   other tabs, and the panel itself stay alive (issue #31 — a tab crash
+		*   must never take down the whole sidebar).
+		*
+		* The className prop selects the strip's geometry: the root's full-height
+		* fixed rail vs. the tab's pane-filling block.
+		*/
+		var RenderBoundary = class extends react.Component {
+			state = { error: null };
+			static getDerivedStateFromError(error) {
+				return { error: error instanceof Error ? error.message : String(error) };
+			}
+			componentDidCatch(error, info) {
+				console.error("[dsh-better-sidebar] render error:", error, info.componentStack);
+			}
+			render() {
+				if (this.state.error !== null) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: this.props.className,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["dsh-better-sidebar: ", this.state.error] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: sidebar_module_css_default.terminalRetry,
+						onClick: () => {
+							this.setState({ error: null });
+						},
+						children: t("terminalRetry")
+					})]
+				});
+				return this.props.children;
+			}
+		};
 		//#endregion
 		//#region src/client/Sidebar.tsx
 		/**
@@ -6576,7 +6777,7 @@ window.__ModuleLoader__.load({
 				tab,
 				visible
 			});
-			return descriptor.component({
+			return (0, react.createElement)(RenderBoundary, { className: sidebar_module_css_default.tabBoundaryError }, (0, react.createElement)(descriptor.component, {
 				ctx,
 				store,
 				scope,
@@ -6587,7 +6788,7 @@ window.__ModuleLoader__.load({
 				onReferenceFile,
 				onOpenDiff,
 				onSubagentJump
-			});
+			}));
 		}
 		/** The + menu options for the current state, driven by the tab registry.
 		* Hidden tabs (editor/diff) never show; `available` returning false shows
@@ -6625,6 +6826,22 @@ window.__ModuleLoader__.load({
 					document.body.removeAttribute("data-dsh-sidebar-collapsed");
 				};
 			}, [collapsed]);
+			const titleBarCompat = snapshot.prefs.titleBarCompat;
+			const titleBarStrip = snapshot.prefs.titleBarStripPx;
+			(0, react.useEffect)(() => {
+				const root = document.documentElement;
+				if (titleBarCompat) {
+					document.body.setAttribute("data-dsh-title-bar-compat", "");
+					root.style.setProperty("--dsh-title-bar-strip", `${titleBarStrip}px`);
+				} else {
+					document.body.removeAttribute("data-dsh-title-bar-compat");
+					root.style.removeProperty("--dsh-title-bar-strip");
+				}
+				return () => {
+					document.body.removeAttribute("data-dsh-title-bar-compat");
+					root.style.removeProperty("--dsh-title-bar-strip");
+				};
+			}, [titleBarCompat, titleBarStrip]);
 			/**
 			* Bottom-panel merge on narrow viewports: whenever a session is current
 			* while narrow (mount, session switch, or a desktop→narrow transition),
@@ -6956,6 +7173,10 @@ window.__ModuleLoader__.load({
 				const height = !narrow && snapshot.state?.bottomOpen === true ? Math.min(snapshot.state.bottomHeight, window.innerHeight) : 0;
 				document.documentElement.style.setProperty("--dsh-sidebar-width", `${width}px`);
 				document.documentElement.style.setProperty("--dsh-sidebar-height", `${height}px`);
+				return () => {
+					document.documentElement.style.removeProperty("--dsh-sidebar-width");
+					document.documentElement.style.removeProperty("--dsh-sidebar-height");
+				};
 			}, [
 				narrow,
 				snapshot.state?.panelOpen,
@@ -6970,8 +7191,11 @@ window.__ModuleLoader__.load({
 			const actions = (0, react.useMemo)(() => ({
 				closeTab: (paneId, tabId) => {
 					const current = store.getSnapshot().state;
-					const tab = (current === void 0 ? void 0 : leafWithTab(current.splits, tabId))?.tabs.find((candidate) => candidate.id === tabId);
-					store.reduce((s) => closeTab(s, paneId, tabId));
+					const tab = (current === void 0 ? void 0 : leafWithTab(current.splits, tabId) ?? leafWithTab(current.bottomSplits, tabId))?.tabs.find((candidate) => candidate.id === tabId);
+					ctx.betterSidebar?.closeTab(tabId, sessionId === void 0 ? void 0 : {
+						sessionId,
+						cwd
+					});
 					if (tab?.type === "terminal") {
 						if (isAgentTabId(tabId)) {
 							const uuid = agentUuidOf(tabId);
@@ -6983,13 +7207,10 @@ window.__ModuleLoader__.load({
 					}
 				},
 				activateTab: (paneId, tabId) => {
-					store.reduce((s) => ({
-						...s,
-						activePane: paneId,
-						splits: mapLeaf(s.splits, paneId, (leaf) => {
-							if (leaf.tabs.some((tab) => tab.id === tabId)) leaf.active = tabId;
-						})
-					}));
+					ctx.betterSidebar?.activateTab(tabId, sessionId === void 0 ? void 0 : {
+						sessionId,
+						cwd
+					});
 				},
 				focusPane: (paneId) => {
 					store.reduce((s) => ({
@@ -7067,6 +7288,9 @@ window.__ModuleLoader__.load({
 				service.openTab({
 					type: optionId,
 					title
+				}, {
+					sessionId,
+					cwd
 				});
 			};
 			/**
@@ -7080,6 +7304,31 @@ window.__ModuleLoader__.load({
 				const descriptor = ctx.betterSidebar?.getTab(tab.type);
 				if (descriptor === void 0) return null;
 				return typeof descriptor.icon === "function" ? descriptor.icon(14) : descriptor.icon;
+			};
+			/**
+			* The tab badge from the tab-type registry: a count (99+ capped) or a
+			* short text pill. A throwing badge is swallowed (no pill) — the tab
+			* strip must never break because a plugin's badge computation failed.
+			*/
+			const tabBadgeOf = (tab) => {
+				const descriptor = ctx.betterSidebar?.getTab(tab.type);
+				if (descriptor?.badge === void 0) return null;
+				let value;
+				try {
+					value = descriptor.badge(ctx, {
+						sessionId,
+						cwd
+					}, state);
+				} catch (error) {
+					console.error("[dsh-better-sidebar] tab badge error:", error);
+					return null;
+				}
+				if (value === null || value === void 0 || value === "") return null;
+				const text = typeof value === "number" ? value > 99 ? "99+" : String(value) : String(value);
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: sidebar_module_css_default.tabBadge,
+					children: text
+				});
 			};
 			/**
 			* Render one tab's content. `active` (from the workbench) tells whether
@@ -7180,7 +7429,8 @@ window.__ModuleLoader__.load({
 							actions,
 							onNewTab,
 							renderTab,
-							getTabIcon: tabIconOf
+							getTabIcon: tabIconOf,
+							getTabBadge: tabBadgeOf
 						})
 					})]
 				}),
@@ -7247,7 +7497,8 @@ window.__ModuleLoader__.load({
 								actions,
 								onNewTab,
 								renderTab: (tab, active, paneId) => renderTab(tab, active, paneId, true),
-								getTabIcon: tabIconOf
+								getTabIcon: tabIconOf,
+								getTabBadge: tabBadgeOf
 							})
 						})
 					]
@@ -7294,10 +7545,12 @@ window.__ModuleLoader__.load({
 		/**
 		* Chat/GUI external-link interception: clicking an http(s) link that points
 		* OUTSIDE the GUI (chat messages, tool rows, prose mentions) opens the
-		* sidebar browser instead of a new browser tab. Gated by BOTH the
-		* `browserInterceptLinks` pref and the browser tab's enable switch; a
-		* Ctrl/Cmd/Shift/Alt-modified click always bypasses the takeover so the
-		* user can still force a real browser tab.
+		* sidebar instead of a new browser tab. Gated by the caller through
+		* `takeoverEnabled(url)` — the `browserInterceptLinks` master, the URL's
+		* protocol flag (`browserInterceptHttp` / `browserInterceptHttps`) and the
+		* target tab's enable switch — and a Ctrl/Cmd/Shift/Alt-modified click
+		* always bypasses the takeover so the user can still force a real browser
+		* tab.
 		*
 		* Only the GUI's OWN document is watched — links inside the browser tab's
 		* sandboxed iframe live in another document and never bubble here (and
@@ -7305,7 +7558,10 @@ window.__ModuleLoader__.load({
 		*/
 		/** The pure decision: the URL to open in the sidebar, or null to let the
 		*  click fall through. Extracted so the policy is unit-testable without a
-		*  DOM. `anchorHref` must be the ABSOLUTE href (`<a>.href` already is). */
+		*  DOM. `anchorHref` must be the ABSOLUTE href (`<a>.href` already is).
+		*  The protocol/same-origin policy lives HERE; the prefs gates (master +
+		*  protocol flags + target enablement) live in the caller's
+		*  `takeoverEnabled(url)` callback. */
 		function shouldInterceptLink(anchorHref, selfOrigin) {
 			let url;
 			try {
@@ -7325,19 +7581,19 @@ window.__ModuleLoader__.load({
 		}
 		/**
 		* Register the document-level click capture that funnels external links
-		* into the sidebar browser. Returns the disposer (HMR-safe).
+		* into the sidebar. Returns the disposer (HMR-safe).
 		*/
 		function registerLinkInterception(opts) {
 			const onClick = (event) => {
 				if (!isPlainLeftClick(event)) return;
 				if (event.defaultPrevented) return;
-				if (!opts.takeoverEnabled()) return;
 				const target = event.target;
 				if (target === null || typeof target.closest !== "function") return;
 				const anchor = target.closest("a[href]");
 				if (anchor === null) return;
 				const url = shouldInterceptLink(anchor.href, opts.selfOrigin);
 				if (url === null) return;
+				if (!opts.takeoverEnabled(new URL(url))) return;
 				event.preventDefault();
 				opts.openInSidebar(url);
 			};
@@ -7411,14 +7667,33 @@ window.__ModuleLoader__.load({
 				autoOpenJobs: typeof record.autoOpenJobs === "boolean" ? record.autoOpenJobs : SIDEBAR_PREFS_DEFAULTS.autoOpenJobs,
 				agentTerminalTools: typeof record.agentTerminalTools === "boolean" ? record.agentTerminalTools : SIDEBAR_PREFS_DEFAULTS.agentTerminalTools,
 				bottomPanelAutoTerminal: typeof record.bottomPanelAutoTerminal === "boolean" ? record.bottomPanelAutoTerminal : SIDEBAR_PREFS_DEFAULTS.bottomPanelAutoTerminal,
+				terminalFontFamily: typeof record.terminalFontFamily === "string" ? record.terminalFontFamily : SIDEBAR_PREFS_DEFAULTS.terminalFontFamily,
+				terminalFontSize: typeof record.terminalFontSize === "number" && Number.isFinite(record.terminalFontSize) ? clampTerminalFontSize(record.terminalFontSize) : SIDEBAR_PREFS_DEFAULTS.terminalFontSize,
 				interceptOpenPath: typeof record.interceptOpenPath === "boolean" ? record.interceptOpenPath : SIDEBAR_PREFS_DEFAULTS.interceptOpenPath,
+				titleBarCompat: typeof record.titleBarCompat === "boolean" ? record.titleBarCompat : SIDEBAR_PREFS_DEFAULTS.titleBarCompat,
+				titleBarStripPx: typeof record.titleBarStripPx === "number" && Number.isFinite(record.titleBarStripPx) ? clampTitleBarStrip(record.titleBarStripPx) : SIDEBAR_PREFS_DEFAULTS.titleBarStripPx,
 				htmlViewerNoSandbox: typeof record.htmlViewerNoSandbox === "boolean" ? record.htmlViewerNoSandbox : SIDEBAR_PREFS_DEFAULTS.htmlViewerNoSandbox,
 				htmlViewerDefaultUnsafe: typeof record.htmlViewerDefaultUnsafe === "boolean" ? record.htmlViewerDefaultUnsafe : SIDEBAR_PREFS_DEFAULTS.htmlViewerDefaultUnsafe,
 				browserNoSandbox: typeof record.browserNoSandbox === "boolean" ? record.browserNoSandbox : SIDEBAR_PREFS_DEFAULTS.browserNoSandbox,
 				browserInterceptLinks: typeof record.browserInterceptLinks === "boolean" ? record.browserInterceptLinks : SIDEBAR_PREFS_DEFAULTS.browserInterceptLinks,
+				browserInterceptHttp: typeof record.browserInterceptHttp === "boolean" ? record.browserInterceptHttp : SIDEBAR_PREFS_DEFAULTS.browserInterceptHttp,
+				browserInterceptHttps: typeof record.browserInterceptHttps === "boolean" ? record.browserInterceptHttps : SIDEBAR_PREFS_DEFAULTS.browserInterceptHttps,
 				tabsEnabled: booleanMapOf(record.tabsEnabled),
-				viewersEnabled: booleanMapOf(record.viewersEnabled)
+				viewersEnabled: booleanMapOf(record.viewersEnabled),
+				pluginSettings: pluginSettingsMapOf(record.pluginSettings)
 			};
+		}
+		/**
+		* Validate the plugin-owned settings map (v0.12.0+): `{ descriptorId: { key:
+		* value } }`, nested open maps. Any non-object value (or a malformed whole)
+		* falls back to the empty map — the schema defaults already guard the wire
+		* shape, this is the client's second line.
+		*/
+		function pluginSettingsMapOf(value) {
+			if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+			const out = {};
+			for (const [id, blob] of Object.entries(value)) if (blob !== null && typeof blob === "object" && !Array.isArray(blob)) out[id] = blob;
+			return out;
 		}
 		/**
 		* Validate one enable-switch map (per-tab / per-viewer). Only boolean values
@@ -7445,8 +7720,66 @@ window.__ModuleLoader__.load({
 			}
 		}
 		//#endregion
+		//#region src/client/plugins-shared.ts
+		/**
+		* Shared vocabulary of the recommended plugin catalogs: the entry shape and
+		* the GitHub topic URL. The two catalogs live in sibling modules —
+		* `plugins-tabs.ts` (tab registrations) and `plugins-viewers.ts` (file
+		* previewer registrations) — and are shown in the two "add plugin" modals
+		* (Side card settings → the dashed cards at the end of the 侧边栏内容 /
+		* 文件预览 grids).
+		*/
+		/** The GitHub topic page listing every repo tagged `dsh-better-sidebar`. */
+		const PLUGIN_TOPIC_URL = "https://github.com/topics/dsh-better-sidebar";
+		//#endregion
+		//#region src/client/plugins-tabs.ts
+		/**
+		* The built-in catalog of TAB-registration plugins (sidebar pages),
+		* shown in the "add tab plugin" modal (Side card settings → 侧边栏内容 grid
+		* → the dashed card). Adding an entry: append one object here (unique
+		* `id` = npm package name, `url` = GitHub repo, `description` =
+		* i18n-friendly (add a `pluginXxxDesc` key in locales.ts), `install` = the
+		* full one-line install script — it starts with `cd ~/.dsh` so the install
+		* runs with the DSH home as the working directory). Data integrity is
+		* guarded by `tests/plugin-list.spec.ts`.
+		*/
+		/** Tab-registration plugins (alphabetical order). */
+		const builtinTabPlugins = [{
+			id: "@dsh-external/dsh-sentinel",
+			name: "dsh-sentinel 唤醒系统",
+			url: "https://github.com/fuhefei/dsh-sentinel",
+			description: () => t("pluginSentinelDesc"),
+			install: "cd ~/.dsh && dsh plugin --profile web add \"github:fuhefei/dsh-sentinel#v0.7.0\""
+		}, {
+			id: "dsh-sidebar-qa",
+			name: "dsh-sidebar-qa 划选追问",
+			url: "https://github.com/ChenRuoT/dsh-sidebar-qa",
+			description: () => t("pluginSidebarQaDesc"),
+			install: "cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add git+https://github.com/ChenRuoT/dsh-sidebar-qa.git"
+		}];
+		//#endregion
+		//#region src/client/plugins-viewers.ts
+		/**
+		* The built-in catalog of FILE-PREVIEWER plugins (file-type previewers),
+		* shown in the "add preview plugin" modal (Side card settings → 文件预览
+		* grid → the dashed card). Adding an entry: append one object here (unique
+		* `id` = npm package name, `url` = GitHub repo, `description` =
+		* i18n-friendly, `install` = the full shell command pre-filled into the
+		* install terminal — it starts with `cd ~/.dsh` so the install runs with
+		* the DSH home as the working directory). Data integrity is guarded by
+		* `tests/plugin-list.spec.ts`.
+		*/
+		/** File-previewer plugins (alphabetical order). */
+		const builtinViewerPlugins = [{
+			id: "@huanlin/dsh-plugin-better-sidebar-plugin-office",
+			name: "Office 预览插件",
+			url: "https://github.com/HuanLinOTO/dsh-plugin-better-sidebar-plugin-office",
+			description: () => t("pluginOfficeDesc"),
+			install: "cd ~/.dsh && dsh plugin --profile web add @huanlin/dsh-plugin-better-sidebar-plugin-office"
+		}];
+		//#endregion
 		//#region \0dsh-css:/Users/menghuan/Code/DSH-better-sidebar/src/client/SideCardSection.module.css.mjs
-		const css$1 = ".Pz1RTq_section{flex-direction:column;gap:8px;width:100%;height:100%;min-height:0;display:flex;overflow-y:auto}.Pz1RTq_section>:last-child{border-bottom:none}.Pz1RTq_grid{grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;display:grid}.Pz1RTq_card{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:8px;flex-direction:column;transition:background .12s,border-color .12s;display:flex;position:relative}.Pz1RTq_card:not(.Pz1RTq_cardOn):hover{background:var(--dsw-alias-interactive-bg-hover)}.Pz1RTq_cardOn{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-interactive-bg-active)}.Pz1RTq_cardMain{border-radius:inherit;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;flex-direction:column;gap:2px;padding:10px 12px;display:flex}.Pz1RTq_cardMain:focus-visible,.Pz1RTq_cardGear:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:2px}.Pz1RTq_cardTop{align-items:center;gap:6px;min-width:0;display:flex}.Pz1RTq_cardIcon{color:var(--dsw-alias-label-tertiary);flex:none;align-items:center;display:inline-flex}.Pz1RTq_cardOn .Pz1RTq_cardIcon{color:var(--dsw-alias-button-primary-fill)}.Pz1RTq_cardTitle{min-width:0;color:var(--dsw-alias-label-secondary);white-space:nowrap;text-overflow:ellipsis;flex:1;font-size:13px;line-height:20px;overflow:hidden}.Pz1RTq_cardOn .Pz1RTq_cardTitle{color:var(--dsw-alias-label-primary)}.Pz1RTq_cardCheck{color:var(--dsw-alias-button-primary-fill);flex:none;align-items:center;display:inline-flex}.Pz1RTq_cardDesc{color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:16px;overflow:hidden}.Pz1RTq_cardOn .Pz1RTq_cardDesc{color:var(--dsw-alias-label-secondary)}.Pz1RTq_cardWithGear .Pz1RTq_cardDesc{padding-right:18px}.Pz1RTq_cardGear{width:20px;height:20px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;bottom:6px;right:6px}.Pz1RTq_cardGear:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.Pz1RTq_sectionHeading{letter-spacing:.02em;color:var(--dsw-alias-label-secondary);padding:14px 0 0;font-size:12px;font-weight:600;line-height:17px}.Pz1RTq_row{border-bottom:1px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:16px;padding:12px 0;display:flex}.Pz1RTq_rowText{flex-direction:column;gap:4px;min-width:0;display:flex}.Pz1RTq_title{color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}.Pz1RTq_desc{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px}.Pz1RTq_toggle{width:16px;height:16px;accent-color:var(--dsw-alias-button-primary-fill);cursor:pointer;flex:none;margin:0}.Pz1RTq_toggle:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:2px}.Pz1RTq_popupRows{flex-direction:column;width:100%;display:flex}.Pz1RTq_popupRow{border-bottom:1px solid var(--dsw-alias-border-l2);cursor:pointer;justify-content:space-between;align-items:center;gap:16px;padding:16px 0;display:flex}.Pz1RTq_popupRows>:last-child{border-bottom:none}.Pz1RTq_control{flex:none;align-items:center;gap:6px;display:flex}.Pz1RTq_percentInput{width:76px}.Pz1RTq_suffix{color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}.Pz1RTq_error{color:var(--dsw-alias-state-error-primary);padding:10px 0 2px;font-size:12px;line-height:17px}@media (prefers-reduced-motion:reduce){.Pz1RTq_card{transition:none}}";
+		const css$1 = ".Pz1RTq_section{flex-direction:column;gap:14px;width:100%;height:100%;min-height:0;display:flex;overflow-y:auto}.Pz1RTq_intro{color:var(--dsw-alias-label-tertiary);margin:0;padding:0 2px;font-size:13px;line-height:20px}.Pz1RTq_group{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:16px;flex-direction:column;flex:none;gap:8px;padding:18px 20px 20px;display:flex}.Pz1RTq_groupHeading{color:var(--dsw-alias-label-primary);align-items:baseline;gap:7px;padding:0 2px 6px;font-size:13px;font-weight:600;line-height:20px;display:flex}.Pz1RTq_count{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;font-size:12px;font-weight:400;line-height:18px}.Pz1RTq_grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px;display:grid}.Pz1RTq_card{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:12px;flex-direction:column;transition:background .12s,border-color .12s;display:flex;position:relative}.Pz1RTq_card:not(.Pz1RTq_cardOn):hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-label-dimmed)}.Pz1RTq_cardOn{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-interactive-bg-active)}.Pz1RTq_cardMain{border-radius:inherit;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;flex-direction:column;gap:6px;padding:12px;display:flex}.Pz1RTq_cardMain:focus-visible,.Pz1RTq_cardGear:focus-visible,.Pz1RTq_rowGear:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:2px}.Pz1RTq_cardTop{align-items:center;gap:8px;min-width:0;display:flex}.Pz1RTq_cardIconChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);width:28px;height:28px;color:var(--dsw-alias-label-tertiary);border-radius:8px;flex:none;justify-content:center;align-items:center;display:inline-flex}.Pz1RTq_cardOn .Pz1RTq_cardIconChip{border-color:color-mix(in srgb, var(--dsw-alias-button-primary-fill) 35%, transparent);background:color-mix(in srgb, var(--dsw-alias-button-primary-fill) 12%, transparent);color:var(--dsw-alias-button-primary-fill)}.Pz1RTq_cardTitle{min-width:0;color:var(--dsw-alias-label-secondary);white-space:nowrap;text-overflow:ellipsis;flex:1;font-size:13px;font-weight:600;line-height:20px;overflow:hidden}.Pz1RTq_cardOn .Pz1RTq_cardTitle{color:var(--dsw-alias-label-primary)}.Pz1RTq_cardCheck{background:var(--dsw-alias-button-primary-fill);width:16px;height:16px;color:var(--dsw-alias-bg-layer-3);border-radius:50%;flex:none;justify-content:center;align-items:center;display:inline-flex}.Pz1RTq_cardDesc{color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:16px;overflow:hidden}.Pz1RTq_addCard{border-style:dashed;border-color:var(--dsw-alias-border-l2);text-align:left;align-items:flex-start;padding:12px}.Pz1RTq_addCard:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-interactive-bg-hover-accent);color:var(--dsw-alias-label-primary)}.Pz1RTq_addCard:hover .Pz1RTq_cardTitle{color:var(--dsw-alias-label-primary)}.Pz1RTq_addCard:hover .Pz1RTq_cardIconChip{border-color:color-mix(in srgb, var(--dsw-alias-button-primary-fill) 35%, transparent);color:var(--dsw-alias-button-primary-fill)}.Pz1RTq_addCard:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:2px}.Pz1RTq_cardOn .Pz1RTq_cardDesc{color:var(--dsw-alias-label-secondary)}.Pz1RTq_cardWithGear .Pz1RTq_cardDesc{padding-right:30px}.Pz1RTq_cardGear{width:16px;height:16px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:50%;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:46px;right:12px}.Pz1RTq_cardGear:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.Pz1RTq_rowGear{width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.Pz1RTq_rowGear:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.Pz1RTq_row{border-bottom:1px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:16px;padding:12px 2px;display:flex}.Pz1RTq_row:last-child{border-bottom:none}.Pz1RTq_rowText{flex-direction:column;gap:4px;min-width:0;display:flex}.Pz1RTq_title{color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}.Pz1RTq_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}.Pz1RTq_switch{cursor:pointer;flex:none;display:inline-flex;position:relative}.Pz1RTq_switchInput{opacity:0;width:1px;height:1px;margin:0;position:absolute}.Pz1RTq_switchTrack{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:10px;align-items:center;width:36px;height:20px;padding:2px;transition:background .15s,border-color .15s;display:inline-flex}.Pz1RTq_switchThumb{background:var(--dsw-alias-label-secondary);border-radius:50%;width:14px;height:14px;transition:transform .15s,background .15s;display:block}.Pz1RTq_switch:hover .Pz1RTq_switchTrack{border-color:var(--dsw-alias-label-dimmed)}.Pz1RTq_switchInput:checked+.Pz1RTq_switchTrack{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill)}.Pz1RTq_switchInput:checked+.Pz1RTq_switchTrack .Pz1RTq_switchThumb{background:var(--dsw-alias-bg-layer-3);transform:translate(16px)}.Pz1RTq_switchInput:focus-visible+.Pz1RTq_switchTrack{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.Pz1RTq_control{flex:none;align-items:center;gap:6px;display:flex}.Pz1RTq_percentInput{width:76px}.Pz1RTq_typedInput{width:200px}.Pz1RTq_typedInputNumber{width:76px}.Pz1RTq_suffix{color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}.Pz1RTq_popupDialog.Pz1RTq_popupDialog{width:min(460px,100%)}.Pz1RTq_popupRows{flex-direction:column;width:100%;display:flex}.Pz1RTq_popupRow{border-bottom:1px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:16px;padding:14px 2px;display:flex}.Pz1RTq_popupRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.Pz1RTq_popupRows>:last-child{border-bottom:none}.Pz1RTq_done{appearance:none;font:inherit;cursor:pointer;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.Pz1RTq_done:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.Pz1RTq_error{color:var(--dsw-alias-state-error-primary);padding:10px 0 2px;font-size:12px;line-height:17px}.Pz1RTq_pluginModal.Pz1RTq_pluginModal{width:min(560px,100%)}.Pz1RTq_pluginList{flex-direction:column;gap:12px;width:100%;display:flex}.Pz1RTq_pluginTopicBtn{appearance:none;border:1px solid var(--dsw-alias-border-l2);width:100%;font:inherit;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);cursor:pointer;border-radius:8px;padding:6px 12px;font-size:12px;line-height:18px}.Pz1RTq_pluginTopicBtn:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-interactive-bg-hover-accent);color:var(--dsw-alias-label-primary)}.Pz1RTq_pluginTopicBtn:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:1px}.Pz1RTq_pluginEmpty{color:var(--dsw-alias-label-tertiary);padding:20px 2px;font-size:12px;line-height:18px}.Pz1RTq_pluginEntries{flex-direction:column;gap:10px;display:flex}.Pz1RTq_pluginEntry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:12px;flex-direction:column;gap:4px;padding:12px;display:flex}.Pz1RTq_pluginEntryHead{justify-content:space-between;align-items:center;gap:12px;display:flex}.Pz1RTq_pluginEntryActions{flex:none;align-items:center;gap:6px;display:inline-flex}.Pz1RTq_pluginJumpBtn{appearance:none;border:1px solid var(--dsw-alias-border-l2);font:inherit;cursor:pointer;color:var(--dsw-alias-label-secondary);background:0 0;border-radius:8px;flex:none;padding:3px 12px;font-size:12px;line-height:1.5}.Pz1RTq_pluginJumpBtn:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-interactive-bg-hover-accent);color:var(--dsw-alias-label-primary)}.Pz1RTq_pluginJumpBtn:focus-visible{outline:2px solid var(--dsw-alias-border-l4);outline-offset:1px}.Pz1RTq_pluginName{appearance:none;min-width:0;font:inherit;color:var(--dsw-alias-label-primary);text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:0;padding:0;font-size:13px;font-weight:600;line-height:20px;text-decoration:none;overflow:hidden}.Pz1RTq_pluginName:hover{color:var(--dsw-alias-button-primary-fill);text-decoration:underline}.Pz1RTq_pluginDesc{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.Pz1RTq_pluginInstall{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);white-space:nowrap;border-radius:8px;padding:6px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;display:block;overflow-x:auto}.Pz1RTq_pluginCopyBtn{appearance:none;font:inherit;cursor:pointer;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);border:1px solid #0000;border-radius:8px;flex:none;padding:3px 12px;font-size:12px;line-height:1.5}.Pz1RTq_pluginCopyBtn:hover{background:var(--dsw-alias-button-primary-hover)}.Pz1RTq_pluginCopyBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}@media (prefers-reduced-motion:reduce){.Pz1RTq_card,.Pz1RTq_switchTrack,.Pz1RTq_switchThumb{transition:none}}";
 		const tagId$1 = "dsh-better-sidebar/SideCardSection.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
 			const tag = document.createElement("style");
@@ -7456,31 +7789,202 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var SideCardSection_module_css_default = {
-			"cardIcon": "Pz1RTq_cardIcon",
-			"control": "Pz1RTq_control",
-			"suffix": "Pz1RTq_suffix",
-			"toggle": "Pz1RTq_toggle",
-			"desc": "Pz1RTq_desc",
+			"addCard": "Pz1RTq_addCard",
+			"switchTrack": "Pz1RTq_switchTrack",
+			"title": "Pz1RTq_title",
+			"cardDesc": "Pz1RTq_cardDesc",
+			"group": "Pz1RTq_group",
+			"section": "Pz1RTq_section",
+			"done": "Pz1RTq_done",
 			"cardTitle": "Pz1RTq_cardTitle",
-			"error": "Pz1RTq_error",
-			"cardOn": "Pz1RTq_cardOn",
-			"card": "Pz1RTq_card",
+			"pluginEntryActions": "Pz1RTq_pluginEntryActions",
+			"switchInput": "Pz1RTq_switchInput",
+			"pluginInstall": "Pz1RTq_pluginInstall",
+			"pluginName": "Pz1RTq_pluginName",
+			"cardCheck": "Pz1RTq_cardCheck",
+			"typedInputNumber": "Pz1RTq_typedInputNumber",
+			"pluginList": "Pz1RTq_pluginList",
+			"pluginJumpBtn": "Pz1RTq_pluginJumpBtn",
+			"suffix": "Pz1RTq_suffix",
+			"count": "Pz1RTq_count",
 			"cardGear": "Pz1RTq_cardGear",
 			"popupRow": "Pz1RTq_popupRow",
-			"percentInput": "Pz1RTq_percentInput",
-			"popupRows": "Pz1RTq_popupRows",
-			"rowText": "Pz1RTq_rowText",
-			"grid": "Pz1RTq_grid",
-			"cardDesc": "Pz1RTq_cardDesc",
-			"cardCheck": "Pz1RTq_cardCheck",
-			"section": "Pz1RTq_section",
-			"cardWithGear": "Pz1RTq_cardWithGear",
-			"row": "Pz1RTq_row",
 			"cardMain": "Pz1RTq_cardMain",
+			"cardWithGear": "Pz1RTq_cardWithGear",
+			"intro": "Pz1RTq_intro",
+			"grid": "Pz1RTq_grid",
+			"card": "Pz1RTq_card",
+			"pluginModal": "Pz1RTq_pluginModal",
+			"pluginEntry": "Pz1RTq_pluginEntry",
+			"pluginDesc": "Pz1RTq_pluginDesc",
+			"rowGear": "Pz1RTq_rowGear",
+			"switchThumb": "Pz1RTq_switchThumb",
+			"pluginTopicBtn": "Pz1RTq_pluginTopicBtn",
+			"control": "Pz1RTq_control",
+			"pluginEmpty": "Pz1RTq_pluginEmpty",
+			"percentInput": "Pz1RTq_percentInput",
+			"error": "Pz1RTq_error",
 			"cardTop": "Pz1RTq_cardTop",
-			"sectionHeading": "Pz1RTq_sectionHeading",
-			"title": "Pz1RTq_title"
+			"cardOn": "Pz1RTq_cardOn",
+			"desc": "Pz1RTq_desc",
+			"typedInput": "Pz1RTq_typedInput",
+			"row": "Pz1RTq_row",
+			"popupRows": "Pz1RTq_popupRows",
+			"pluginEntries": "Pz1RTq_pluginEntries",
+			"rowText": "Pz1RTq_rowText",
+			"pluginEntryHead": "Pz1RTq_pluginEntryHead",
+			"switch": "Pz1RTq_switch",
+			"pluginCopyBtn": "Pz1RTq_pluginCopyBtn",
+			"groupHeading": "Pz1RTq_groupHeading",
+			"cardIconChip": "Pz1RTq_cardIconChip",
+			"popupDialog": "Pz1RTq_popupDialog"
 		};
+		//#endregion
+		//#region src/client/add-plugin-modal.tsx
+		/**
+		* The "add plugin" modals (Side card settings → the dashed cards at the
+		* end of the 侧边栏内容 / 文件预览 grids): declare that the sidebar's
+		* extension points — tab pages and file previewers — are open to plugins
+		* (registered through `ctx.betterSidebar`), point at the GitHub topic page
+		* for discovery, and show the repo's recommended plugin catalog of the
+		* matching kind (name / url / description / install script).
+		*
+		* Per entry there are two actions:
+		* - 「跳转」opens the plugin's repo in a REAL new browser tab (window.open
+		*   — a button, so the sidebar link takeover cannot reroute it);
+		* - 「安装」only COPIES the install script to the clipboard (writeClipboard)
+		*   with a transient "已复制" feedback on the button — the user pastes and
+		*   runs it wherever they manage their DSH profile. No terminal is opened,
+		*   nothing is closed, nothing can fail outward.
+		*
+		* The body is extracted as {@link PluginListBody} so tests render it
+		* directly — the Modal primitive runs hooks unconditionally, so an open
+		* Modal must never be renderToString'd (same rule as the settingsFor popup
+		* in SideCardSection); the modal itself mounts only while open.
+		*/
+		/** The catalog of one kind (kept in two repo files: plugins-tabs.ts /
+		*  plugins-viewers.ts). */
+		function catalogOf(kind) {
+			return kind === "tab" ? builtinTabPlugins : builtinViewerPlugins;
+		}
+		/** How long the "已复制" feedback stays on the copy button. */
+		const COPIED_FEEDBACK_MS = 1500;
+		/** The modal body: the GitHub topic button + the recommended plugin list
+		*  with per-entry jump/copy buttons (extracted for direct testing). */
+		function PluginListBody(props) {
+			const { service, kind } = props;
+			const [copiedId, setCopiedId] = (0, react.useState)(null);
+			/** Copy the entry's install script to the clipboard and flash the button's
+			*  "已复制" label for a moment. The feedback ONLY appears after a
+			*  successful write — when the clipboard is unavailable or denied
+			*  (writeClipboard resolves false) nothing is shown, so the user is never
+			*  told to paste a command that was not placed on the clipboard. Never
+			*  closes anything, never throws outward. */
+			const copy = async (entry) => {
+				if (!await (0, _deepseek_ai_dsh_client_ui_primitives.writeClipboard)(entry.install)) return;
+				setCopiedId(entry.id);
+				window.setTimeout(() => {
+					setCopiedId((current) => current === entry.id ? null : current);
+				}, COPIED_FEEDBACK_MS);
+			};
+			/** Open the plugin's repo in a REAL new browser tab (window.open — a
+			*  button, so the sidebar link takeover cannot reroute it). */
+			const jump = (entry) => {
+				window.open(entry.url, "_blank", "noopener");
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: SideCardSection_module_css_default.pluginList,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: SideCardSection_module_css_default.pluginTopicBtn,
+						onClick: () => {
+							window.open(PLUGIN_TOPIC_URL, "_blank", "noopener");
+						},
+						children: t("addPluginsBrowseMore")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: SideCardSection_module_css_default.groupHeading,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("addPluginsRecommended") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: SideCardSection_module_css_default.count,
+							children: catalogOf(kind).length
+						})]
+					}),
+					catalogOf(kind).length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: SideCardSection_module_css_default.pluginEmpty,
+						children: t("addPluginsEmpty")
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: SideCardSection_module_css_default.pluginEntries,
+						children: catalogOf(kind).map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: SideCardSection_module_css_default.pluginEntry,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: SideCardSection_module_css_default.pluginEntryHead,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: SideCardSection_module_css_default.pluginName,
+										"aria-label": `${t("openPlugin")}: ${entry.name}`,
+										onClick: () => {
+											jump(entry);
+										},
+										children: entry.name
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: SideCardSection_module_css_default.pluginEntryActions,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: SideCardSection_module_css_default.pluginJumpBtn,
+											"aria-label": `${t("openPlugin")}: ${entry.name}`,
+											onClick: () => {
+												jump(entry);
+											},
+											children: t("openPlugin")
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: SideCardSection_module_css_default.pluginCopyBtn,
+											"aria-label": `${t("copyInstall")}: ${entry.name}`,
+											onClick: () => {
+												copy(entry);
+											},
+											children: copiedId === entry.id ? t("copied") : t("copy")
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: SideCardSection_module_css_default.pluginDesc,
+									children: typeof entry.description === "function" ? entry.description() : entry.description
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+									className: SideCardSection_module_css_default.pluginInstall,
+									children: entry.install
+								})
+							]
+						}, entry.id))
+					})
+				]
+			});
+		}
+		/** The modal itself (mounted only while open — see the module comment). */
+		function AddPluginModal(props) {
+			const { service, onClose, kind } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+				open: true,
+				onClose,
+				title: kind === "tab" ? t("addPluginsTabCard") : t("addPluginsViewerCard"),
+				description: kind === "tab" ? t("addPluginsTabDesc") : t("addPluginsViewerDesc"),
+				closeLabel: t("close"),
+				className: SideCardSection_module_css_default.pluginModal,
+				footer: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: SideCardSection_module_css_default.done,
+					onClick: onClose,
+					children: t("settingsDone")
+				}),
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PluginListBody, {
+					service,
+					kind
+				})
+			});
+		}
 		//#endregion
 		//#region src/client/SideCardSection.tsx
 		/**
@@ -7489,21 +7993,30 @@ window.__ModuleLoader__.load({
 		*
 		* The section is DECLARATIVE — it renders the enable/disable inventory from
 		* the sidebar service's registries instead of hardcoding rows:
-		*  - 常规: new conversations open the panel by default (a toggle card), and
-		*    the default panel width as a percent of the window (number input row).
+		*  - 常规: new conversations open the panel by default (a toggle row), the
+		*    default panel width as a percent of the window (number input row), and
+		*    the open-path interception toggle — the DSH settings-row recipe
+		*    (title/desc left + control right, hairline separators).
 		*  - 侧边栏内容: one SMALL CARD per REGISTERED tab type (built-ins and
 		*    external plugins alike), laid out in a responsive grid that wraps
-		*    several cards per row — icon + title + type id, clicked to toggle the
-		*    switch persisted in `prefs.tabsEnabled[id]`.
-		*  - 文件预览: one SMALL CARD per REGISTERED file viewer — icon + title +
-		*    the extensions it covers, clicked to toggle `prefs.viewersEnabled[id]`.
+		*    several cards per row — icon chip + title + type id, clicked to toggle
+		*    the switch persisted in `prefs.tabsEnabled[id]`.
+		*  - 文件预览: one SMALL CARD per REGISTERED file viewer — icon chip + title
+		*    + the extensions it covers, clicked to toggle `prefs.viewersEnabled[id]`.
+		*
+		* Every group lives in a container card (the DSH PluginCard recipe: l2
+		* hairline, 16px radius, layer-3 fill) with a heading and an inventory count
+		* badge (the settings catalogHeading recipe); the section opens with a
+		* one-line intro (the DSH section heading+intro recipe).
 		*
 		* A card's on/off state is its VISUAL STATE: enabled = highlighted (brand
-		* border + tinted fill + a check badge pinned to the card's far right),
-		* disabled = neutral and dimmed. Features that declare `settings.toggles`
-		* carry a gear corner button that opens a native Modal with the related
-		* settings as native checkbox rows (e.g. the Subagent page's "auto-open
-		* when a subagent appears", the Terminal page's model terminal tools).
+		* border + tinted fill + a circular check badge pinned to the card's far
+		* right), disabled = neutral and dimmed. Features that declare
+		* `settings.toggles` carry a gear corner button that opens a native Modal
+		* (wider than the primitive default) with the related settings as
+		* title/desc + custom-switch rows and a Done footer. The toggles
+		* themselves are custom switches: a real checkbox (native semantics and
+		* focus) driving a styled track/thumb.
 		*
 		* Writes ride the plugin's own fenced settings route (the host calls the
 		* settings seam in-process — the DSH settings RPC domain does not serve
@@ -7538,22 +8051,91 @@ window.__ModuleLoader__.load({
 		function viewerOrder(a, b) {
 			return (b.priority ?? 0) - (a.priority ?? 0);
 		}
-		/** Read one boolean pref by declarative key (missing = false). */
-		function prefBool(prefs, key) {
-			return prefs[key] === true;
+		/** Whether a feature declares any secondary settings (gear button shows). */
+		function hasSettings(feature) {
+			const settings = feature.settings;
+			return settings !== void 0 && ((settings.toggles?.length ?? 0) > 0 || (settings.pluginToggles?.length ?? 0) > 0 || settings.render !== void 0);
+		}
+		/** A feature's display name (viewers fall back to their id). */
+		function featureNameOf(feature) {
+			return textOf("title" in feature ? feature.title : void 0) || feature.id;
 		}
 		/**
-		* The body of a feature's secondary settings popup: one native checkbox row
-		* per declared toggle. Extracted so the rows are testable without opening
-		* the Modal (the Modal portal renders only while open).
+		* Merge one plugin-owned setting into a pluginSettings map (pure, v0.12.0+).
+		* Sequential merges are additive: each call spreads the map it was GIVEN,
+		* so building from the latest optimistic map keeps earlier keys intact
+		* (two same-tick writes must not drop each other).
+		*/
+		function mergePluginSetting(pluginSettings, descriptorId, key, value) {
+			return {
+				...pluginSettings,
+				[descriptorId]: {
+					...pluginSettings[descriptorId] ?? {},
+					[key]: value
+				}
+			};
+		}
+		/**
+		* Render a custom settings panel (`settings.render`) with error containment:
+		* a throwing panel shows an inline error line instead of breaking the whole
+		* settings page.
+		*/
+		function SettingsRender(props) {
+			let content;
+			try {
+				content = props.render(props.renderProps);
+			} catch (error) {
+				content = /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: SideCardSection_module_css_default.error,
+					role: "alert",
+					children: [
+						t("settingsSaveFailed"),
+						" ",
+						error instanceof Error ? error.message : String(error)
+					]
+				});
+			}
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: content });
+		}
+		/**
+		* The custom switch: a real checkbox (hidden, native semantics and focus)
+		* driving a styled track/thumb. Used by the general toggle rows and the
+		* secondary settings popup rows.
+		*/
+		function Switch(props) {
+			const { checked, onChange, label } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+				className: SideCardSection_module_css_default.switch,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+					type: "checkbox",
+					className: SideCardSection_module_css_default.switchInput,
+					checked,
+					"aria-label": label,
+					onChange: (event) => {
+						onChange(event.currentTarget.checked);
+					}
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: SideCardSection_module_css_default.switchTrack,
+					"aria-hidden": "true",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: SideCardSection_module_css_default.switchThumb })
+				})]
+			});
+		}
+		/**
+		* The body of a feature's secondary settings popup: one row (title/desc +
+		* control) per declared setting. Switches render the custom switch; text and
+		* number rows render a free-form / numeric input committed on blur/Enter
+		* (clamped to the declared min/max). Extracted so the rows are testable
+		* without opening the Modal (the Modal portal renders only while open).
 		*/
 		function FeatureSettingsRows(props) {
-			const { toggles, prefs, onToggle } = props;
+			const { toggles, prefs, onToggle, onCommit, valueSource } = props;
+			const read = valueSource ?? ((key) => prefs[key]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: SideCardSection_module_css_default.popupRows,
 				children: toggles.map((toggle) => {
 					const title = textOf(toggle.title);
-					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					if ((toggle.type ?? "switch") === "switch") return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: SideCardSection_module_css_default.popupRow,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: SideCardSection_module_css_default.rowText,
@@ -7564,17 +8146,115 @@ window.__ModuleLoader__.load({
 								className: SideCardSection_module_css_default.desc,
 								children: textOf(toggle.desc)
 							})]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							className: SideCardSection_module_css_default.toggle,
-							checked: prefBool(prefs, toggle.key),
-							"aria-label": title,
-							onChange: (event) => {
-								onToggle(toggle, event.currentTarget.checked);
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
+							label: title,
+							checked: read(toggle.key) === true,
+							onChange: (next) => {
+								onToggle(toggle, next);
 							}
 						})]
 					}, toggle.key);
+					const value = String(read(toggle.key) ?? "");
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TypedRow, {
+						toggle,
+						title,
+						value,
+						onCommit
+					}, `${toggle.key}:${value}`);
 				})
+			});
+		}
+		/**
+		* One text/number row: a controlled input whose draft is local state,
+		* committed on blur/Enter through the parent's onCommit. The parent's
+		* canonical return is adopted (clamped numbers, stored value for invalid
+		* input); a `unit` suffix renders after the input (e.g. 'px').
+		*/
+		function TypedRow(props) {
+			const { toggle, title, value, onCommit } = props;
+			const [draft, setDraft] = (0, react.useState)(value);
+			const commit = () => {
+				const canonical = onCommit?.(toggle, draft) ?? draft;
+				setDraft(canonical);
+			};
+			const number = toggle.type === "number";
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: SideCardSection_module_css_default.popupRow,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: SideCardSection_module_css_default.rowText,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: SideCardSection_module_css_default.title,
+						children: title
+					}), textOf(toggle.desc) !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: SideCardSection_module_css_default.desc,
+						children: textOf(toggle.desc)
+					})]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: SideCardSection_module_css_default.control,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
+						type: number ? "number" : "text",
+						className: number ? SideCardSection_module_css_default.typedInputNumber : SideCardSection_module_css_default.typedInput,
+						value: draft,
+						min: toggle.min,
+						max: toggle.max,
+						step: 1,
+						placeholder: toggle.placeholder,
+						"aria-label": title,
+						onChange: (event) => {
+							setDraft(event.currentTarget.value);
+						},
+						onBlur: commit,
+						onKeyDown: (event) => {
+							if (event.key === "Enter") event.currentTarget.blur();
+						}
+					}), toggle.unit !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: SideCardSection_module_css_default.suffix,
+						children: toggle.unit
+					})]
+				})]
+			});
+		}
+		/**
+		* The secondary settings popup body of one feature (tab or viewer):
+		* - `settings.render` (custom panel) when declared — rendered with the
+		*   shared store/service, the live prefs, the descriptor's own plugin
+		*   settings blob, a persistence helper, and a close callback;
+		* - otherwise the host-prefs `toggles` rows, then the plugin-owned
+		*   `pluginToggles` rows (their values live in `pluginSettings[feature.id]`,
+		*   projected onto the prefs face so the shared row renderer reads them).
+		*/
+		function SettingsBody(props) {
+			const { feature, prefs, store, service, onToggle, onCommit, onPluginToggle, onPluginCommit, onPluginWrite, onClose } = props;
+			const render = feature.settings?.render;
+			if (render !== void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsRender, {
+				render,
+				renderProps: {
+					store,
+					service,
+					prefs,
+					pluginSettings: prefs.pluginSettings[feature.id] ?? {},
+					updatePluginSetting: onPluginWrite,
+					close: onClose
+				}
+			});
+			const toggles = feature.settings?.toggles ?? [];
+			const pluginToggles = feature.settings?.pluginToggles ?? [];
+			if (toggles.length === 0 && pluginToggles.length === 0) return null;
+			const pluginBlob = prefs.pluginSettings[feature.id] ?? {};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: SideCardSection_module_css_default.popupRows,
+				children: [toggles.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FeatureSettingsRows, {
+					toggles,
+					prefs,
+					onToggle,
+					onCommit
+				}), pluginToggles.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FeatureSettingsRows, {
+					toggles: pluginToggles,
+					prefs,
+					onToggle: onPluginToggle,
+					onCommit: onPluginCommit,
+					valueSource: (key) => pluginBlob[key]
+				})]
 			});
 		}
 		/**
@@ -7587,6 +8267,12 @@ window.__ModuleLoader__.load({
 			const [widthDraft, setWidthDraft] = (0, react.useState)(String(store.getPrefs().defaultWidthPercent));
 			const [error, setError] = (0, react.useState)(null);
 			const [settingsFor, setSettingsFor] = (0, react.useState)(null);
+			const [stripSettingsOpen, setStripSettingsOpen] = (0, react.useState)(false);
+			const [addPluginsOpen, setAddPluginsOpen] = (0, react.useState)(null);
+			const optimisticRef = (0, react.useRef)(prefs);
+			(0, react.useEffect)(() => {
+				optimisticRef.current = prefs;
+			}, [prefs]);
 			const [tabs, setTabs] = (0, react.useState)(() => [...service.getTabs()].sort(tabOrder));
 			const [viewers, setViewers] = (0, react.useState)(() => [...service.getFileViewers()].sort(viewerOrder));
 			(0, react.useEffect)(() => service.subscribe(() => {
@@ -7638,36 +8324,83 @@ window.__ModuleLoader__.load({
 				setPrefs(settled);
 				setWidthDraft(String(settled.defaultWidthPercent));
 			};
-			/** Optimistically flip one boolean pref, then commit (revert on failure). */
-			const togglePref = (patch) => {
-				const previous = prefs;
-				setPrefs({
+			/** Optimistically apply one pref patch, then commit (revert on failure). */
+			const applyPref = (patch) => {
+				const previous = optimisticRef.current;
+				const next = {
 					...previous,
 					...patch
-				});
+				};
+				optimisticRef.current = next;
+				setPrefs(next);
 				setError(null);
 				commit(patch).then((outcome) => applyOutcome(previous, outcome));
 			};
 			const onToggle = (next) => {
-				togglePref({ openByDefault: next });
+				applyPref({ openByDefault: next });
 			};
 			/** Flip one per-tab enable switch (merge into the tabsEnabled map). */
 			const onToggleTab = (id, next) => {
-				togglePref({ tabsEnabled: {
-					...prefs.tabsEnabled,
+				applyPref({ tabsEnabled: {
+					...optimisticRef.current.tabsEnabled,
 					[id]: next
 				} });
 			};
 			/** Flip one per-viewer enable switch (merge into the viewersEnabled map). */
 			const onToggleViewer = (id, next) => {
-				togglePref({ viewersEnabled: {
-					...prefs.viewersEnabled,
+				applyPref({ viewersEnabled: {
+					...optimisticRef.current.viewersEnabled,
 					[id]: next
 				} });
 			};
 			/** Flip one declaratively-declared toggle (a SidebarPrefs boolean field). */
 			const onToggleSetting = (toggle, next) => {
-				togglePref({ [toggle.key]: next });
+				applyPref({ [toggle.key]: next });
+			};
+			/**
+			* Commit one declaratively-declared text/number row. Numbers are parsed
+			* and clamped to the toggle's declared min/max (an unparsable input falls
+			* back to the CURRENT stored value, mirroring the width row); text rows
+			* persist as-is (empty is meaningful, e.g. the theme-default font).
+			* Returns the canonical value the row should display.
+			*/
+			const onCommitSetting = (toggle, raw) => {
+				if (toggle.type === "number") {
+					const parsed = Number(raw);
+					const fallback = String(prefs[toggle.key] ?? "");
+					if (!Number.isFinite(parsed)) return fallback;
+					let clamped = Math.round(parsed);
+					if (toggle.min !== void 0) clamped = Math.max(toggle.min, clamped);
+					if (toggle.max !== void 0) clamped = Math.min(toggle.max, clamped);
+					applyPref({ [toggle.key]: clamped });
+					return String(clamped);
+				}
+				applyPref({ [toggle.key]: raw });
+				return raw;
+			};
+			/** Persist one plugin-owned setting of one descriptor (merged into the pluginSettings blob). */
+			const applyPluginSetting = (descriptorId, key, value) => {
+				applyPref({ pluginSettings: mergePluginSetting(optimisticRef.current.pluginSettings, descriptorId, key, value) });
+			};
+			/** Flip one plugin-owned switch row (same row shape, plugin-scoped key). */
+			const onPluginToggle = (descriptorId, toggle, next) => {
+				applyPluginSetting(descriptorId, toggle.key, next);
+			};
+			/** Commit one plugin-owned text/number row (clamped like the host rows). */
+			const onPluginCommitSetting = (descriptorId, toggle, raw) => {
+				if (toggle.type === "number") {
+					const parsed = Number(raw);
+					const blob = prefs.pluginSettings[descriptorId] ?? {};
+					const fallback = String(blob[toggle.key] ?? "");
+					if (!Number.isFinite(parsed)) return fallback;
+					let clamped = Math.round(parsed);
+					if (toggle.min !== void 0) clamped = Math.max(toggle.min, clamped);
+					if (toggle.max !== void 0) clamped = Math.min(toggle.max, clamped);
+					applyPluginSetting(descriptorId, toggle.key, clamped);
+					return String(clamped);
+				}
+				applyPluginSetting(descriptorId, toggle.key, raw);
+				return raw;
 			};
 			const commitWidth = () => {
 				const parsed = Number(widthDraft);
@@ -7687,9 +8420,10 @@ window.__ModuleLoader__.load({
 			};
 			/**
 			* One SMALL toggle card for the responsive inventory grid: the card's main
-			* area is the switch (click to flips, visual state IS the state), the
-			* check badge sits at the far right, and a feature that declares related
-			* settings carries a gear corner button opening its settings popup.
+			* area is the switch (click to flips, visual state IS the state), the icon
+			* sits in a rounded chip, the check badge pins to the far right, and a
+			* feature that declares related settings carries a gear corner button
+			* opening its settings popup.
 			*/
 			const renderCard = (props) => {
 				const hasSettings = props.onOpenSettings !== void 0;
@@ -7707,7 +8441,7 @@ window.__ModuleLoader__.load({
 							className: SideCardSection_module_css_default.cardTop,
 							children: [
 								props.icon !== null && props.icon !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: SideCardSection_module_css_default.cardIcon,
+									className: SideCardSection_module_css_default.cardIconChip,
 									children: props.icon
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -7716,7 +8450,7 @@ window.__ModuleLoader__.load({
 								}),
 								props.enabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: SideCardSection_module_css_default.cardCheck,
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutline16, { size: 14 })
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutline16, { size: 12 })
 								})
 							]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -7729,114 +8463,287 @@ window.__ModuleLoader__.load({
 						"aria-label": `${props.title} ${t("settingsPopup")}`,
 						title: t("settingsPopup"),
 						onClick: props.onOpenSettings,
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutline16, { size: 14 })
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutline16, { size: 12 })
 					})]
 				});
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: SideCardSection_module_css_default.section,
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: SideCardSection_module_css_default.sectionHeading,
-						children: t("settingsGeneralTitle")
-					}),
-					renderCard({
-						title: t("settingsOpenTitle"),
-						desc: t("settingsOpenDesc"),
-						icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, { size: 16 }),
-						enabled: prefs.openByDefault,
-						onToggle
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: SideCardSection_module_css_default.intro,
+						children: t("settingsIntro")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: SideCardSection_module_css_default.row,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: SideCardSection_module_css_default.rowText,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: SideCardSection_module_css_default.title,
-								children: t("settingsWidthTitle")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: SideCardSection_module_css_default.desc,
-								children: t("settingsWidthDesc")
+						className: SideCardSection_module_css_default.group,
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: SideCardSection_module_css_default.groupHeading,
+								children: t("settingsGeneralTitle")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: SideCardSection_module_css_default.row,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.rowText,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.title,
+										children: t("settingsOpenTitle")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.desc,
+										children: t("settingsOpenDesc")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
+									label: t("settingsOpenTitle"),
+									checked: prefs.openByDefault,
+									onChange: onToggle
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: SideCardSection_module_css_default.row,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.rowText,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.title,
+										children: t("settingsWidthTitle")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.desc,
+										children: t("settingsWidthDesc")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.control,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
+										type: "number",
+										className: SideCardSection_module_css_default.percentInput,
+										value: widthDraft,
+										min: 20,
+										max: 60,
+										step: 1,
+										"aria-label": t("settingsWidthTitle"),
+										onChange: (event) => {
+											setWidthDraft(event.currentTarget.value);
+										},
+										onBlur: commitWidth,
+										onKeyDown: (event) => {
+											if (event.key === "Enter") event.currentTarget.blur();
+										}
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.suffix,
+										children: t("settingsWidthSuffix")
+									})]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: SideCardSection_module_css_default.row,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.rowText,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.title,
+										children: t("settingsOpenPathTitle")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.desc,
+										children: t("settingsOpenPathDesc")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
+									label: t("settingsOpenPathTitle"),
+									checked: prefs.interceptOpenPath,
+									onChange: (next) => {
+										applyPref({ interceptOpenPath: next });
+									}
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: SideCardSection_module_css_default.row,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.rowText,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.title,
+										children: t("settingsTitleBarTitle")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.desc,
+										children: t("settingsTitleBarDesc")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.control,
+									children: [prefs.titleBarCompat && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: SideCardSection_module_css_default.rowGear,
+										"aria-label": `${t("settingsTitleBarTitle")} ${t("settingsPopup")}`,
+										title: t("settingsPopup"),
+										onClick: () => {
+											setStripSettingsOpen(true);
+										},
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutline16, { size: 14 })
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Switch, {
+										label: t("settingsTitleBarTitle"),
+										checked: prefs.titleBarCompat,
+										onChange: (next) => {
+											applyPref({ titleBarCompat: next });
+										}
+									})]
+								})]
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: SideCardSection_module_css_default.group,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: SideCardSection_module_css_default.groupHeading,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("settingsTabsTitle") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: SideCardSection_module_css_default.count,
+								children: tabs.length
 							})]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: SideCardSection_module_css_default.control,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
-								type: "number",
-								className: SideCardSection_module_css_default.percentInput,
-								value: widthDraft,
-								min: 20,
-								max: 60,
-								step: 1,
-								"aria-label": t("settingsWidthTitle"),
-								onChange: (event) => {
-									setWidthDraft(event.currentTarget.value);
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: SideCardSection_module_css_default.grid,
+							children: [tabs.map((tab) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderCard({
+								title: textOf(tab.title),
+								desc: tab.id,
+								icon: iconOf(tab.icon, 16),
+								enabled: prefs.tabsEnabled[tab.id] !== false,
+								onToggle: (next) => {
+									onToggleTab(tab.id, next);
 								},
-								onBlur: commitWidth,
-								onKeyDown: (event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: SideCardSection_module_css_default.suffix,
-								children: t("settingsWidthSuffix")
+								onOpenSettings: prefs.tabsEnabled[tab.id] !== false && hasSettings(tab) ? () => {
+									setSettingsFor(tab);
+								} : void 0
+							}) }, tab.id)), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: clsx(SideCardSection_module_css_default.card, SideCardSection_module_css_default.addCard),
+								onClick: () => {
+									setAddPluginsOpen("tab");
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.cardTop,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.cardIconChip,
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 16 })
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.cardTitle,
+										children: t("addPluginsTabCard")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: SideCardSection_module_css_default.cardDesc,
+									children: t("addPluginsTabCardDesc")
+								})]
 							})]
 						})]
 					}),
-					renderCard({
-						title: t("settingsOpenPathTitle"),
-						desc: t("settingsOpenPathDesc"),
-						icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCodeOutline16, { size: 16 }),
-						enabled: prefs.interceptOpenPath,
-						onToggle: (next) => {
-							togglePref({ interceptOpenPath: next });
-						}
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: SideCardSection_module_css_default.sectionHeading,
-						children: t("settingsTabsTitle")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: SideCardSection_module_css_default.grid,
-						children: tabs.map((tab) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderCard({
-							title: textOf(tab.title),
-							desc: tab.id,
-							icon: iconOf(tab.icon, 16),
-							enabled: prefs.tabsEnabled[tab.id] !== false,
-							onToggle: (next) => {
-								onToggleTab(tab.id, next);
-							},
-							onOpenSettings: prefs.tabsEnabled[tab.id] !== false && (tab.settings?.toggles?.length ?? 0) > 0 ? () => {
-								setSettingsFor(tab);
-							} : void 0
-						}) }, tab.id))
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: SideCardSection_module_css_default.sectionHeading,
-						children: t("settingsViewersTitle")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: SideCardSection_module_css_default.grid,
-						children: viewers.map((viewer) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderCard({
-							title: textOf(viewer.title) || viewer.id,
-							desc: viewer.exts.length === 0 ? t("settingsViewerCatchAll") : viewer.exts.join(" · "),
-							icon: iconOf(viewer.icon, 16),
-							enabled: prefs.viewersEnabled[viewer.id] !== false,
-							onToggle: (next) => {
-								onToggleViewer(viewer.id, next);
-							}
-						}) }, viewer.id))
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: SideCardSection_module_css_default.group,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: SideCardSection_module_css_default.groupHeading,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("settingsViewersTitle") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: SideCardSection_module_css_default.count,
+								children: viewers.length
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: SideCardSection_module_css_default.grid,
+							children: [viewers.map((viewer) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderCard({
+								title: textOf(viewer.title) || viewer.id,
+								desc: viewer.exts.length === 0 ? t("settingsViewerCatchAll") : viewer.exts.join(" · "),
+								icon: iconOf(viewer.icon, 16),
+								enabled: prefs.viewersEnabled[viewer.id] !== false,
+								onToggle: (next) => {
+									onToggleViewer(viewer.id, next);
+								},
+								onOpenSettings: prefs.viewersEnabled[viewer.id] !== false && hasSettings(viewer) ? () => {
+									setSettingsFor(viewer);
+								} : void 0
+							}) }, viewer.id)), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: clsx(SideCardSection_module_css_default.card, SideCardSection_module_css_default.addCard),
+								onClick: () => {
+									setAddPluginsOpen("viewer");
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: SideCardSection_module_css_default.cardTop,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.cardIconChip,
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 16 })
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: SideCardSection_module_css_default.cardTitle,
+										children: t("addPluginsViewerCard")
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: SideCardSection_module_css_default.cardDesc,
+									children: t("addPluginsViewerCardDesc")
+								})]
+							})]
+						})]
 					}),
 					settingsFor !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
 						open: true,
 						onClose: () => {
 							setSettingsFor(null);
 						},
-						title: textOf(settingsFor.title),
+						title: featureNameOf(settingsFor),
+						description: t("settingsPopupDesc", { feature: featureNameOf(settingsFor) }),
 						closeLabel: t("close"),
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FeatureSettingsRows, {
-							toggles: settingsFor.settings?.toggles ?? [],
+						className: SideCardSection_module_css_default.popupDialog,
+						footer: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: SideCardSection_module_css_default.done,
+							onClick: () => {
+								setSettingsFor(null);
+							},
+							children: t("settingsDone")
+						}),
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsBody, {
+							feature: settingsFor,
 							prefs,
-							onToggle: onToggleSetting
+							onToggle: onToggleSetting,
+							onCommit: onCommitSetting,
+							onPluginToggle: (toggle, next) => {
+								onPluginToggle(settingsFor.id, toggle, next);
+							},
+							onPluginCommit: (toggle, raw) => onPluginCommitSetting(settingsFor.id, toggle, raw),
+							onPluginWrite: (key, value) => {
+								applyPluginSetting(settingsFor.id, key, value);
+							},
+							onClose: () => {
+								setSettingsFor(null);
+							},
+							store,
+							service
 						})
+					}),
+					stripSettingsOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+						open: true,
+						onClose: () => {
+							setStripSettingsOpen(false);
+						},
+						title: t("settingsTitleBarTitle"),
+						description: t("settingsPopupDesc", { feature: t("settingsTitleBarTitle") }),
+						closeLabel: t("close"),
+						className: SideCardSection_module_css_default.popupDialog,
+						footer: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: SideCardSection_module_css_default.done,
+							onClick: () => {
+								setStripSettingsOpen(false);
+							},
+							children: t("settingsDone")
+						}),
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FeatureSettingsRows, {
+							toggles: [{
+								key: "titleBarStripPx",
+								type: "number",
+								title: () => t("settingsTitleBarStripTitle"),
+								desc: () => t("settingsTitleBarStripDesc"),
+								min: 0,
+								max: 120,
+								unit: "px"
+							}],
+							prefs,
+							onToggle: onToggleSetting,
+							onCommit: onCommitSetting
+						})
+					}),
+					addPluginsOpen !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AddPluginModal, {
+						service,
+						onClose: () => {
+							setAddPluginsOpen(null);
+						},
+						kind: addPluginsOpen
 					}),
 					error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: SideCardSection_module_css_default.error,
@@ -7879,33 +8786,12 @@ window.__ModuleLoader__.load({
 			"locale"
 		];
 		/**
-		* Error boundary over the sidebar tree: a render error must never blank the
-		* whole panel silently — it shows a dismissible error strip and logs the
-		* stack for diagnosis.
+		* Error boundary over the sidebar tree (root scope): a render error in the
+		* sidebar SHELL itself must never blank the page silently — the shared
+		* RenderBoundary shows a dismissible error strip and logs the stack. The
+		* per-tab scope (Sidebar.tsx) catches viewer/editor crashes first; this root
+		* boundary stays as the last resort for Workbench/shell errors.
 		*/
-		var SidebarBoundary = class extends react.Component {
-			state = { error: null };
-			static getDerivedStateFromError(error) {
-				return { error: error instanceof Error ? error.message : String(error) };
-			}
-			componentDidCatch(error, info) {
-				console.error("[dsh-better-sidebar] render error:", error, info.componentStack);
-			}
-			render() {
-				if (this.state.error !== null) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: sidebar_module_css_default.boundaryError,
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["dsh-better-sidebar: ", this.state.error] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: sidebar_module_css_default.terminalRetry,
-						onClick: () => {
-							this.setState({ error: null });
-						},
-						children: t("terminalRetry")
-					})]
-				});
-				return this.props.children;
-			}
-		};
 		/**
 		* Client plugin body.
 		* @param ctx - the client cordis context (slots, sessions).
@@ -7950,7 +8836,7 @@ window.__ModuleLoader__.load({
 							host.setAttribute("data-dsh-better-sidebar", "");
 							document.body.appendChild(host);
 							root = (0, react_dom_client.createRoot)(host);
-							root.render((0, react.createElement)(SidebarBoundary, null, (0, react.createElement)(Sidebar, {
+							root.render((0, react.createElement)(RenderBoundary, { className: sidebar_module_css_default.boundaryError }, (0, react.createElement)(Sidebar, {
 								ctx,
 								store: sidebarStore
 							})));
@@ -7982,15 +8868,25 @@ window.__ModuleLoader__.load({
 				}, "dsh-better-sidebar: open-path interception");
 				ctx.effect(() => {
 					try {
+						const urlTargetOf = (url) => {
+							const prefs = sidebarStore.getPrefs();
+							return matchUrlTarget(service.getTabs().filter((tab) => prefs.tabsEnabled[tab.id] !== false), url)?.id;
+						};
 						return registerLinkInterception({
-							takeoverEnabled: () => sidebarStore.getPrefs().browserInterceptLinks !== false && sidebarStore.getPrefs().tabsEnabled["browser"] !== false,
+							takeoverEnabled: (url) => {
+								const prefs = sidebarStore.getPrefs();
+								if (prefs.browserInterceptLinks === false) return false;
+								if (!(url.protocol === "https:" ? prefs.browserInterceptHttps !== false : prefs.browserInterceptHttp !== false)) return false;
+								return urlTargetOf(url) !== void 0 || prefs.tabsEnabled["browser"] !== false;
+							},
 							openInSidebar: (url) => {
 								let title;
 								try {
 									title = new URL(url).hostname;
 								} catch {}
+								const type = urlTargetOf(new URL(url)) ?? "browser";
 								ctx.betterSidebar?.openTab({
-									type: "browser",
+									type,
 									url,
 									title
 								});

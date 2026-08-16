@@ -72,5 +72,19 @@ export declare class PtyManager {
     /** Close every terminal (plugin teardown). */
     disposeAll(): void;
 }
-/** The interactive shell for this platform (empty SHELL falls back). */
+/**
+ * The interactive shell for this platform, resolved like a terminal
+ * emulator: an explicit `$SHELL` on the dsh process wins (deployment
+ * override), then the account's login shell from passwd, then `/bin/bash`.
+ * The passwd step matters because service managers and container inits
+ * often start dsh without `SHELL`, and the tab should still open the
+ * user's login shell (e.g. zsh) instead of silently degrading to bash.
+ * Windows short-circuits to `powershell.exe` before any resolution.
+ */
 export declare function defaultShell(): string;
+/**
+ * Spawn arguments that make the shell behave like a terminal-emulator tab:
+ * POSIX shells start as login shells (`-l`) so they read the profile files
+ * (`~/.profile`, `~/.zprofile`); Windows PowerShell takes no login flag.
+ */
+export declare function shellSpawnArgs(): string[];

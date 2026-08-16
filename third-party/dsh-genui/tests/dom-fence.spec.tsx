@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { installDomFenceRenderer } from '../src/client/dom-fence.tsx'
 import { inject } from '../src/client/index.tsx'
-import { getPanelSpec } from '../src/client/panel-store.ts'
+import { clearSessionPanel, getPanelSpec } from '../src/client/panel-store.ts'
 
 const VALID_SPEC = '{"title":"卡片","items":[{"type":"text","content":"你好，世界"}]}'
 const BUTTON_SPEC = '{"items":[{"type":"button","label":"刷新","action":"refresh"}]}'
@@ -34,6 +34,29 @@ function stockCodeBlock(raw: string, lang: string): HTMLElement {
   pre.appendChild(code)
   block.appendChild(banner)
   block.appendChild(pre)
+  return block
+}
+
+/** Deepsuite-style fence surface (issue #6): `.code-block` / span language
+ * label + copy button in the banner, body wrapped in a content div. */
+function deepsuiteCodeBlock(raw: string, lang: string, cls = 'code-block'): HTMLElement {
+  const block = document.createElement('div')
+  block.className = cls
+  const banner = document.createElement('div')
+  const label = document.createElement('span')
+  label.textContent = lang
+  const copy = document.createElement('button')
+  copy.textContent = '复制'
+  banner.appendChild(label)
+  banner.appendChild(copy)
+  const content = document.createElement('div')
+  const pre = document.createElement('pre')
+  const code = document.createElement('code')
+  code.textContent = raw
+  pre.appendChild(code)
+  content.appendChild(pre)
+  block.appendChild(banner)
+  block.appendChild(content)
   return block
 }
 
@@ -428,6 +451,340 @@ describe('anchor-less rows (Safari fallback render path)', () => {
     } finally {
       dispose()
       warn.mockRestore()
+    }
+  })
+})
+
+describe('persisted replay barrier across page refresh (issue #4)', () => {
+  // 回归钉 #4: 宿主 anchor key 是 `<kindlen>:<kind><id>`，assistant step 的
+  // id 是 `<turn>:<step>`（如 `14:assistant-step3:0`）。旧实现取 key 里第一个
+  // 数字 = kind 长度常量 → 所有消息的 order[0] 相同 → 刷新后 replayBarrier
+  // (= 持久化 maxSeenSeq = 该常量) 拒绝一切新 panel 围栏，dock 冻结且零日志。
+  // 修复：order[0] 改为 turn*1000+step（随消息顺序严格单调），刷新后新消息
+  // 的 turn 必然大于持久化屏障 → 正常更新。
+  const PANEL = (title: string, content: string) =>
+    `{"panel":true,"title":"${title}","items":[{"type":"text","content":"${content}"}]}`
+
+  it('lets a new-turn panel fence update the dock after a refresh', async () => {
+    const send = vi.fn()
+
+    // ── 页面 1：turn 2 与 turn 3 的两个 panel 围栏（宿主真实 key 格式）──
+    const row2 = assistantRow('14:assistant-step2:0')
+    const blockA = stockCodeBlock(PANEL('面板A', 'A'), 'dsh-ui')
+    row2.appendChild(blockA)
+    document.body.appendChild(row2)
+    const row3 = assistantRow('14:assistant-step3:0')
+    const blockB = stockCodeBlock(PANEL('面板B', 'B'), 'dsh-ui')
+    row3.appendChild(blockB)
+    document.body.appendChild(row3)
+    let dispose = installDomFenceRenderer(makeCtx('sess-refresh', send), send)
+    try {
+      await tick()
+      expect(getPanelSpec('sess-refresh')?.title).toBe('面板B')
+
+      // ── 刷新：内存态清空（localStorage 存活），新页面重装渲染器 ──
+      dispose()
+      clearSessionPanel('sess-refresh')
+      document.body.innerHTML = ''
+      dispose = installDomFenceRenderer(makeCtx('sess-refresh', send), send)
+      await tick()
+
+      // 历史重放（同一 DOM 重建）：被持久化屏障杀死，dock 保持面板B
+      document.body.appendChild(row2)
+      document.body.appendChild(row3)
+      await tick()
+      expect(getPanelSpec('sess-refresh')?.title).toBe('面板B')
+
+      // ── 新消息（turn 4）：order[0]=4000 > 屏障 3000 → dock 必须更新 ──
+      const row4 = assistantRow('14:assistant-step4:0')
+      const blockC = stockCodeBlock(PANEL('面板C', 'C'), 'dsh-ui')
+      row4.appendChild(blockC)
+      document.body.appendChild(row4)
+      await tick()
+      expect(getPanelSpec('sess-refresh')?.title).toBe('面板C')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('keeps per-step monotonicity within one turn (later step wins)', async () => {
+    // 同一 turn 内的多步：step 必须参与 seq，后一步的围栏覆盖前一步。
+    const send = vi.fn()
+    const rowA = assistantRow('14:assistant-step5:0')
+    const blockA = stockCodeBlock(PANEL('面板甲', '甲'), 'dsh-ui')
+    rowA.appendChild(blockA)
+    document.body.appendChild(rowA)
+    const rowB = assistantRow('14:assistant-step5:1')
+    const blockB = stockCodeBlock(PANEL('面板乙', '乙'), 'dsh-ui')
+    rowB.appendChild(blockB)
+    document.body.appendChild(rowB)
+    const dispose = installDomFenceRenderer(makeCtx('sess-refresh-step', send), send)
+    try {
+      await tick()
+      expect(getPanelSpec('sess-refresh-step')?.title).toBe('面板乙')
+    } finally {
+      dispose()
+    }
+  })
+})
+
+describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
+  // 回归钉 #6: 宿主 DOM 的围栏表面并非只有 `.md-code-block`——deepsuite 风格
+  // 渲染栈输出 `.code-block` / `.code-block-small`，语言标签是 span 而非 div，
+  // 正文还可能被 content div 包裹。旧实现（单一选择器 + 只认 div 标签）在
+  // 这类宿主上完全找不到围栏 → 静默保持代码块、控制台零报错。新实现按
+  // label+pre 结构兜底识别，任何表面形态都能渲染。
+
+  it('takes over a deepsuite-style .code-block surface (span label, wrapped body)', async () => {
+    const row = assistantRow('s20')
+    const block = deepsuiteCodeBlock(VALID_SPEC, 'dsh-ui')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-1', send), send)
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(block.style.display).toBe('none')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('takes over a .code-block-small surface', async () => {
+    const row = assistantRow('s21')
+    const block = deepsuiteCodeBlock(VALID_SPEC, 'dsh-ui', 'code-block-small')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-2', send), send)
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('structural backstop: an unlisted surface class renders via label+pre, warning once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const row = assistantRow('s22')
+    const block = deepsuiteCodeBlock(VALID_SPEC, 'dsh-ui', 'host-fence-v9')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-3', send), send)
+    try {
+      await tick()
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      // 漂移诊断恰好一条（跨多轮 sweep 不刷屏），且不再有「找不到围栏」式静默。
+      const calls = warn.mock.calls.filter(([m]) => String(m).includes('围栏表面类名未被已知选择器命中'))
+      expect(calls).toHaveLength(1)
+    } finally {
+      dispose()
+      warn.mockRestore()
+    }
+  })
+
+  it('never self-identifies through code that literally contains the text dsh-ui', async () => {
+    // 代码体里出现 `dsh-ui` 字面量（如文档示例）不得让 json/ts 围栏误判为
+    // dsh-ui：标签检查只认正文之外的叶子元素。
+    const row = assistantRow('s23')
+    const block = stockCodeBlock('{"items":[{"type":"text","content":"用 dsh-ui 围栏渲染"}]}', 'json')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-4', send), send)
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(block.style.display).toBe('')
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
+    } finally {
+      dispose()
+    }
+  })
+
+  it('only the outermost element of a nested modifier surface is taken over', async () => {
+    // 宿主把 `code-block-small` 作为 `code-block` 的修饰子元素时，围栏只能
+    // 接管一次（外层），不得把内外两层当两个围栏重复渲染。
+    const row = assistantRow('s24')
+    const outer = deepsuiteCodeBlock(VALID_SPEC, 'dsh-ui', 'code-block')
+    const inner = document.createElement('div')
+    inner.className = 'code-block-small'
+    inner.textContent = 'modifier'
+    outer.appendChild(inner)
+    row.appendChild(outer)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-5', send), send)
+    try {
+      await tick()
+      expect(outer.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(inner.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(outer.style.display).toBe('none')
+      // 只挂了一个 genui 容器：内外层没有被当成两个围栏。
+      expect(row.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('renders both fences when two .code-block surfaces sit side by side in one row', async () => {
+    // 两个独立 deepsuite 围栏在同一行：不得被嵌套去重误伤，各自渲染且身份不折叠。
+    const row = assistantRow('s25')
+    const first = deepsuiteCodeBlock('{"panel":true,"title":"面板甲","items":[{"type":"text","content":"甲"}]}', 'dsh-ui')
+    const second = deepsuiteCodeBlock('{"panel":true,"title":"面板乙","items":[{"type":"text","content":"乙"}]}', 'dsh-ui')
+    row.appendChild(first)
+    row.appendChild(second)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-6', send), send)
+    try {
+      await tick()
+      expect(first.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(second.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(getPanelSpec('sess-6-6')?.title).toBe('面板乙')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('streaming takeover works on a deepsuite surface (content-identified, label verified at settle)', async () => {
+    // 已知类名（.code-block）的异形表面与 .md-code-block 同权：流式期间按
+    // 内容接管（首个完成组件即渲染），落定后按标签复核——异形表面不丢
+    // 流式渲染能力。
+    const row = assistantRow('s26', true)
+    const block = deepsuiteCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', '')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-6-7', send), send)
+    try {
+      await tick()
+      // 流式：内容已解析出完成组件 → 已接管并渲染。
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      // 正文继续增长 → 实时重渲染。
+      block.querySelector('code')!.textContent = '{"items":[{"type":"text","content":"你好，世界"},{"type":"text","content":"第二块"}]}'
+      await tick()
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('第二块')
+      // 落定：标签出现且是 dsh-ui → 保持渲染（带稳定身份）。
+      block.querySelector('span')!.textContent = 'dsh-ui'
+      row.removeAttribute('data-streaming')
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+    } finally {
+      dispose()
+    }
+  })
+})
+
+describe('shared markdown root with mixed code blocks (issue #13)', () => {
+  // 回归钉 #13: 同一消息容器里 dsh-ui 围栏和 python/ts/bash 等普通代码块
+  // 共存时，结构兜底从普通代码块的 <pre> 向上回溯，越过它自己的
+  // .md-code-block 把共享的 .markdown 根容器误判为「dsh-ui 围栏」→ 整条消息
+  // display:none，python 代码块被吞掉。兜底必须跳过已知表面的 <pre>，且
+  // 标签判定不得认领嵌套代码块的 banner。
+
+  /** Shared markdown root: the host renders one `.markdown` wrapper around
+   * every code block of a message. */
+  function markdownRoot(): HTMLElement {
+    const root = document.createElement('div')
+    root.className = 'markdown'
+    return root
+  }
+
+  it('renders the dsh-ui fence and keeps a sibling python block untouched', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const row = assistantRow('s30')
+    const root = markdownRoot()
+    const genui = stockCodeBlock(VALID_SPEC, 'dsh-ui')
+    const python = stockCodeBlock('@dataclass\nclass LineSegment:\n    points: list', 'python')
+    root.appendChild(genui)
+    root.appendChild(python)
+    row.appendChild(root)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-13-1', send), send)
+    try {
+      await tick()
+      await tick()
+      // dsh-ui 围栏正常接管；python 块与共享根容器都不许被隐藏或接管。
+      expect(genui.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(genui.style.display).toBe('none')
+      expect(python.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(python.style.display).toBe('')
+      expect(python.textContent).toContain('LineSegment')
+      expect(root.style.display).toBe('')
+      // 恰好一个 genui 容器，且挂在 dsh-ui 块之后，而不是整条消息之后。
+      expect(row.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
+      expect(root.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
+      const container = row.querySelector('.genui-dom-fence')
+      expect(container?.previousElementSibling).toBe(genui)
+      expect(container!.textContent).toContain('你好，世界')
+      // 不该出现「未知表面类名」漂移告警：两个表面都是已知选择器命中的。
+      const drift = warn.mock.calls.filter(([m]) => String(m).includes('围栏表面类名未被已知选择器命中'))
+      expect(drift).toHaveLength(0)
+    } finally {
+      dispose()
+      warn.mockRestore()
+    }
+  })
+
+  it('renders the dsh-ui fence when the shared root contains TWO dsh-ui blocks', async () => {
+    const row = assistantRow('s31')
+    const root = markdownRoot()
+    const first = stockCodeBlock(PANEL_SPEC, 'dsh-ui')
+    const second = stockCodeBlock('{"panel":true,"title":"面板B","items":[{"type":"text","content":"B"}]}', 'dsh-ui')
+    root.appendChild(first)
+    root.appendChild(second)
+    row.appendChild(root)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-13-2', send), send)
+    try {
+      await tick()
+      // 两个 dsh-ui 块各自接管；面板 fold 走各自的 source，后者赢得 dock。
+      expect(first.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(second.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(root.style.display).toBe('')
+      expect(root.querySelectorAll('.genui-dom-fence')).toHaveLength(2)
+      expect(getPanelSpec('sess-13-2')?.title).toBe('面板B')
+    } finally {
+      dispose()
+    }
+  })
+
+  it('keeps the structural backstop working for an unknown surface beside a known python block', async () => {
+    // 加固不能把结构兜底一并误杀：未知类名表面的 <pre> 没有已知祖先，仍要
+    // 通过 label+pre 兜底被发现；旁边已知类名的 python 块继续被忽略。
+    const row = assistantRow('s32')
+    const root = markdownRoot()
+    const unknown = deepsuiteCodeBlock(VALID_SPEC, 'dsh-ui', 'host-fence-v99')
+    const python = stockCodeBlock('print("hello")', 'python')
+    root.appendChild(unknown)
+    root.appendChild(python)
+    row.appendChild(root)
+    document.body.appendChild(row)
+    const send = vi.fn()
+    const dispose = installDomFenceRenderer(makeCtx('sess-13-3', send), send)
+    try {
+      await tick()
+      expect(unknown.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(unknown.style.display).toBe('none')
+      expect(python.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(python.style.display).toBe('')
+      expect(root.style.display).toBe('')
+      expect(root.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
+    } finally {
+      dispose()
     }
   })
 })

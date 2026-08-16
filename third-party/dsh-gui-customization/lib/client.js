@@ -281,6 +281,9 @@ window.__ModuleLoader__.load({
 			"preset.indigo": "靛紫",
 			"preset.emerald": "翡翠绿",
 			"group.colors": "自定义颜色（应用后生效）",
+			"colors.mode": "编辑模式",
+			"colors.light": "亮色",
+			"colors.dark": "暗色",
 			"field.bg-base": "背景",
 			"field.label-primary": "文字",
 			"field.layer-1": "卡片",
@@ -351,6 +354,9 @@ window.__ModuleLoader__.load({
 			"preset.indigo": "Indigo",
 			"preset.emerald": "Emerald",
 			"group.colors": "Custom colors (applied on confirm)",
+			"colors.mode": "Edit mode",
+			"colors.light": "Light",
+			"colors.dark": "Dark",
 			"field.bg-base": "Background",
 			"field.label-primary": "Text",
 			"field.layer-1": "Cards",
@@ -442,7 +448,11 @@ window.__ModuleLoader__.load({
 		* - 插件配置区识别：注册 settings.plugin.item 卡片（设置 → 插件）
 		*/
 		const MAIN_CSS = `
-  .guic-panel { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 16px; }
+  .guic-panel { display: flex; flex-direction: column; width: 100%; padding: 0 0 16px; }
+  /* 官方「通用设定」同款设定单元：16px 上下留白 + 发丝分割线；面板去掉最后一条的分割线 */
+  .guic-section-row { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+  .guic-panel > .guic-section-row:last-child { border-bottom: none; }
+  .guic-section-title { font-size: 14px; font-weight: 400; line-height: 22px; color: var(--dsw-alias-label-primary); }
   .guic-h { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
   .guic-presets { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .guic-preset { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; font-size: 13px; }
@@ -514,6 +524,10 @@ window.__ModuleLoader__.load({
 			let activeLayer = null;
 			let currentColors = PALETTES.nous.light;
 			let currentBrandDark = PALETTES.nous.brandDark;
+			let currentDarkColors = {
+				...DARK,
+				"brand-primary": PALETTES.nous.brandDark
+			};
 			let userTouched = false;
 			let savedState = null;
 			const syncListeners = [];
@@ -538,6 +552,7 @@ window.__ModuleLoader__.load({
 			const sidebarTransparentListeners = [];
 			let bgOpacity = .3;
 			const bgOpacityListeners = [];
+			let activePresetName = "nous";
 			function setBg(enabled) {
 				bgEnabled = enabled;
 				bgListeners.slice().forEach((fn) => fn(enabled));
@@ -615,9 +630,9 @@ window.__ModuleLoader__.load({
 					videoLayer = null;
 				}
 			}
-			function buildTokens(light, brandDark) {
-				const dark = { ...DARK };
-				dark["brand-primary"] = brandDark;
+			function buildTokens(light, brandDark, darkOverride) {
+				const dark = darkOverride ?? { ...DARK };
+				if (darkOverride === void 0) dark["brand-primary"] = brandDark;
 				const tokens = {};
 				for (const key in TOKEN_KEYS) tokens[TOKEN_KEYS[key]] = {
 					light: light[key] ?? "",
@@ -651,21 +666,25 @@ window.__ModuleLoader__.load({
 			}
 			function renderTheme() {
 				const light = bgEnabled ? translucent(currentColors) : currentColors;
-				activeLayer = theme.overrideTokens(SOURCE, buildTokens(light, currentBrandDark));
+				const dark = bgEnabled ? translucent(currentDarkColors) : currentDarkColors;
+				activeLayer = theme.overrideTokens(SOURCE, buildTokens(light, currentBrandDark, dark));
 			}
-			function applyColors(light, brandDark) {
+			function applyColors(light, dark, brandDark) {
 				currentColors = light;
+				currentDarkColors = dark;
 				currentBrandDark = brandDark;
 				renderTheme();
 			}
 			function persist() {
 				saveSettings({
 					colors: currentColors,
+					darkColors: currentDarkColors,
 					brandDark: currentBrandDark,
 					ambient: ambientState,
 					bgKind,
 					bgSidebarTransparent,
-					bgOpacity
+					bgOpacity,
+					activePreset: activePresetName
 				});
 			}
 			let bgBlobUrl = null;
@@ -747,11 +766,22 @@ window.__ModuleLoader__.load({
 				deleteVideo();
 				if (bgKind === "video") renderTheme();
 			}
-			applyColors(PALETTES.nous.light, PALETTES.nous.brandDark);
+			applyColors(PALETTES.nous.light, {
+				...DARK,
+				"brand-primary": PALETTES.nous.brandDark
+			}, PALETTES.nous.brandDark);
 			const saved = loadSettings();
 			if (saved !== null && saved.colors !== void 0 && typeof saved.colors === "object") {
 				savedState = saved;
-				applyColors(saved.colors, saved.brandDark || PALETTES.nous.brandDark);
+				const savedBrand = saved.brandDark || PALETTES.nous.brandDark;
+				const savedDark = saved.darkColors !== void 0 && typeof saved.darkColors === "object" ? {
+					...DARK,
+					...saved.darkColors
+				} : {
+					...DARK,
+					"brand-primary": savedBrand
+				};
+				applyColors(saved.colors, savedDark, savedBrand);
 				if (saved.ambient !== void 0 && typeof saved.ambient === "object") setAmbient({
 					...DEFAULT_AMBIENT,
 					...saved.ambient
@@ -760,6 +790,7 @@ window.__ModuleLoader__.load({
 			if (saved !== null && (saved.bgKind === "video" || saved.bgKind === "image")) setBgKind(saved.bgKind);
 			if (saved !== null && saved.bgSidebarTransparent === true) setBgSidebarTransparent(true);
 			if (saved !== null && typeof saved.bgOpacity === "number") setBgOpacity(saved.bgOpacity);
+			if (saved !== null && typeof saved.activePreset === "string") activePresetName = saved.activePreset;
 			loadBackground().then((bg) => {
 				if (bg !== null && !userTouched && bgKind === "image") applyBackgroundData(bg);
 			});
@@ -791,8 +822,17 @@ window.__ModuleLoader__.load({
 			}
 			function GuiPanel() {
 				const [colors, setColors] = (0, react.useState)(PALETTES.nous.light);
+				const [darkColors, setDarkColors] = (0, react.useState)({
+					...DARK,
+					"brand-primary": PALETTES.nous.brandDark
+				});
+				const [colorMode, setColorMode] = (0, react.useState)("light");
 				const [brandDark, setBrandDark] = (0, react.useState)(PALETTES.nous.brandDark);
-				const [activePreset, setActivePreset] = (0, react.useState)("nous");
+				const [activePreset, setActivePreset] = (0, react.useState)(activePresetName);
+				const setPreset = (value) => {
+					activePresetName = value;
+					setActivePreset(value);
+				};
 				const [notice, setNotice] = (0, react.useState)(t("notice.defaultApplied", { name: t("preset.nous") }));
 				const [ambient, setAmbientUi] = (0, react.useState)(ambientState);
 				const [bg, setBgUi] = (0, react.useState)(bgEnabled);
@@ -809,8 +849,16 @@ window.__ModuleLoader__.load({
 					const sync = () => {
 						if (savedState === null || userTouched) return;
 						setColors(savedState.colors);
+						const sd = savedState.darkColors;
+						setDarkColors(sd !== void 0 && typeof sd === "object" ? {
+							...DARK,
+							...sd
+						} : {
+							...DARK,
+							"brand-primary": savedState.brandDark || PALETTES.nous.brandDark
+						});
 						setBrandDark(savedState.brandDark || PALETTES.nous.brandDark);
-						setActivePreset(null);
+						setPreset(typeof savedState.activePreset === "string" ? savedState.activePreset : "");
 						setNotice(t("notice.loaded"));
 					};
 					syncListeners.push(sync);
@@ -862,11 +910,15 @@ window.__ModuleLoader__.load({
 				}, []);
 				const update = (key, value) => {
 					userTouched = true;
-					setColors((prev) => ({
+					if (colorMode === "dark") setDarkColors((prev) => ({
 						...prev,
 						[key]: value
 					}));
-					setActivePreset("");
+					else setColors((prev) => ({
+						...prev,
+						[key]: value
+					}));
+					setPreset("");
 				};
 				const updateAmbient = (patch) => {
 					userTouched = true;
@@ -916,7 +968,7 @@ window.__ModuleLoader__.load({
 				};
 				const choosePreset = (key) => () => {
 					userTouched = true;
-					setActivePreset(key);
+					setPreset(key);
 					if (key === "default") {
 						setAmbient({ ...DEFAULT_AMBIENT });
 						clearSettings();
@@ -926,31 +978,42 @@ window.__ModuleLoader__.load({
 						}
 						if (bgEnabled) {
 							const product = readProductTokens();
+							const productDark = {
+								...DARK,
+								"brand-primary": currentBrandDark
+							};
 							setColors(product);
-							applyColors(product, currentBrandDark);
+							setDarkColors(productDark);
+							applyColors(product, productDark, currentBrandDark);
 							setNotice(t("notice.bgReadback", { value: String(product["bg-base"] ?? "?") }));
 						} else setNotice(t("notice.systemDefault"));
 						return;
 					}
 					const p = PALETTES[key];
 					if (p === void 0) return;
+					const newDark = {
+						...DARK,
+						"brand-primary": p.brandDark
+					};
 					setColors(p.light);
+					setDarkColors(newDark);
 					setBrandDark(p.brandDark);
-					applyColors(p.light, p.brandDark);
+					applyColors(p.light, newDark, p.brandDark);
 					persist();
 					setNotice(t("notice.appliedPreset", { name: p.label }));
 				};
 				const applyCustom = () => {
 					userTouched = true;
-					applyColors(colors, brandDark);
+					applyColors(colors, darkColors, brandDark);
 					persist();
-					setActivePreset("");
+					setPreset("");
 					setNotice(t("notice.customApplied"));
 				};
 				const doExport = () => {
 					userTouched = true;
 					const text = JSON.stringify({
 						colors,
+						darkColors,
 						brandDark,
 						ambient: ambientState
 					}, null, 2);
@@ -974,25 +1037,36 @@ window.__ModuleLoader__.load({
 					const newColors = parsed.colors;
 					const merged = { ...colors };
 					for (const key in TOKEN_KEYS) if (typeof newColors[key] === "string" && newColors[key] !== "") merged[key] = newColors[key];
+					const newDarkRaw = parsed.darkColors;
+					const mergedDark = { ...darkColors };
+					if (newDarkRaw !== null && newDarkRaw !== void 0 && typeof newDarkRaw === "object") {
+						const newDark = newDarkRaw;
+						for (const key in TOKEN_KEYS) if (typeof newDark[key] === "string" && newDark[key] !== "") mergedDark[key] = newDark[key];
+					}
 					const newBrandDark = typeof parsed.brandDark === "string" && parsed.brandDark !== "" ? parsed.brandDark : brandDark;
 					const newAmbient = parsed.ambient !== null && typeof parsed.ambient === "object" ? {
 						...DEFAULT_AMBIENT,
 						...parsed.ambient
 					} : ambientState;
 					setColors(merged);
+					setDarkColors(mergedDark);
 					setBrandDark(newBrandDark);
 					setAmbient(newAmbient);
-					applyColors(merged, newBrandDark);
+					applyColors(merged, mergedDark, newBrandDark);
 					persist();
-					setActivePreset("");
+					setPreset("");
 					setNotice(t("io.imported"));
 				};
-				return (0, react.createElement)("div", { className: "guic-panel" }, (0, react.createElement)("div", { className: "guic-h" }, t("group.presets")), (0, react.createElement)("div", { className: "guic-presets" }, PRESET_ORDER.map((key) => (0, react.createElement)("button", {
+				return (0, react.createElement)("div", { className: "guic-panel" }, (0, react.createElement)("div", { className: "guic-section-row" }, (0, react.createElement)("div", { className: "guic-section-title" }, t("group.presets")), (0, react.createElement)("div", { className: "guic-presets" }, PRESET_ORDER.map((key) => (0, react.createElement)("button", {
 					key,
 					className: activePreset === key ? "guic-preset guic-preset-active" : "guic-preset",
 					onClick: choosePreset(key)
-				}, t("preset." + key)))), (0, react.createElement)("div", { className: "guic-h" }, t("group.colors")), (0, react.createElement)("div", { className: "guic-grid" }, FIELDS.map(([key, label]) => {
-					const value = colors[key] ?? "";
+				}, t("preset." + key))))), (0, react.createElement)("div", { className: "guic-section-row" }, (0, react.createElement)("div", { className: "guic-section-title" }, t("group.colors")), (0, react.createElement)("div", { className: "guic-ambient-row" }, (0, react.createElement)("span", { className: "guic-field-label" }, t("colors.mode")), ["light", "dark"].map((mode) => (0, react.createElement)("button", {
+					key: mode,
+					className: colorMode === mode ? "guic-preset guic-preset-active" : "guic-preset",
+					onClick: () => setColorMode(mode)
+				}, t("colors." + mode)))), (0, react.createElement)("div", { className: "guic-grid" }, FIELDS.map(([key, label]) => {
+					const value = (colorMode === "dark" ? darkColors : colors)[key] ?? "";
 					const hex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#0053FD";
 					return (0, react.createElement)("div", {
 						className: "guic-field",
@@ -1030,7 +1104,7 @@ window.__ModuleLoader__.load({
 						fontFamily: "monospace",
 						fontSize: "11px"
 					}
-				})), (0, react.createElement)("div", { className: "guic-h" }, t("group.ambient")), (0, react.createElement)("div", { className: "guic-ambient-row" }, (0, react.createElement)("button", {
+				}))), (0, react.createElement)("div", { className: "guic-section-row" }, (0, react.createElement)("div", { className: "guic-section-title" }, t("group.ambient")), (0, react.createElement)("div", { className: "guic-ambient-row" }, (0, react.createElement)("button", {
 					className: ambient.enabled ? "guic-btn guic-btn-primary" : "guic-btn",
 					onClick: () => updateAmbient({ enabled: !ambient.enabled })
 				}, ambient.enabled ? t("ambient.on") : t("ambient.off")), (0, react.createElement)("label", { className: "guic-check" }, (0, react.createElement)("input", {
@@ -1055,7 +1129,7 @@ window.__ModuleLoader__.load({
 					key,
 					className: ambient.position === key ? "guic-preset guic-preset-active" : "guic-preset",
 					onClick: () => updateAmbient({ position: key })
-				}, t("pos." + key)))), (0, react.createElement)("div", { className: "guic-h" }, t("group.bg")), (0, react.createElement)("div", { className: "guic-ambient-row" }, (0, react.createElement)("span", { className: "guic-field-label" }, t("bg.status")), (0, react.createElement)("span", { className: "guic-note" }, bg ? t("ambient.on") : t("ambient.off")), (0, react.createElement)("label", { className: "guic-btn guic-btn-primary" }, (0, react.createElement)("input", {
+				}, t("pos." + key))))), (0, react.createElement)("div", { className: "guic-section-row" }, (0, react.createElement)("div", { className: "guic-section-title" }, t("group.bg")), (0, react.createElement)("div", { className: "guic-ambient-row" }, (0, react.createElement)("span", { className: "guic-field-label" }, t("bg.status")), (0, react.createElement)("span", { className: "guic-note" }, bg ? t("ambient.on") : t("ambient.off")), (0, react.createElement)("label", { className: "guic-btn guic-btn-primary" }, (0, react.createElement)("input", {
 					type: "file",
 					accept: "image/*",
 					style: { display: "none" },
@@ -1113,7 +1187,7 @@ window.__ModuleLoader__.load({
 						setBgOpacity(Number(ev.target.value) / 100);
 						persist();
 					}
-				}), (0, react.createElement)("span", { className: "guic-note" }, `${Math.round(bgOpacityUi * 100)}%`)), (0, react.createElement)("div", { className: "guic-note" }, t("bg.note")), (0, react.createElement)("div", { className: "guic-notice" }, notice), (0, react.createElement)("div", { className: "guic-note" }, t("hint.persist")));
+				}), (0, react.createElement)("span", { className: "guic-note" }, `${Math.round(bgOpacityUi * 100)}%`)), (0, react.createElement)("div", { className: "guic-note" }, t("bg.note"))), (0, react.createElement)("div", { className: "guic-section-row" }, (0, react.createElement)("div", { className: "guic-notice" }, notice), (0, react.createElement)("div", { className: "guic-note" }, t("hint.persist"))));
 			}
 			function PluginCard() {
 				return (0, react.createElement)("div", { className: "guic-plugin-card" }, (0, react.createElement)("div", { className: "guic-plugin-name" }, t("plugin.name")), (0, react.createElement)("div", { className: "guic-plugin-desc" }, t("plugin.desc")));

@@ -9,6 +9,7 @@
 import { chmodSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { userInfo } from 'node:os'
 import * as nodePty from 'node-pty'
 import { SidebarError } from './wire.ts'
 
@@ -118,7 +119,7 @@ export class PtyManager {
       sessionId,
       tabId,
       cwd,
-      pty: nodePty.spawn(this.shell, [], {
+      pty: nodePty.spawn(this.shell, shellSpawnArgs(), {
         name: 'xterm-256color',
         cols: Math.max(2, Math.floor(cols)),
         rows: Math.max(2, Math.floor(rows)),
@@ -191,9 +192,35 @@ export class PtyManager {
   }
 }
 
-/** The interactive shell for this platform (empty SHELL falls back). */
+/**
+ * The interactive shell for this platform, resolved like a terminal
+ * emulator: an explicit `$SHELL` on the dsh process wins (deployment
+ * override), then the account's login shell from passwd, then `/bin/bash`.
+ * The passwd step matters because service managers and container inits
+ * often start dsh without `SHELL`, and the tab should still open the
+ * user's login shell (e.g. zsh) instead of silently degrading to bash.
+ * Windows short-circuits to `powershell.exe` before any resolution.
+ */
 export function defaultShell(): string {
   if (process.platform === 'win32') return 'powershell.exe'
-  const shell = process.env.SHELL
-  return shell !== undefined && shell.trim() !== '' ? shell : '/bin/bash'
+  const envShell = process.env.SHELL
+  if (envShell !== undefined && envShell.trim() !== '') return envShell
+  // userInfo() throws when the uid has no passwd entry (rare chroots);
+  // without a login shell there is nothing better than the bash default.
+  try {
+    const loginShell = userInfo().shell
+    if (typeof loginShell === 'string' && loginShell.trim() !== '') return loginShell
+  } catch {
+    // no passwd entry: fall through to /bin/bash
+  }
+  return '/bin/bash'
+}
+
+/**
+ * Spawn arguments that make the shell behave like a terminal-emulator tab:
+ * POSIX shells start as login shells (`-l`) so they read the profile files
+ * (`~/.profile`, `~/.zprofile`); Windows PowerShell takes no login flag.
+ */
+export function shellSpawnArgs(): string[] {
+  return process.platform === 'win32' ? [] : ['-l']
 }

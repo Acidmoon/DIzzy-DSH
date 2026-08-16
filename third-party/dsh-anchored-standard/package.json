@@ -9,7 +9,8 @@
     "node": ">=22.19.0"
   },
   "scripts": {
+    "sync": "node scripts/sync-modes.mjs",
     "test": "node --test",
-    "check": "node --check preset/tool-bootstrap.mjs && node --test"
+    "check": "node scripts/sync-modes.mjs --check && node --test"
   }
 }

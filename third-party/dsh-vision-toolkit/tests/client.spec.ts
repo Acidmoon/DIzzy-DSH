@@ -8,6 +8,7 @@ import { apply, decodeVisionResult, inject, VisionSettingsController } from '../
 
 afterEach(() => {
   cleanup()
+  document.querySelectorAll('style[data-plugin-css="@anionex/dsh-vision-toolkit/client"]').forEach(element => { element.remove() })
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -29,7 +30,7 @@ function settled(meta: unknown, isError = false, toolName = 'vision_ground'): To
   } as unknown as ToolCallBlock
 }
 
-function fakeClientContext() {
+function fakeClientContext(legacyRemote = true) {
   const registrations: Array<{ options: Record<string, unknown>; component: ComponentType<Record<string, unknown>> }> = []
   const effects: Array<() => void> = []
   const slots = {
@@ -48,15 +49,25 @@ function fakeClientContext() {
   }
   const ctx = {
     slots,
+    inputTriggers: { registerSource: vi.fn(() => () => {}) },
+    sessions: {
+      list: { getSnapshot: () => ({ current: undefined }) },
+      scope: vi.fn(() => undefined),
+    },
+    conversation: { input: { for: vi.fn() } },
     locale: {
       register: vi.fn(() => () => {}),
       bind: vi.fn(() => (key: string) => key),
     },
+    remote: legacyRemote ? { $on: vi.fn(() => () => {}) } : {},
     effect: vi.fn((setup: () => void | (() => void)) => {
       const dispose = setup()
       if (typeof dispose === 'function') effects.push(dispose)
     }),
     on: vi.fn(() => () => {}),
+    inject: vi.fn((services: string[], callback: (scope: unknown) => void) => {
+      if (services.every(service => service in ctx)) callback(ctx)
+    }),
   }
   return { ctx, slots, registrations, effects }
 }
@@ -67,7 +78,14 @@ function settingsSnapshot(runtime: { ready: boolean; lastError?: string } = { re
     writable: true,
     settings: {
       value: {
-        provider: { baseUrl: 'https://api.inferera.com/v1', credential: 'VISION_API_KEY', model: 'gemini-3.6-flash' },
+        provider: {
+          baseUrl: 'https://api.inferera.com/v1',
+          credential: 'VISION_API_KEY',
+          model: 'gemini-3.6-flash',
+          protocol: 'openai',
+          anthropicThinking: 'omit',
+          userAgent: 'fixture-agent/1.0',
+        },
         language: 'zh',
         timeoutMs: 61000,
         maxImageBytes: 10485760,
@@ -130,9 +148,12 @@ function artifact(
 
 describe('Vision Toolkit client plugin', () => {
   it('registers every dedicated Tool view and the Settings section', () => {
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'conversation', 'sessions'])
     const { ctx, registrations } = fakeClientContext()
     apply(ctx as never)
+    const remote = ctx.remote as { $on: ReturnType<typeof vi.fn> }
+    expect(remote.$on).toHaveBeenCalledWith('settings/document-updated', expect.any(Function))
+    expect(remote.$on).toHaveBeenCalledWith('credentials/updated', expect.any(Function))
 
     const toolKeys = registrations
       .filter(entry => entry.options.name === 'tool.call.toolview')
@@ -151,6 +172,30 @@ describe('Vision Toolkit client plugin', () => {
     expect(registrations.find(entry => entry.options.name === 'settings.section')?.options).toMatchObject({
       id: 'vision-toolkit', order: 30,
     })
+  })
+
+  it('uses current client runtime invalidation events when remote.$on is unavailable', () => {
+    const { ctx } = fakeClientContext(false)
+    apply(ctx as never)
+    expect(ctx.on).toHaveBeenCalledWith('settings/changed', expect.any(Function))
+    expect(ctx.on).toHaveBeenCalledWith('credentials/changed', expect.any(Function))
+    expect(ctx.on).toHaveBeenCalledWith('connection/reset', expect.any(Function))
+  })
+
+  it('uses Harness theme tokens for every theme-dependent color', () => {
+    const { ctx } = fakeClientContext()
+    apply(ctx as never)
+
+    const styles = document.querySelector<HTMLStyleElement>('style[data-plugin-css="@anionex/dsh-vision-toolkit/client"]')
+    const css = styles?.textContent ?? ''
+    expect(css).toContain('.dvt-preview{display:block;width:100%;max-height:360px;object-fit:contain;background:repeating-conic-gradient(var(--dsw-alias-bg-module-platform) 0 25%,var(--dsw-alias-bg-layer-1) 0 50%)')
+    expect(css).toContain('.dvt-download{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)')
+    expect(css).toContain('.dvt-download:hover{background:var(--dsw-alias-button-primary-hover)}')
+    expect(css).toContain('.dvt-alert.warning{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-label)}')
+    expect(css).toContain('.dvt-health-grid>div[data-status=error]{border-left-color:var(--dsw-alias-state-error-primary)}')
+    expect(css).not.toMatch(/--dsw-alias-(?:fg-primary|fg-muted|border-subtle)/u)
+    expect(css).not.toMatch(/var\(--dsw-[^,)]+,/u)
+    expect(css).not.toMatch(/#[\da-f]{3,8}\b|rgba?\(/iu)
   })
 
   it('prefers canonical presentation metadata and falls back to JSON result text', () => {
@@ -269,6 +314,93 @@ describe('Vision Toolkit client plugin', () => {
     expect(screen.getAllByRole('link', { name: 'download' })).toHaveLength(2)
   })
 
+  it('puts the required service fields first and the plugin identity at the bottom', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ok: true, value: settingsSnapshot() })))
+
+    const { ctx, registrations } = fakeClientContext()
+    apply(ctx as never)
+    const settings = registrations.find(entry => entry.options.name === 'settings.section')
+    if (settings === undefined) throw new Error('Settings component was not registered')
+    const view = render(createElement(settings.component, {
+      controller: new VisionSettingsController(),
+      t: (key: string) => key,
+    }))
+
+    await screen.findByText('0.1.0')
+    expect(screen.getByLabelText('apiKey')).toBeTruthy()
+    const root = view.container.querySelector('.dvt-settings')
+    const essential = view.container.querySelector('.dvt-essential')
+    const advanced = view.container.querySelector('.dvt-advanced')
+    const footer = view.container.querySelector('.dvt-settings-footer')
+    expect(root?.firstElementChild).not.toBe(footer)
+    expect(root?.querySelector('.dvt-essential')).toBe(essential)
+    expect(root?.lastElementChild).toBe(footer)
+    expect(advanced).not.toBeNull()
+    expect(advanced?.contains(screen.getByLabelText('credential'))).toBe(true)
+    expect(view.container.querySelector('.dvt-settings-header')).toBeNull()
+  })
+
+  it('saves Settings first, then stores the typed API key without sending it in Settings', async () => {
+    const initial = settingsSnapshot()
+    const savedSettings = {
+      ...initial,
+      settings: { ...initial.settings, revision: 2 },
+    }
+    const savedCredential = {
+      ...savedSettings,
+      credential: { ...savedSettings.credential, configured: true, source: 'file' },
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, value: initial }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, value: savedSettings }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, value: savedCredential }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { ctx, registrations } = fakeClientContext()
+    apply(ctx as never)
+    const settings = registrations.find(entry => entry.options.name === 'settings.section')
+    if (settings === undefined) throw new Error('Settings component was not registered')
+    render(createElement(settings.component, {
+      controller: new VisionSettingsController(),
+      t: (key: string) => key,
+    }))
+
+    const keyInput = await screen.findByLabelText('apiKey') as HTMLInputElement
+    fireEvent.change(keyInput, { target: { value: 'sk-browser-entry' } })
+    fireEvent.click(screen.getByRole('button', { name: 'save' }))
+
+    await screen.findByText('saved')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const settingsBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body)) as Record<string, unknown>
+    const credentialBody = JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.body)) as Record<string, unknown>
+    expect(settingsBody.action).toBe('save')
+    expect(JSON.stringify(settingsBody)).not.toContain('sk-browser-entry')
+    expect(credentialBody).toEqual({
+      action: 'credential', expectedRevision: 2, ref: 'VISION_API_KEY', value: 'sk-browser-entry',
+    })
+    expect(keyInput.value).toBe('')
+  })
+
+  it('clears a key validation message as soon as the user edits the field', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ok: true, value: settingsSnapshot() })))
+    const { ctx, registrations } = fakeClientContext()
+    apply(ctx as never)
+    const settings = registrations.find(entry => entry.options.name === 'settings.section')
+    if (settings === undefined) throw new Error('Settings component was not registered')
+    render(createElement(settings.component, {
+      controller: new VisionSettingsController(),
+      t: (key: string) => key,
+    }))
+
+    const keyInput = await screen.findByLabelText('apiKey')
+    fireEvent.change(keyInput, { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'save' }))
+    expect(screen.getByText('apiKeyBlank')).toBeTruthy()
+
+    fireEvent.change(keyInput, { target: { value: '' } })
+    expect(screen.queryByText('apiKeyBlank')).toBeNull()
+  })
+
   it('reloads the authoritative same-revision settings after a runtime candidate is rejected', async () => {
     const initial = settingsSnapshot()
     const rejected = settingsSnapshot({
@@ -294,11 +426,26 @@ describe('Vision Toolkit client plugin', () => {
     }))
 
     const runtimeMode = await screen.findByLabelText('runtimeMode')
+    const protocol = screen.getByLabelText('protocol')
+    fireEvent.change(protocol, { target: { value: 'anthropic' } })
+    expect(screen.getByText('anthropicThinkingHint')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('anthropicThinking'), { target: { value: 'disabled' } })
+    fireEvent.change(screen.getByLabelText('userAgent'), { target: { value: 'custom-agent/2.0' } })
     fireEvent.change(runtimeMode, { target: { value: 'external' } })
     const toolkitPath = await screen.findByLabelText('toolkitPath')
     fireEvent.change(toolkitPath, { target: { value: '/nonexistent/dsh-vision-toolkit' } })
     fireEvent.click(screen.getByRole('button', { name: 'save' }))
     await screen.findByText('agent-vision-toolkit path does not exist')
+    const saveRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(saveRequest.body))).toMatchObject({
+      value: {
+        provider: {
+          protocol: 'anthropic',
+          anthropicThinking: 'disabled',
+          userAgent: 'custom-agent/2.0',
+        },
+      },
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'reload' }))
     await waitFor(() => {

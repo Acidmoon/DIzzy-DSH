@@ -25,14 +25,14 @@
  * drawer floats). Widening does not migrate back: the tabs keep living in
  * the right tree.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { IconCloseFill14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context, SidebarSessionList } from '../context-types.ts'
 import { appendToDraft } from './conversation-draft.ts'
 import {
-  BOTTOM_MIN, PANEL_MIN, agentUuidOf, closeTab, firstLeaf, isAgentTabId, leafWithTab, mapLeaf, migrateBottomTabs, moveTab, moveTabToEdge, openDiffTab,
+  BOTTOM_MIN, PANEL_MIN, agentUuidOf, firstLeaf, isAgentTabId, leafWithTab, migrateBottomTabs, moveTab, moveTabToEdge, openDiffTab,
   reconcileAgentTerminals,
   resizeSplitIn, setBottomHeight, setWidth, toggleBottomPanel, toggleExpanded, togglePanel,
   type DropZone, type SidebarState, type SidebarStore, type SidebarTab, type SplitNode,
@@ -44,6 +44,7 @@ import type { NewTabOption } from './TabBar.tsx'
 import type { TabDragPayload } from './TabBar.tsx'
 import { relativeTo } from './paths.ts'
 import { OrphanedTab } from './OrphanedTab.tsx'
+import { RenderBoundary } from './RenderBoundary.tsx'
 import { detectNewDirectSubagent } from './subagent-detect.ts'
 import { detectNewJob } from './subagent-jobs.ts'
 import { t } from './locales.ts'
@@ -77,10 +78,22 @@ function TabContent(props: {
   if (descriptor === undefined) {
     return <OrphanedTab ctx={ctx} store={store} scope={scope} tab={tab} visible={visible} />
   }
-  return descriptor.component({
-    ctx, store, scope, tab, visible, expanded,
-    onToggleDir, onReferenceFile, onOpenDiff, onSubagentJump,
-  })
+  // One boundary per tab: a render crash in a viewer/editor shows a strip in
+  // THIS tab's pane only — the toggle cluster, the other tabs, and the panel
+  // stay alive (issue #31). The tab strip (close button) lives outside, so a
+  // crashing tab stays closable; the root boundary in index.tsx remains the
+  // last resort for errors in the sidebar shell itself. The descriptor is
+  // rendered as a REAL element (not called directly): a direct call would
+  // throw inside TabContent's own render, which the boundary cannot catch —
+  // as a child fiber, every render error (top-level or deep) lands in it.
+  return createElement(
+    RenderBoundary,
+    { className: css.tabBoundaryError },
+    createElement(descriptor.component, {
+      ctx, store, scope, tab, visible, expanded,
+      onToggleDir, onReferenceFile, onOpenDiff, onSubagentJump,
+    }),
+  )
 }
 
 /** The + menu options for the current state, driven by the tab registry.
@@ -153,6 +166,33 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
     else document.body.removeAttribute('data-dsh-sidebar-collapsed')
     return () => { document.body.removeAttribute('data-dsh-sidebar-collapsed') }
   }, [collapsed])
+
+  // Position compatibility mode (titleBarCompat pref): Windows frameless
+  // windows draw the native title bar (minimize/maximize/close) at the
+  // window's top-right corner, OVER the web content. When the user enables
+  // the pref, the body attribute lets sidebar.module.css drop the toggle
+  // cluster below the strip and push the right panel's content below it.
+  // The strip height is user-tunable (titleBarStripPx) and rides a CSS
+  // variable so the rules stay declarative. The attribute rides the
+  // snapshot's prefs, so flipping the setting re-renders and re-applies
+  // immediately; the cleanup removes both on unmount/boundary swap so a
+  // crashed sidebar never leaves them behind.
+  const titleBarCompat = snapshot.prefs.titleBarCompat
+  const titleBarStrip = snapshot.prefs.titleBarStripPx
+  useEffect(() => {
+    const root = document.documentElement
+    if (titleBarCompat) {
+      document.body.setAttribute('data-dsh-title-bar-compat', '')
+      root.style.setProperty('--dsh-title-bar-strip', `${titleBarStrip}px`)
+    } else {
+      document.body.removeAttribute('data-dsh-title-bar-compat')
+      root.style.removeProperty('--dsh-title-bar-strip')
+    }
+    return () => {
+      document.body.removeAttribute('data-dsh-title-bar-compat')
+      root.style.removeProperty('--dsh-title-bar-strip')
+    }
+  }, [titleBarCompat, titleBarStrip])
 
   /**
    * Bottom-panel merge on narrow viewports: whenever a session is current
@@ -512,6 +552,17 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
       : 0
     document.documentElement.style.setProperty('--dsh-sidebar-width', `${width}px`)
     document.documentElement.style.setProperty('--dsh-sidebar-height', `${height}px`)
+    // Unmount must release the push (issue #31): when the boundary swaps the
+    // whole sidebar after a render crash (or the plugin fiber is disposed /
+    // HMR), the CSS variables would otherwise stay on <html> and layout.css
+    // keeps squeezing #root with a stale margin — "the sidebar cannot be
+    // hidden" until a full reload. removeProperty restores the CSS fallback
+    // (var(--dsh-sidebar-width, 0px)); React re-runs cleanup+setup in the
+    // same commit on state changes, so there is no visible flicker.
+    return () => {
+      document.documentElement.style.removeProperty('--dsh-sidebar-width')
+      document.documentElement.style.removeProperty('--dsh-sidebar-height')
+    }
   }, [narrow, snapshot.state?.panelOpen, snapshot.state?.width, snapshot.state?.bottomOpen, snapshot.state?.bottomHeight])
   useEffect(() => {
     if (anyDragging) document.body.setAttribute('data-dsh-sidebar-dragging', '')
@@ -529,9 +580,17 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
       // TerminalView on unmount), and the agent-pty.close HTTP route is the
       // fallback when the WS is down.
       const current = store.getSnapshot().state
-      const leaf = current === undefined ? undefined : leafWithTab(current.splits, tabId)
+      // Terminal tabs may live in EITHER tree (the bottom panel hosts them
+      // too) — the pty-release lookup covers both, or the HTTP fallback is
+      // skipped for a bottom-panel terminal whose WS frame never arrived.
+      const leaf = current === undefined
+        ? undefined
+        : leafWithTab(current.splits, tabId) ?? leafWithTab(current.bottomSplits, tabId)
       const tab = leaf?.tabs.find(candidate => candidate.id === tabId)
-      store.reduce(s => closeTab(s, paneId, tabId))
+      // Route through the service: the tab-bar close is the canonical close
+      // path (finds the pane itself, fires descriptor.onClose); the session
+      // scope (with its cwd) rides to the callback.
+      ctx.betterSidebar?.closeTab(tabId, sessionId === undefined ? undefined : { sessionId, cwd })
       if (tab?.type === 'terminal') {
         if (isAgentTabId(tabId)) {
           const uuid = agentUuidOf(tabId)
@@ -542,13 +601,10 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
       }
     },
     activateTab: (paneId, tabId) => {
-      store.reduce(s => ({
-        ...s,
-        activePane: paneId,
-        splits: mapLeaf(s.splits, paneId, (leaf) => {
-          if (leaf.tabs.some(tab => tab.id === tabId)) leaf.active = tabId
-        }),
-      }))
+      // Route through the service: same reducer (finds the pane in EITHER
+      // tree, sets the active pane) and fires descriptor.onActivate; the
+      // session scope (with its cwd) rides to the callback.
+      ctx.betterSidebar?.activateTab(tabId, sessionId === undefined ? undefined : { sessionId, cwd })
     },
     focusPane: (paneId) => { store.reduce(s => ({ ...s, activePane: paneId })) },
     moveTabToEdge: (payload: TabDragPayload, toPane: string, zone: DropZone) => {
@@ -607,7 +663,9 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
     const descriptor = service?.getTab(optionId)
     if (descriptor === undefined) return
     const title = typeof descriptor.title === 'function' ? descriptor.title() : descriptor.title
-    service.openTab({ type: optionId, title })
+    // The session scope rides along: lifecycle callbacks receive it (and
+    // the open stays in the current session, as before).
+    service.openTab({ type: optionId, title }, { sessionId, cwd })
   }
 
   /**
@@ -621,6 +679,26 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
     const descriptor = ctx.betterSidebar?.getTab(tab.type)
     if (descriptor === undefined) return null
     return typeof descriptor.icon === 'function' ? descriptor.icon(14) : descriptor.icon
+  }
+
+  /**
+   * The tab badge from the tab-type registry: a count (99+ capped) or a
+   * short text pill. A throwing badge is swallowed (no pill) — the tab
+   * strip must never break because a plugin's badge computation failed.
+   */
+  const tabBadgeOf = (tab: SidebarTab): ReactNode => {
+    const descriptor = ctx.betterSidebar?.getTab(tab.type)
+    if (descriptor?.badge === undefined) return null
+    let value: string | number | null | undefined
+    try {
+      value = descriptor.badge(ctx, { sessionId, cwd }, state)
+    } catch (error) {
+      console.error('[dsh-better-sidebar] tab badge error:', error)
+      return null
+    }
+    if (value === null || value === undefined || value === '') return null
+    const text = typeof value === 'number' ? (value > 99 ? '99+' : String(value)) : String(value)
+    return <span className={css.tabBadge}>{text}</span>
   }
 
   /**
@@ -733,6 +811,7 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
             onNewTab={onNewTab}
             renderTab={renderTab}
             getTabIcon={tabIconOf}
+            getTabBadge={tabBadgeOf}
           />
         </div>
       </div>
@@ -812,6 +891,7 @@ export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
             onNewTab={onNewTab}
             renderTab={(tab, active, paneId) => renderTab(tab, active, paneId, true)}
             getTabIcon={tabIconOf}
+            getTabBadge={tabBadgeOf}
           />
         </div>
       </div>

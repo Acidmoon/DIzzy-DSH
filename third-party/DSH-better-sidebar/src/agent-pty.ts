@@ -13,7 +13,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as nodePty from 'node-pty'
-import { ensureSpawnHelper } from './pty-manager.ts'
+import { ensureSpawnHelper, shellSpawnArgs } from './pty-manager.ts'
 import { SidebarError } from './wire.ts'
 
 /** Per-agent-terminal transcript bound (bytes kept for replay and reads). */
@@ -211,7 +211,7 @@ export class AgentPtyRegistry {
   ): string {
     const uuid = randomUUID()
     const dims = clampDims(cols, rows)
-    const pty = nodePty.spawn(this.shell, [], {
+    const pty = nodePty.spawn(this.shell, shellSpawnArgs(), {
       name: 'xterm-256color',
       cols: dims.cols,
       rows: dims.rows,

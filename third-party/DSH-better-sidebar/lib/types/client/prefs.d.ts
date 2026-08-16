@@ -9,8 +9,8 @@
  * must keep working exactly as composed when the settings surface is missing.
  */
 import type { api } from './api.ts';
-import { clampWidthPercent, SIDEBAR_PREFS_DEFAULTS, type SidebarPrefs } from '../prefs-shared.ts';
-export { SIDEBAR_PREFS_DEFAULTS, clampWidthPercent };
+import { clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent, SIDEBAR_PREFS_DEFAULTS, type SidebarPrefs } from '../prefs-shared.ts';
+export { SIDEBAR_PREFS_DEFAULTS, clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent };
 export type { SidebarPrefs };
 /** The settings wire face the preferences need (a subset of the plugin api). */
 export type SidebarSettingsClient = Pick<typeof api, 'settingsGet' | 'settingsUpdate'>;

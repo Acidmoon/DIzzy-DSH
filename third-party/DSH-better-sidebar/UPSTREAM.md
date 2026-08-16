@@ -8,8 +8,8 @@
 | 项 | 值 |
 |---|---|
 | 上游仓库 | https://github.com/omdsh-dev/DSH-better-sidebar |
-| 收录版本 | `0.10.3`(npm 包 `dsh-better-sidebar@0.10.3`) |
-| 上游 commit | `efb2e2bd58965145e8f0c902e333e589dad2f01f`(release/v0.10.3) |
+| 收录版本 | `0.12.2`(npm 包 `dsh-better-sidebar@0.12.2`) |
+| 上游 commit | `b6ef4d5`(docs: README 标题下新增 MIT/dshfind 徽章; tag `v0.12.2`) |
 | License | MIT |
 | 功能 | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离;暴露 `ctx.betterSidebar` 服务供其他插件注册 tab 与文件预览器 |
 
@@ -28,7 +28,7 @@ tar -xzf dsh-better-sidebar-<版本>.tgz -C third-party/DSH-better-sidebar --str
 ## 本地安装
 
 本插件**无需单独安装**:它是主插件 `dizzy-dsh` 的
-`package.json` `dependencies` 声明(`"dsh-better-sidebar": "0.10.3"`,
+`package.json` `dependencies` 声明(`"dsh-better-sidebar": "0.12.2"`,
 npm registry),安装主插件时随依赖自动装入:
 
 ```bash

@@ -38,7 +38,11 @@ interface LocaleService {
 }
 
 const MAIN_CSS = `
-  .guic-panel { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 16px; }
+  .guic-panel { display: flex; flex-direction: column; width: 100%; padding: 0 0 16px; }
+  /* 官方「通用设定」同款设定单元：16px 上下留白 + 发丝分割线；面板去掉最后一条的分割线 */
+  .guic-section-row { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+  .guic-panel > .guic-section-row:last-child { border-bottom: none; }
+  .guic-section-title { font-size: 14px; font-weight: 400; line-height: 22px; color: var(--dsw-alias-label-primary); }
   .guic-h { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
   .guic-presets { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .guic-preset { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; font-size: 13px; }
@@ -115,6 +119,8 @@ export function apply(ctx: Ctx) {
   let activeLayer: (() => void) | null = null
   let currentColors: Record<string, string> = PALETTES.nous.light
   let currentBrandDark: string = PALETTES.nous.brandDark
+  // 暗色面独立色板（明暗分离编辑）：默认 = DARK 常量 + 预设暗色主色
+  let currentDarkColors: Record<string, string> = { ...DARK, 'brand-primary': PALETTES.nous.brandDark }
   let userTouched = false
   let savedState: Record<string, unknown> | null = null
   const syncListeners: Array<() => void> = []
@@ -138,6 +144,9 @@ export function apply(ctx: Ctx) {
   const sidebarTransparentListeners: Array<(value: boolean) => void> = []
   let bgOpacity = 0.3
   const bgOpacityListeners: Array<(value: number) => void> = []
+  // 预设选中态提升到 apply 闭包：设置面板每次打开都会重新挂载，
+  // 组件本地 state 会重置为 'nous'，导致高亮与实际配色不符
+  let activePresetName = 'nous'
   function setBg(enabled: boolean) {
     bgEnabled = enabled
     bgListeners.slice().forEach((fn) => fn(enabled))
@@ -208,9 +217,14 @@ export function apply(ctx: Ctx) {
   }
 
   // ---- 主题引擎 ----
-  function buildTokens(light: Record<string, string>, brandDark: string): Record<string, { light: string; dark: string }> {
-    const dark: Record<string, string> = { ...DARK }
-    dark['brand-primary'] = brandDark
+  function buildTokens(
+    light: Record<string, string>,
+    brandDark: string,
+    darkOverride?: Record<string, string>,
+  ): Record<string, { light: string; dark: string }> {
+    const dark: Record<string, string> = darkOverride ?? { ...DARK }
+    // darkOverride 提供时（明暗分离编辑）暗色主色由调用方决定，不再强制用 brandDark
+    if (darkOverride === undefined) dark['brand-primary'] = brandDark
     const tokens: Record<string, { light: string; dark: string }> = {}
     for (const key in TOKEN_KEYS) {
       tokens[TOKEN_KEYS[key]] = { light: light[key] ?? '', dark: dark[key] ?? '' }
@@ -268,17 +282,20 @@ export function apply(ctx: Ctx) {
 
   function renderTheme() {
     const light = bgEnabled ? translucent(currentColors) : currentColors
-    activeLayer = theme.overrideTokens(SOURCE, buildTokens(light, currentBrandDark))
+    // 背景开启时，暗色面同样降透明度，否则深色主题下背景被不透明底色完全遮挡
+    const dark = bgEnabled ? translucent(currentDarkColors) : currentDarkColors
+    activeLayer = theme.overrideTokens(SOURCE, buildTokens(light, currentBrandDark, dark))
   }
 
-  function applyColors(light: Record<string, string>, brandDark: string) {
+  function applyColors(light: Record<string, string>, dark: Record<string, string>, brandDark: string) {
     currentColors = light
+    currentDarkColors = dark
     currentBrandDark = brandDark
     renderTheme()
   }
 
   function persist() {
-    saveSettings({ colors: currentColors, brandDark: currentBrandDark, ambient: ambientState, bgKind, bgSidebarTransparent, bgOpacity })
+    saveSettings({ colors: currentColors, darkColors: currentDarkColors, brandDark: currentBrandDark, ambient: ambientState, bgKind, bgSidebarTransparent, bgOpacity, activePreset: activePresetName })
   }
 
   // ---- 背景图引擎（body 属性正规方案，scrim 随明暗自适应）----
@@ -369,12 +386,16 @@ export function apply(ctx: Ctx) {
   }
 
   // ---- 启动：默认配色 + 恢复存档 ----
-  applyColors(PALETTES.nous.light, PALETTES.nous.brandDark)
+  applyColors(PALETTES.nous.light, { ...DARK, 'brand-primary': PALETTES.nous.brandDark }, PALETTES.nous.brandDark)
 
   const saved = loadSettings()
   if (saved !== null && saved.colors !== undefined && typeof saved.colors === 'object') {
     savedState = saved
-    applyColors(saved.colors as Record<string, string>, (saved.brandDark as string) || PALETTES.nous.brandDark)
+    const savedBrand = (saved.brandDark as string) || PALETTES.nous.brandDark
+    const savedDark = (saved.darkColors !== undefined && typeof saved.darkColors === 'object')
+      ? { ...DARK, ...(saved.darkColors as Record<string, string>) }
+      : { ...DARK, 'brand-primary': savedBrand }
+    applyColors(saved.colors as Record<string, string>, savedDark, savedBrand)
     if (saved.ambient !== undefined && typeof saved.ambient === 'object') {
       setAmbient({ ...DEFAULT_AMBIENT, ...(saved.ambient as Partial<AmbientState>) })
     }
@@ -387,6 +408,9 @@ export function apply(ctx: Ctx) {
   }
   if (saved !== null && typeof saved.bgOpacity === 'number') {
     setBgOpacity(saved.bgOpacity as number)
+  }
+  if (saved !== null && typeof saved.activePreset === 'string') {
+    activePresetName = saved.activePreset
   }
   void loadBackground().then((bg) => {
     if (bg !== null && !userTouched && bgKind === 'image') {
@@ -424,8 +448,14 @@ export function apply(ctx: Ctx) {
 
   function GuiPanel() {
     const [colors, setColors] = useState<Record<string, string>>(PALETTES.nous.light)
+    const [darkColors, setDarkColors] = useState<Record<string, string>>({ ...DARK, 'brand-primary': PALETTES.nous.brandDark })
+    const [colorMode, setColorMode] = useState<'light' | 'dark'>('light')
     const [brandDark, setBrandDark] = useState<string>(PALETTES.nous.brandDark)
-    const [activePreset, setActivePreset] = useState<string>('nous')
+    const [activePreset, setActivePreset] = useState<string>(activePresetName)
+    const setPreset = (value: string) => {
+      activePresetName = value
+      setActivePreset(value)
+    }
     const [notice, setNotice] = useState<string>(t('notice.defaultApplied', { name: t('preset.nous') }))
     const [ambient, setAmbientUi] = useState<AmbientState>(ambientState)
     const [bg, setBgUi] = useState<boolean>(bgEnabled)
@@ -446,8 +476,10 @@ export function apply(ctx: Ctx) {
       const sync = () => {
         if (savedState === null || userTouched) return
         setColors(savedState.colors as Record<string, string>)
+        const sd = savedState.darkColors
+        setDarkColors((sd !== undefined && typeof sd === 'object') ? { ...DARK, ...(sd as Record<string, string>) } : { ...DARK, 'brand-primary': (savedState.brandDark as string) || PALETTES.nous.brandDark })
         setBrandDark((savedState.brandDark as string) || PALETTES.nous.brandDark)
-        setActivePreset(null as unknown as string)
+        setPreset((typeof savedState.activePreset === 'string') ? savedState.activePreset : '')
         setNotice(t('notice.loaded'))
       }
       syncListeners.push(sync)
@@ -505,8 +537,12 @@ export function apply(ctx: Ctx) {
 
     const update = (key: string, value: string) => {
       userTouched = true
-      setColors((prev) => ({ ...prev, [key]: value }))
-      setActivePreset('')
+      if (colorMode === 'dark') {
+        setDarkColors((prev) => ({ ...prev, [key]: value }))
+      } else {
+        setColors((prev) => ({ ...prev, [key]: value }))
+      }
+      setPreset('')
     }
 
     const updateAmbient = (patch: Partial<AmbientState>) => {
@@ -559,7 +595,7 @@ export function apply(ctx: Ctx) {
 
     const choosePreset = (key: string) => () => {
       userTouched = true
-      setActivePreset(key)
+      setPreset(key)
       if (key === 'default') {
         setAmbient({ ...DEFAULT_AMBIENT })
         clearSettings()
@@ -570,8 +606,10 @@ export function apply(ctx: Ctx) {
         if (bgEnabled) {
           // 背景图保留：读回产品默认令牌值，用半透明版重建（配色回默认 + 面板仍透图）
           const product = readProductTokens()
+          const productDark = { ...DARK, 'brand-primary': currentBrandDark }
           setColors(product)
-          applyColors(product, currentBrandDark)
+          setDarkColors(productDark)
+          applyColors(product, productDark, currentBrandDark)
           setNotice(t('notice.bgReadback', { value: String(product['bg-base'] ?? '?') }))
         } else {
           setNotice(t('notice.systemDefault'))
@@ -580,24 +618,26 @@ export function apply(ctx: Ctx) {
       }
       const p = PALETTES[key]
       if (p === undefined) return
+      const newDark = { ...DARK, 'brand-primary': p.brandDark }
       setColors(p.light)
+      setDarkColors(newDark)
       setBrandDark(p.brandDark)
-      applyColors(p.light, p.brandDark)
+      applyColors(p.light, newDark, p.brandDark)
       persist()
       setNotice(t('notice.appliedPreset', { name: p.label }))
     }
 
     const applyCustom = () => {
       userTouched = true
-      applyColors(colors, brandDark)
+      applyColors(colors, darkColors, brandDark)
       persist()
-      setActivePreset('')
+      setPreset('')
       setNotice(t('notice.customApplied'))
     }
 
     const doExport = () => {
       userTouched = true
-      const text = JSON.stringify({ colors, brandDark, ambient: ambientState }, null, 2)
+      const text = JSON.stringify({ colors, darkColors, brandDark, ambient: ambientState }, null, 2)
       setIoText(text)
       if (typeof navigator !== 'undefined' && navigator.clipboard !== undefined && typeof navigator.clipboard.writeText === 'function') {
         navigator.clipboard.writeText(text).then(
@@ -627,32 +667,53 @@ export function apply(ctx: Ctx) {
       for (const key in TOKEN_KEYS) {
         if (typeof newColors[key] === 'string' && newColors[key] !== '') merged[key] = newColors[key]
       }
+      const newDarkRaw = parsed.darkColors
+      const mergedDark: Record<string, string> = { ...darkColors }
+      if (newDarkRaw !== null && newDarkRaw !== undefined && typeof newDarkRaw === 'object') {
+        const newDark = newDarkRaw as Record<string, string>
+        for (const key in TOKEN_KEYS) {
+          if (typeof newDark[key] === 'string' && newDark[key] !== '') mergedDark[key] = newDark[key]
+        }
+      }
       const newBrandDark = (typeof parsed.brandDark === 'string' && parsed.brandDark !== '') ? parsed.brandDark : brandDark
       const newAmbient: AmbientState = (parsed.ambient !== null && typeof parsed.ambient === 'object')
         ? { ...DEFAULT_AMBIENT, ...(parsed.ambient as Partial<AmbientState>) }
         : ambientState
       setColors(merged)
+      setDarkColors(mergedDark)
       setBrandDark(newBrandDark)
       setAmbient(newAmbient)
-      applyColors(merged, newBrandDark)
+      applyColors(merged, mergedDark, newBrandDark)
       persist()
-      setActivePreset('')
+      setPreset('')
       setNotice(t('io.imported'))
     }
 
     return createElement('div', { className: 'guic-panel' },
-      createElement('div', { className: 'guic-h' }, t('group.presets')),
-      createElement('div', { className: 'guic-presets' },
-        PRESET_ORDER.map((key) => createElement('button', {
-          key,
-          className: activePreset === key ? 'guic-preset guic-preset-active' : 'guic-preset',
-          onClick: choosePreset(key),
-        }, t('preset.' + key))),
+      createElement('div', { className: 'guic-section-row' },
+        createElement('div', { className: 'guic-section-title' }, t('group.presets')),
+        createElement('div', { className: 'guic-presets' },
+          PRESET_ORDER.map((key) => createElement('button', {
+            key,
+            className: activePreset === key ? 'guic-preset guic-preset-active' : 'guic-preset',
+            onClick: choosePreset(key),
+          }, t('preset.' + key))),
+        ),
       ),
-      createElement('div', { className: 'guic-h' }, t('group.colors')),
+      createElement('div', { className: 'guic-section-row' },
+        createElement('div', { className: 'guic-section-title' }, t('group.colors')),
+        createElement('div', { className: 'guic-ambient-row' },
+          createElement('span', { className: 'guic-field-label' }, t('colors.mode')),
+          (['light', 'dark'] as const).map((mode) => createElement('button', {
+            key: mode,
+            className: colorMode === mode ? 'guic-preset guic-preset-active' : 'guic-preset',
+            onClick: () => setColorMode(mode),
+          }, t('colors.' + mode))),
+        ),
       createElement('div', { className: 'guic-grid' },
         FIELDS.map(([key, label]) => {
-          const value = colors[key] ?? ''
+          const activePalette = colorMode === 'dark' ? darkColors : colors
+          const value = activePalette[key] ?? ''
           const hex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#0053FD'
           return createElement('div', { className: 'guic-field', key },
             createElement('span', { className: 'guic-field-label' }, t('field.' + key)),
@@ -686,12 +747,14 @@ export function apply(ctx: Ctx) {
           style: { width: '100%', minHeight: '64px', resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' },
         }),
       ),
-      createElement('div', { className: 'guic-h' }, t('group.ambient')),
-      createElement('div', { className: 'guic-ambient-row' },
-        createElement('button', {
-          className: ambient.enabled ? 'guic-btn guic-btn-primary' : 'guic-btn',
-          onClick: () => updateAmbient({ enabled: !ambient.enabled }),
-        }, ambient.enabled ? t('ambient.on') : t('ambient.off')),
+      ),
+      createElement('div', { className: 'guic-section-row' },
+        createElement('div', { className: 'guic-section-title' }, t('group.ambient')),
+        createElement('div', { className: 'guic-ambient-row' },
+          createElement('button', {
+            className: ambient.enabled ? 'guic-btn guic-btn-primary' : 'guic-btn',
+            onClick: () => updateAmbient({ enabled: !ambient.enabled }),
+          }, ambient.enabled ? t('ambient.on') : t('ambient.off')),
         createElement('label', { className: 'guic-check' },
           createElement('input', {
             type: 'checkbox',
@@ -733,14 +796,16 @@ export function apply(ctx: Ctx) {
           onClick: () => updateAmbient({ position: key }),
         }, t('pos.' + key))),
       ),
-      createElement('div', { className: 'guic-h' }, t('group.bg')),
-      createElement('div', { className: 'guic-ambient-row' },
-        createElement('span', { className: 'guic-field-label' }, t('bg.status')),
-        createElement('span', { className: 'guic-note' }, bg ? t('ambient.on') : t('ambient.off')),
-        createElement('label', { className: 'guic-btn guic-btn-primary' },
-          createElement('input', {
-            type: 'file',
-            accept: 'image/*',
+      ),
+      createElement('div', { className: 'guic-section-row' },
+        createElement('div', { className: 'guic-section-title' }, t('group.bg')),
+        createElement('div', { className: 'guic-ambient-row' },
+          createElement('span', { className: 'guic-field-label' }, t('bg.status')),
+          createElement('span', { className: 'guic-note' }, bg ? t('ambient.on') : t('ambient.off')),
+          createElement('label', { className: 'guic-btn guic-btn-primary' },
+            createElement('input', {
+              type: 'file',
+              accept: 'image/*',
             style: { display: 'none' },
             onChange: (ev: any) => {
               const file = ev.target !== null && ev.target.files !== null && ev.target.files.length > 0 ? ev.target.files[0] : null
@@ -822,9 +887,12 @@ export function apply(ctx: Ctx) {
       createElement('div', { className: 'guic-note' },
         t('bg.note'),
       ),
-      createElement('div', { className: 'guic-notice' }, notice),
-      createElement('div', { className: 'guic-note' },
-        t('hint.persist'),
+      ),
+      createElement('div', { className: 'guic-section-row' },
+        createElement('div', { className: 'guic-notice' }, notice),
+        createElement('div', { className: 'guic-note' },
+          t('hint.persist'),
+        ),
       ),
     )
   }

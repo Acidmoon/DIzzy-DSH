@@ -18,6 +18,55 @@
 # pool instances — `provide()` throws on the second registration under the
 # same realm symbol; labels join REALMS, and are not what this file needs.)
 
+# ── bootstrap (must stay FIRST) ─────────────────────────────────────────────
+
+# This row deliberately sits before every other row: dsh-agent-instructions and
+# dsh-tool-skill inject workspace instructions and the skill catalog into the
+# first request via the agent/pre-step waterfall, and waterfall after-next
+# transforms apply in reverse registration order. Registering first (plus the
+# plugin empty inject list and the listener's `prepend` flag) makes this filter
+# strip the final transform, so request #1 stays Minimal-exact (see issue #6).
+#
+# V4 Pro conditions strongly on the API tool catalog AND the first request
+# output budget. Bootstrap request #1 with the OFFICIAL Minimal preset's real
+# tool pair — persistent `bash` + `str_replace_editor` — which anchors at the
+# adapter-default maxTokens (256000) with no output cap needed (issue #11:
+# 5/5 anchored vs 11/11 standard-like for every standard-family schema);
+# after the session records its first durable promotion signal (a tool call OR
+# the first assistant message, default `promoteOn: either`), later steps
+# narrow to the minimal RESIDENT set (see below). `bootstrapMaxTokens` is
+# opt-in for standard-schema bootstraps; unset, the adapter default flows. See
+# tool-bootstrap.mjs for the other triggers.
+#
+# The same phase gate suppresses AUTO-INJECTED context on request #1:
+# `suppressedContextSources` lists the `agent/pre-step` message sources the
+# bootstrap filter strips while the session is unpromoted. The defaults are the
+# two automatic injections Standard adds over Minimal — the available-skills
+# reminder (`skill-catalog`) and the workspace instruction digest
+# (`agent-instructions`). User-initiated skill gestures are not filtered, and
+# both injections return unchanged from request #2 on. Set the list to [] to
+# disable the context filter while keeping the tool bootstrap.
+#
+# POST-PROMOTION (local addition): the promoted catalog is NOT the full
+# Standard dump — it stays on the bootstrap pair + the three discovery tools
+# (dev_tool_search / skill_search / skill_load) + whatever the model unlocked
+# via dev_tool_search. Heavier tools are one dev_tool_search away; the
+# trajectory is not pulled back to standard-like behavior by a 25-tool dump.
+#
+# COMPACTION (local addition): after `compaction/end` the session falls back
+# to the controlled phase — bootstrap pair + `compactionTools` — until a NEW
+# durable promotion signal exists past the boundary (epoch-aware, see
+# compaction-epoch.mjs).
+- id: tool-bootstrap
+  name: ./tool-bootstrap.mjs
+  config:
+    bootstrapTools: [bash, str_replace_editor]
+    promoteOn: either
+    suppressedContextSources: [agent-instructions, skill-catalog]
+    # Post-compaction core work set: the model is mid-task and needs to keep
+    # working, but faces a small catalog instead of the full Standard set.
+    compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+
 # ── identity ────────────────────────────────────────────────────────────────
 
 # Keep this text byte-identical to the Minimal preset. `complete` prevents the
@@ -31,19 +80,23 @@
     complete: true
     includeRuntimeContext: false
 
-- id: agent-instructions
-  name: '@deepseek-ai/dsh-agent-instructions'
+# Instruction FILES are NOT injected (replaces dsh-agent-instructions, local
+# addition): the full AGENTS.md/CLAUDE.md digest is a large injected block
+# that perturbs the trajectory even after promotion. Instead, after promotion
+# ONE short hint is injected once per session — "these instruction files
+# exist; read them before acting" — and the model reads the files itself via
+# the filesystem tools when relevant.
+- id: instruction-hint
+  name: ./instruction-hint.mjs
   config:
-    maxBytes: 65536
+    promoteOn: either
 
-# V4 Pro conditions strongly on the API tool catalog. Bootstrap its first model
-# request with one native shell plus `read`; after the first durable tool call,
-# later step assemblies expose every Standard tool registered below.
-- id: tool-bootstrap
-  name: ./tool-bootstrap.mjs
-  config:
-    shellTools: [bash, pwsh]
-    commonTools: [read]
+# On-demand tool discovery (the tool-search pattern, local addition): the
+# promoted catalog keeps a minimal resident set; heavier Standard tools
+# (web_search, subagent, workflow, …) are unlocked on demand via
+# dev_tool_search.
+- id: dev-tool-search
+  name: ./dev-tool-search.mjs
 
 # ── shell ───────────────────────────────────────────────────────────────────
 
@@ -56,11 +109,68 @@
 # host-plane too.
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
-  disabled: !!js process.platform === 'win32'
+  # Disabled on EVERY platform, not just Windows: `dsh-tool-bash-persistent`
+  # below registers the same `bash` tool name into this same preset layer, and
+  # the tools registry rejects duplicates within one layer. The persistent
+  # shell (the Minimal preset's own shell) is the preset's bash; it consumes
+  # the host sandbox policy through the terminals realm.
+  disabled: true
 
 - id: tool-pwsh
   name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: !!js process.platform !== 'win32'
+
+# The Minimal preset's shell: a PTY-backed persistent bash, byte-identical in
+# configuration to the official `minimal` preset's `persistent-shell` group so
+# the first request exposes exactly Minimal's real `bash` schema. The PTY
+# registry is an agent-owned service, so it lives in an entry-local realm; the
+# backend still consumes the host sandbox policy and subprocess implementation,
+# while the tool registers into this agent's scoped catalog.
+#
+# DISABLED ON WINDOWS: DSH's PTY backend is linux/darwin-only, so the
+# persistent shell cannot serve win32. The `custom-bash` row below registers
+# the same `bash` tool name there instead (platform-exclusive).
+- id: persistent-shell
+  name: cordis:group
+  group: true
+  disabled: !!js process.platform === 'win32'
+  isolate:
+    terminals: true
+  config:
+    - id: pty
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      config:
+        timeoutMs: 300000
+
+    - id: persistent-bash
+      name: '@deepseek-ai/dsh-tool-bash-persistent'
+      config:
+        timeoutMs: 300000
+        description: |-
+          Run commands in a bash shell
+          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+          * You don't have access to the internet via this tool.
+          * You do have access to a mirror of common linux and python packages via apt and pip.
+          * State is persistent across command calls and discussions with the user.
+          * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
+          * Please avoid commands that may produce a very large amount of output.
+          * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
+
+# Windows-only `bash` tool (see custom-bash.mjs): registers the SAME
+# tool name as the persistent shell with a Minimal-compatible description, but
+# executes through the ordinary cross-platform subprocess seam (`bash -c`)
+# instead of a PTY. `bashPath` defaults to `bash` on PATH; point it at Git
+# Bash explicitly when the WSL shim would otherwise be picked up. No OS
+# sandbox confinement on Windows (landlock is linux-only); the tool
+# description says so.
+- id: custom-bash
+  name: ./custom-bash.mjs
+  disabled: !!js process.platform !== 'win32'
+  config:
+    bashPath: 'C:\Program Files\Git\bin\bash.exe'
 
 # ── filesystem ──────────────────────────────────────────────────────────────
 
@@ -73,6 +183,28 @@
   name: '@deepseek-ai/dsh-tool-fs-search'
   config:
     sampleOverCapGlobResults: false
+
+# The Minimal preset's second tool: `str_replace_editor` over a bare local
+# filesystem, byte-identical in configuration to the official `minimal`
+# preset's `filesystem` group. The editor's own realm shadows the host's
+# sandboxed `fs` provider only inside this group, so the standard `read`/
+# `write`/`edit` tools keep the sandboxed fs while the bootstrap editor uses
+# the local one.
+- id: bootstrap-filesystem
+  name: cordis:group
+  group: true
+  isolate:
+    fs: true
+  config:
+    - id: fs-local
+      name: '@deepseek-ai/dsh-fs-local'
+      config:
+        cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+    - id: str-replace-editor
+      name: '@deepseek-ai/dsh-tool-str-replace-editor'
+      config:
+        maxOutputChars: 16000
 
 # ── background jobs ────────────────────────────────────────────────────────
 
@@ -90,14 +222,18 @@
 
 # The skill REGISTRY lives in the host composition and is layered per scope:
 # these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
+# `skill-filesystem` contributes local-root discovery for agents on this
+# preset. The full skill CATALOG injection (`dsh-tool-skill`, the ~9KB
+# `<available_skills>` reminder) is REMOVED (local addition): it perturbs the
+# trajectory (issue #6: 0/9 anchored with the catalog present vs ~81%
+# without). Instead `skill-search` exposes two small on-demand tools —
+# skill_search (list matching summaries) and skill_load (inject one skill's
+# full instructions) — the tool-search pattern.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 
-- id: tool-skill
-  name: '@deepseek-ai/dsh-tool-skill'
+- id: skill-search
+  name: ./skill-search.mjs
 
 # ── goals ───────────────────────────────────────────────────────────────────
 

@@ -362,6 +362,25 @@ describe('panel operation model (real order, no Infinity)', () => {
     applyPanelOperation('s1', { sourceId: 'new:10', order: [10, 0, 0], mode: 'replace', spec: { items: [text('新')] } })
     expect(getPanelSpec('s1')!.items).toEqual([text('新')])
   })
+
+  it('warns once per source when a barrier rejects an op (issue #4 diagnostics)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      direct('s1', { items: [text('持久')] }, 3000)
+      clearSessionPanel('s1') // reload: memory gone, storage keeps maxSeenSeq
+      const old = { items: [text('旧')] }
+      applyPanelOperation('s1', { sourceId: 'old:2000', order: [2000, 0, 0], mode: 'replace', spec: old })
+      expect(getPanelSpec('s1')!.items).toEqual([text('持久')]) // replay dead
+      // replay of the same source stays silent (one diagnostic per source)
+      applyPanelOperation('s1', { sourceId: 'old:2000', order: [2000, 0, 0], mode: 'replace', spec: old })
+      const calls = warn.mock.calls.filter(([m]) => String(m).includes('[genui]'))
+      expect(calls).toHaveLength(1)
+      expect(String(calls[0]![0])).toContain('屏障')
+      expect(String(calls[0]![0])).toContain('2000')
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })
 
 describe('panel budget (node/appends limits)', () => {

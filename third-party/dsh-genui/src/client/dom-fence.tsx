@@ -7,6 +7,15 @@
  * finds blocks labelled `dsh-ui`, parses the raw fence body and mounts the
  * plugin's own React tree next to the (hidden) stock block:
  *
+ * Fence discovery is **multi-surface** (issue #6): besides `md-code-block`,
+ * the channel also matches the deepsuite-style surfaces some host builds
+ * render instead (`.code-block` / `.code-block-small`), and — as the
+ * structural backstop — ANY element whose banner labels it `dsh-ui` and
+ * which contains a `<pre>` body. The only invariants are the language label
+ * (a leaf element with the exact text `dsh-ui`, outside the code body) and
+ * the `<pre>`, so a host DOM drift degrades to a rendered fence, never a
+ * silently skipped one:
+ *
  * - **Streaming takeover**: the channel takes over a dsh-ui block as soon as
  *   ONE finished component parses (the partial parser), and re-renders the
  *   root as the body grows — the UI assembles top-down while the reply
@@ -42,8 +51,13 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts'
 import { renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 
-/** The stock code-block surface every markdown fence renders through. */
-const CODE_BLOCK = '.md-code-block'
+/** Fence surfaces the channel can take over, newest host first: the shared
+ * CodeBlock surface every rc.6+ markdown fence renders through
+ * (`.md-code-block`) and the deepsuite-style surfaces some host builds
+ * render instead (`.code-block` / `.code-block-small`). Surfaces with an
+ * unlisted class are still found by the structural backstop (label + `<pre>`),
+ * so this list is an optimization, not a hard contract. */
+const CODE_BLOCK_SELECTORS = '.md-code-block, .code-block, .code-block-small'
 /** Marker attribute set on blocks this channel has taken over. */
 const PROCESSED = 'data-genui-rendered'
 /** The settled marker on AssistantMarkdown (absent = settled). */
@@ -53,6 +67,11 @@ const CONTAINER_CLASS = 'genui-dom-fence'
 /** Slow sweep interval: the observer catches everything, this is the 1s
  * belt-and-braces pass (history loads, missed attribute batches). */
 const SWEEP_MS = 1000
+
+/** Max ancestors walked from a `<pre>` to its fence surface root (banner +
+ * pre holder). Most hosts put the pre directly under the surface; some wrap
+ * it in a content div. */
+const SURFACE_HOPS = 4
 
 interface Mount {
   root: Root
@@ -66,21 +85,42 @@ function isTextNode(node: Node): node is Text {
   return node.nodeType === Node.TEXT_NODE
 }
 
-/** The banner's language label: a childless div whose text is exactly the lang. */
+/** The banner's language label: a leaf element whose text is exactly the
+ * lang. CodeBlock renders the label as a childless div; deepsuite-style
+ * surfaces use a span; the ONLY structural invariants across hosts are "a
+ * leaf element holds exactly the lang text" and "it lives outside the code
+ * body" — a fence whose code literally contains the text `dsh-ui` must not
+ * self-identify through its body. A container holding SEVERAL code blocks
+ * must not self-identify through a nested block's label either (issue #13:
+ * the shared markdown root was mistaken for a dsh-ui fence and hid the whole
+ * message, losing every other code block). */
 function infostringOf(block: Element): string | null {
-  // The label div holds nothing but text; the banner wrapper concatenates
-  // label + copy-button text, so only the leaf div matches exactly.
-  for (const div of block.querySelectorAll('div')) {
-    if (div.childElementCount === 0 && div.textContent === 'dsh-ui') return 'dsh-ui'
+  const pre = block.querySelector('pre')
+  for (const el of block.querySelectorAll('*')) {
+    if (el.childElementCount !== 0) continue
+    if (el.textContent !== 'dsh-ui') continue
+    if (pre !== null && pre.contains(el)) continue
+    // A leaf label that belongs to a NESTED known code surface is that
+    // surface's banner, not `block`'s own banner. Only accept labels whose
+    // nearest known surface is `block` itself (or none — unknown surfaces
+    // stay supported by the structural backstop).
+    const owner = el.closest(CODE_BLOCK_SELECTORS)
+    if (owner !== null && owner !== block) continue
+    return 'dsh-ui'
   }
   return null
 }
 
 /** The banner label's raw text (empty while streaming — the host renders the
- * language label only once the reply settles). */
+ * language label only once the reply settles). Returns the first leaf
+ * outside the code body (banners always lead with the language), so a
+ * span-label host reads identically to the div-label host. */
 function labelTextOf(block: Element): string {
-  for (const div of block.querySelectorAll('div')) {
-    if (div.childElementCount === 0) return div.textContent ?? ''
+  const pre = block.querySelector('pre')
+  for (const el of block.querySelectorAll('*')) {
+    if (el.childElementCount !== 0) continue
+    if (pre !== null && pre.contains(el)) continue
+    return el.textContent ?? ''
   }
   return ''
 }
@@ -101,6 +141,64 @@ function rawOf(block: Element): string {
 function isSettled(block: Element): boolean {
   return block.closest(STREAMING) === null
 }
+
+/** Walk up from a `<pre>` to its fence surface root — the ancestor that
+ * carries the banner label AND the pre. Returns null when no ancestor within
+ * `SURFACE_HOPS` (or the scope boundary) labels itself `dsh-ui`. */
+function surfaceOf(pre: HTMLElement, scope: ParentNode = document): HTMLElement | null {
+  let el: HTMLElement | null = pre.parentElement
+  for (let hops = 0; el !== null && el !== scope && hops < SURFACE_HOPS; hops += 1, el = el.parentElement) {
+    if (infostringOf(el) === 'dsh-ui') return el
+  }
+  return null
+}
+
+/**
+ * Every dsh-ui fence surface under `scope`, outer-most first, deduped.
+ * Known surface classes first (cheap, ordered), then a structural sweep —
+ * every `<pre>` whose banner labels it `dsh-ui` — so a host with an
+ * unlisted surface shape still renders. The label + `<pre>` gates make the
+ * structural pass false-positive-free: a random code surface without the
+ * exact `dsh-ui` label is never taken over.
+ */
+function findFenceCandidates(scope: ParentNode = document): HTMLElement[] {
+  const seen = new Set<HTMLElement>()
+  const out: HTMLElement[] = []
+  for (const el of scope.querySelectorAll<HTMLElement>(CODE_BLOCK_SELECTORS)) {
+    // Modifier classes can sit inside a surface (e.g. a `code-block-small`
+    // child of `code-block`): only the outermost matching element is a
+    // candidate, so a fence is never double-counted or taken over twice.
+    if (el.parentElement !== null && el.parentElement.closest(CODE_BLOCK_SELECTORS) !== null) continue
+    if (seen.has(el)) continue
+    out.push(el)
+    seen.add(el)
+  }
+  for (const pre of scope.querySelectorAll<HTMLElement>('pre')) {
+    // `<pre>` bodies inside a known surface were already handled by the
+    // selector pass. Walking up from them again would climb PAST their own
+    // (non-dsh-ui or dsh-ui) surface into a shared container — e.g. a
+    // markdown root holding both a dsh-ui fence and a python block — and
+    // the backstop would mislabel that whole container as a fence, hiding
+    // every other code block with it (issue #13).
+    if (pre.closest(CODE_BLOCK_SELECTORS) !== null) continue
+    const surface = surfaceOf(pre, scope)
+    if (surface === null || seen.has(surface)) continue
+    // Host DOM drift diagnostic: the fence renders (structural backstop),
+    // but the surface class is unknown to this build — warn once per
+    // renderer install so future drift is never silent again.
+    if (!driftWarned) {
+      driftWarned = true
+      console.warn('[dsh-genui] 围栏表面类名未被已知选择器命中（宿主 DOM 漂移），已按 label+pre 结构识别 dsh-ui 围栏')
+    }
+    out.push(surface)
+    seen.add(surface)
+  }
+  return out
+}
+
+/** One-time-per-install drift diagnostic flag (reset per install, so tests
+ * and hot re-installs each get a fresh warning budget). */
+let driftWarned = false
 
 /**
  * The owning conversation row (stable per-message identity).
@@ -130,18 +228,9 @@ function rowOf(block: Element): Element {
  * ordinal falls back to document order among ALL settled dsh-ui blocks so
  * sibling fences never collide on the same `dom:unknown:N` identity. */
 function fenceIndexOf(row: Element, block: Element): number {
-  if (row === block) {
-    let index = 0
-    for (const candidate of document.querySelectorAll(CODE_BLOCK)) {
-      if (candidate.closest(STREAMING) !== null) continue
-      if (infostringOf(candidate) === null) continue
-      index += 1
-      if (candidate === block) return index
-    }
-    return index + 1
-  }
+  const scope = row === block ? document : row
   let index = 0
-  for (const candidate of row.querySelectorAll(CODE_BLOCK)) {
+  for (const candidate of findFenceCandidates(scope)) {
     if (candidate.closest(STREAMING) !== null) continue
     if (infostringOf(candidate) === null) continue
     index += 1
@@ -150,16 +239,30 @@ function fenceIndexOf(row: Element, block: Element): number {
   return index + 1
 }
 
-/** messageSeq estimate: the numeric part of the anchor key when present,
- * else the row's document-order index among chat rows (monotonic in seq).
- * The document-order fallback counts every host flow row — anchored or not —
- * so anchor-less (Safari) rows still get a monotonic seq estimate. */
+/**
+ * messageSeq estimate from the row's anchor key.
+ *
+ * The host's context key is `<kindLen>:<kind><id>` (e.g.
+ * `14:assistant-step3:0`); the id of an assistant step is `<turn>:<step>` —
+ * the ONLY per-message monotonic counter the host exposes in the DOM. Turn
+ * and step strictly increase with message order, so a turn-based seq keeps
+ * growing across page reloads: the panel store's persisted replay barrier
+ * (hydration: replays at/below the persisted max seq are dead) depends on
+ * this monotonicity. Without it every assistant step yields the SAME
+ * constant (the kind-length prefix), so after a refresh the barrier equals
+ * that constant and silently rejects every new panel fence (issue #4).
+ *
+ * Fallback (non-assistant rows, anchor-less Safari rows): the row's
+ * document-order index among chat rows — monotonic within the current
+ * render window, degraded across reloads.
+ */
 function anchorSeqOf(row: Element): number {
   const key = row.getAttribute('data-chat-anchor-key') ?? ''
-  const match = /(\d+)/.exec(key)
-  if (match !== null) {
-    const value = Number(match[1])
-    if (Number.isFinite(value)) return value
+  const turnStep = /assistant-step(\d+):(\d+)$/.exec(key)
+  if (turnStep !== null) {
+    const turn = Number(turnStep[1])
+    const step = Number(turnStep[2])
+    if (Number.isFinite(turn) && Number.isFinite(step)) return turn * 1000 + step
   }
   const rows = document.querySelectorAll(`[data-chat-anchor-key], ${FLOW_ROW}`)
   for (let i = 0; i < rows.length; i += 1) {
@@ -181,6 +284,7 @@ export function installDomFenceRenderer(
   sendAction: (sessionId: SessionId, action: string, payload: Record<string, unknown>) => void,
 ): () => void {
   if (typeof document === 'undefined') return () => {}
+  driftWarned = false
   const mounts = new Map<HTMLElement, Mount>()
 
   const sessionIdOf = (): SessionId | undefined => {
@@ -331,7 +435,7 @@ export function installDomFenceRenderer(
       }
     }
     repairSurgery()
-    for (const block of Array.from(document.querySelectorAll<HTMLElement>(CODE_BLOCK))) {
+    for (const block of findFenceCandidates()) {
       renderBlock(block)
     }
   }

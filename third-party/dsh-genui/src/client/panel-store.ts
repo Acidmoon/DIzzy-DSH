@@ -288,6 +288,13 @@ export function applyPanelOperation(sessionId: string, op: PanelOperation): Pane
   const result = fold(state, op)
   if (result === null) {
     if (state.seen.has(op.sourceId) || state.overflow?.sourceId === op.sourceId) return 'idempotent'
+    // A rejection may come from the replay/local barriers (dead old content
+    // — worth one diagnostic) or from the budget overflow barrier (a later
+    // append beyond the panel budget — the budget diagnostic covers it).
+    const laterThanOverflow = state.overflow !== null
+      && op.mode === 'append'
+      && compareOrder(op.order, state.overflow.order) > 0
+    if (!laterThanOverflow) diagnosePanelBlocked(sessionId, op, state)
     return 'blocked'
   }
   const status: PanelOperationStatus = result.overflow !== null && result.overflow.sourceId === op.sourceId
@@ -297,6 +304,28 @@ export function applyPanelOperation(sessionId: string, op: PanelOperation): Pane
   commit(state, result, sessionId)
   if (changed) for (const fn of listeners) fn()
   return status
+}
+
+/* ---------------- barrier-rejection diagnostics ---------------- */
+
+/** One diagnostic per blocked source per page session (replays stay quiet). */
+const diagnosedBlocked = new Set<string>()
+
+/**
+ * Log one barrier-rejection diagnostic. Barrier kills are EXPECTED for
+ * history replays (the persisted hydration barrier makes replays at/below
+ * the persisted max seq dead), so this stays quiet on repeat visits — but a
+ * NEW message's fence being blocked is a real defect (broken seq
+ * derivation), and the one-time warning makes it observable instead of a
+ * silent dock freeze (issue #4 asked for exactly this).
+ */
+function diagnosePanelBlocked(sessionId: string, op: PanelOperation, state: SessionPanelState): void {
+  const key = `${sessionId}\u0000${op.sourceId}`
+  if (diagnosedBlocked.has(key)) return
+  diagnosedBlocked.add(key)
+  console.warn(
+    `[genui] 面板操作被重放屏障拒绝（source ${op.sourceId}，order[0]=${op.order[0]} ≤ replayBarrier ${state.replayBarrier} / localBarrier ${state.localBarrier}）。历史消息重放被拒是预期行为；若是刚发送的新消息，说明消息序号推导异常，请报告。`,
+  )
 }
 
 /* ---------------- local /panel override ---------------- */
@@ -349,6 +378,9 @@ export function clearSessionPanel(sessionId: string): void {
   const prefix = `${sessionId}\u0000`
   for (const key of diagnosedOverflow) {
     if (key.startsWith(prefix)) diagnosedOverflow.delete(key)
+  }
+  for (const key of diagnosedBlocked) {
+    if (key.startsWith(prefix)) diagnosedBlocked.delete(key)
   }
   if (!had && !hadToken) return
   for (const fn of listeners) fn()

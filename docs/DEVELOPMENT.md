@@ -23,7 +23,7 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
 │       ├── dizzy-dsh → Junction → store 快照(file: 安装时生成)
 │       ├── dizzy-dsh-balance / dizzy-dsh-usage-card /
 │       │   dizzy-dsh-agent-instructions / dizzy-dsh-kimi-webbridge
-│       └── dsh-better-sidebar / dsh-subscription-auth / dsh-gui-customization / @dsh-external/...
+│       └── dsh-better-sidebar / dsh-subscription-auth / dsh-gui-customization / @anionex/...
 └── 仓库(本目录)
     ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/* + 第三方)
     ├── cordis.patch.yml      # bundle 插件层(insert 条目,全部插件在此挂载)
@@ -52,7 +52,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
 2. 主插件 `package.json` 的 `dependencies` 声明自有子包
-   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.10.3`
+   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.12.2`
    走 registry、其余含 `dsh-subscription-auth` 走仓库快照)—— `file:`
    安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
@@ -87,6 +87,9 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recur
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-kimi-webbridge -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/@anionex -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/@dsh-external -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/@omdsh-dev -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -428,7 +431,7 @@ git add -A && git commit -m "feat: ..." && git push
       `import('dizzy-dsh-kimi-webbridge')`、`import('dsh-subscription-auth')`
 - [ ] 收录的第三方可加载(依赖齐全):
       `import('dsh-better-sidebar')`、
-      `import('@dsh-external/dsh-vision-toolkit')` 与
+      `import('@anionex/dsh-vision-toolkit')` 与
       `import('dsh-gui-customization')` 均不报
       `Cannot find package ...`(link: 安装的典型症状);
       `dsh-gui-customization` 是空 Host(`typeof apply === 'function'`),无 name/inject
@@ -457,7 +460,7 @@ git add -A && git commit -m "feat: ..." && git push
   收录位置 / 说明
 
 安装收录的插件**不需要单独 add**:主插件 `package.json` 的 `dependencies`
-声明了它们(`dsh-better-sidebar@0.10.3` registry + `@dsh-external/dsh-vision-toolkit`
+声明了它们(`dsh-better-sidebar@0.12.2` registry + `@anionex/dsh-vision-toolkit`
 `file:./third-party/...` 快照),一条 `dsh plugin add file:<仓库>` 全部安装
 并随主插件 patch 一起挂载:
 

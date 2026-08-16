@@ -5,23 +5,23 @@
 
 | 插件 | 快照目录 | 上游仓库 | 跟随分支 | 收录版本 | 上游 commit | 收录日期 | 手工补丁 |
 |---|---|---|---|---|---|---|---|
-| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.1 | ceab0ed | 2026-08-14 | 无 |
+| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.5 | fd87f36 | 2026-08-16 | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 2026-08-14 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 2026-08-14 | 有:exposure.js(见 THIRD-PARTY-PATCHES.md) |
-| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | e1277b5 | 2026-08-15 | 无 |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.7 | 29850a8 | 2026-08-16 | 有:exposure.ts/js(见 THIRD-PARTY-PATCHES.md) |
+| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | db4527a | 2026-08-16 | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 2026-08-15 | 有:local(见 THIRD-PARTY-PATCHES.md) |
-| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.5.2 | 092e181 | 2026-08-15 | 无 |
+| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.2 | c510ba2 | 2026-08-16 | 无 |
 
 ## 各上游更新形态(决定更新源)
 
 | 插件 | 更新源 | 备注 |
 |---|---|---|
-| dsh-genui | git `main` 分支 + 版本 tag(v0.4.0~v0.8.0) | **未发布 npm**;tag 可能落后于 main,优先跟 main,发布点核对 package.json 的 version |
+| dsh-genui | git `main` 分支 + 版本 tag(v0.4.0~v0.8.5) | **未发布 npm**;tag 可能落后于 main,优先跟 main,发布点核对 package.json 的 version |
 | dsh-notification | git `main` 分支 | **无 tag、未发布 npm**,只能跟 main,用 commit 锚定 |
-| dsh-vision-toolkit | git `main`(Anionex)+ **已发布 npm**(最新 0.1.4) | 快照内 package.json 的 `repository` 字段指向已失效的 dsh-external 地址,上游在 Anionex;有手工补丁,更新后必须重放 |
+| dsh-vision-toolkit | git `main`(Anionex)+ **已发布 npm** `@anionex/dsh-vision-toolkit@0.1.7` | 包名已从停用的 `@dsh-external/dsh-vision-toolkit` 迁到 `@anionex`;合集 `package.json` / `cordis.patch.yml` 必须跟新包名。有手工补丁,更新后必须重放 |
 | dsh-anchored-standard | git `main` 分支 | **agent preset,不是 cordis 插件**:不挂 cordis.patch.yml、不进 package.json 依赖。收录的是完整仓库;安装 = 复制 `preset/` 到 `~/.dsh/.agent-presets/anchored-standard`(用 `scripts/install-anchored-standard.ps1`)。上游基于 rc.5/47f9438 开发,收录时已对照 rc.6 核对 entry 名与 `system-prompt/assemble` 事件,结构兼容 |
 | dsh-subscription-auth | git `main` 分支 + **已发布 npm**(0.2.1) | 上游 [Khellendros97/dsh-subscription-auth](https://github.com/Khellendros97/dsh-subscription-auth);合集走仓库快照而不是 registry,因为有本地补丁(usage 钳零 / 投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / 思考档位对齐官方最高档)。更新后必须重放 `patches/dsh-subscription-auth-local.patch` 再重放 `patches/dsh-subscription-auth-reasoning-effort.patch` |
-| dsh-gui-customization | git `master` + 版本 tag + **已发布 npm**(0.5.2) | 上游是 monorepo,可安装组合插件在 `packages/dsh-gui-customization/`;本快照只收录该子包(含 `lib/`)。默认分支是 `master`。无本地补丁。也可 `npm pack dsh-gui-customization@<版本>` 覆盖,但 npm 包不含 `src/` |
+| dsh-gui-customization | git `master` + 版本 tag + **已发布 npm**(0.6.2) | 上游是 monorepo,可安装组合插件在 `packages/dsh-gui-customization/`;本快照只收录该子包(含 `lib/`)。默认分支是 `master`。无本地补丁。也可 `npm pack dsh-gui-customization@<版本>` 覆盖,但 npm 包不含 `src/` |
 
 ## 记录格式约定
 

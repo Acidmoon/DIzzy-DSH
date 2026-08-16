@@ -5,8 +5,9 @@
  * @module dsh-vision-toolkit/web
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Context } from 'cordis';
+import type { Context } from '@deepseek-ai/cordis';
 import { ArtifactAccessController } from './artifact-access.ts';
+import { PastedImageBackend } from './paste-images.ts';
 import { type VisionToolkitConfig } from './config.ts';
 import { VisionToolkitRuntimeManager, type PreparedRuntimeGeneration, type RuntimeManagerStatus } from './runtime-manager.ts';
 /** Exact route used by the browser Settings page. */
@@ -59,15 +60,16 @@ export declare class VisionToolkitWebBackend {
     /** Build the current settings/runtime/credential snapshot without secrets. */
     snapshot(): Promise<VisionToolkitSettingsSnapshot>;
     private save;
+    private saveCredential;
     private health;
     /** Handle the exact Settings route. */
     handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
 }
 /**
- * Attach optional Web routes whenever an httpServer service is present.
+ * Attach optional Web routes whenever a webServer service is present.
  * @param ctx - plugin context owning route effects.
  * @param backend - Settings handler.
  * @param artifacts - signed Artifact handler.
  */
-export declare function installVisionToolkitWeb(ctx: Context, backend: VisionToolkitWebBackend, artifacts: ArtifactAccessController): void;
+export declare function installVisionToolkitWeb(ctx: Context, backend: VisionToolkitWebBackend, artifacts: ArtifactAccessController, pastedImages: PastedImageBackend): void;
 //# sourceMappingURL=web.d.ts.map

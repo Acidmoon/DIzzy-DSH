@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { chmodSync, existsSync } from "node:fs";
+import { userInfo } from "node:os";
 import * as nodePty from "node-pty";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 //#region src/prefs-shared.ts
@@ -59,13 +60,20 @@ const PrefsSchema = z.object({
 	autoOpenJobs: z.boolean().default(true),
 	agentTerminalTools: z.boolean().default(false),
 	bottomPanelAutoTerminal: z.boolean().default(true),
+	terminalFontFamily: z.string().default(""),
+	terminalFontSize: z.number().step(1).min(9).max(32).default(13),
 	interceptOpenPath: z.boolean().default(true),
+	titleBarCompat: z.boolean().default(false),
+	titleBarStripPx: z.number().step(1).min(0).max(120).default(40),
 	htmlViewerNoSandbox: z.boolean().default(false),
 	htmlViewerDefaultUnsafe: z.boolean().default(false),
 	browserNoSandbox: z.boolean().default(false),
 	browserInterceptLinks: z.boolean().default(true),
+	browserInterceptHttp: z.boolean().default(true),
+	browserInterceptHttps: z.boolean().default(false),
 	tabsEnabled: z.dict(z.boolean()).default({}),
-	viewersEnabled: z.dict(z.boolean()).default({})
+	viewersEnabled: z.dict(z.boolean()).default({}),
+	pluginSettings: z.dict(z.dict(z.any())).default({})
 });
 //#endregion
 //#region src/wire.ts
@@ -86,7 +94,7 @@ async function readJsonBody(req) {
 	const chunks = [];
 	let total = 0;
 	for await (const chunk of req) {
-		const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+		const buffer = Buffer.from(chunk);
 		total += buffer.length;
 		if (total > MAX_BODY_BYTES) throw new SidebarError("bad-request", "request body too large");
 		chunks.push(buffer);
@@ -265,11 +273,12 @@ function decodeHtmlUrl(pathname) {
 		status: 400,
 		message: "sessionId and file path are required"
 	};
+	const first = pathSegments[0] ?? "";
 	return {
 		ok: true,
 		ref: {
 			sessionId,
-			path: `/${pathSegments.join("/")}`
+			path: /^[A-Za-z]:$/.test(first) ? pathSegments.join("/") : `/${pathSegments.join("/")}`
 		}
 	};
 }
@@ -370,13 +379,7 @@ function isTrustedApiRequest(request, trustedHosts) {
 * only allowlisted chunk names are servable (no path traversal).
 */
 /** The chunk names the client may request (mirror of src/client/chunk-loader.ts). */
-const CHUNK_NAMES = [
-	"docx",
-	"xlsx",
-	"pptx",
-	"terminal",
-	"editor"
-];
+const CHUNK_NAMES = ["terminal", "editor"];
 /** Directory of this host-half module (lib/ — the chunk scripts live next to it). */
 const LIB_DIR = dirname(fileURLToPath(import.meta.url));
 /** sha1 content hash shortened to 12 hex chars (same shape as the client-modules rev). */
@@ -799,7 +802,7 @@ var PtyManager = class {
 			sessionId,
 			tabId,
 			cwd,
-			pty: nodePty.spawn(this.shell, [], {
+			pty: nodePty.spawn(this.shell, shellSpawnArgs(), {
 				name: "xterm-256color",
 				cols: Math.max(2, Math.floor(cols)),
 				rows: Math.max(2, Math.floor(rows)),
@@ -863,11 +866,32 @@ var PtyManager = class {
 		for (const key of [...this.sessions.keys()]) this.close(key);
 	}
 };
-/** The interactive shell for this platform (empty SHELL falls back). */
+/**
+* The interactive shell for this platform, resolved like a terminal
+* emulator: an explicit `$SHELL` on the dsh process wins (deployment
+* override), then the account's login shell from passwd, then `/bin/bash`.
+* The passwd step matters because service managers and container inits
+* often start dsh without `SHELL`, and the tab should still open the
+* user's login shell (e.g. zsh) instead of silently degrading to bash.
+* Windows short-circuits to `powershell.exe` before any resolution.
+*/
 function defaultShell() {
 	if (process.platform === "win32") return "powershell.exe";
-	const shell = process.env.SHELL;
-	return shell !== void 0 && shell.trim() !== "" ? shell : "/bin/bash";
+	const envShell = process.env.SHELL;
+	if (envShell !== void 0 && envShell.trim() !== "") return envShell;
+	try {
+		const loginShell = userInfo().shell;
+		if (typeof loginShell === "string" && loginShell.trim() !== "") return loginShell;
+	} catch {}
+	return "/bin/bash";
+}
+/**
+* Spawn arguments that make the shell behave like a terminal-emulator tab:
+* POSIX shells start as login shells (`-l`) so they read the profile files
+* (`~/.profile`, `~/.zprofile`); Windows PowerShell takes no login flag.
+*/
+function shellSpawnArgs() {
+	return process.platform === "win32" ? [] : ["-l"];
 }
 //#endregion
 //#region src/agent-pty.ts
@@ -981,7 +1005,7 @@ var AgentPtyRegistry = class {
 	create(sessionId, title, command, cwd, cols = 80, rows = 24) {
 		const uuid = randomUUID();
 		const dims = clampDims(cols, rows);
-		const pty = nodePty.spawn(this.shell, [], {
+		const pty = nodePty.spawn(this.shell, shellSpawnArgs(), {
 			name: "xterm-256color",
 			cols: dims.cols,
 			rows: dims.rows,
@@ -1970,9 +1994,10 @@ function buildJobsApi(ctx, outputLimit) {
 * preview route, the /sidebar/bundle lazy-chunk route (client code splits),
 * and the terminal WebSocket upgrade. Every route passes the same
 * browser-trust fence as the /api gateway — Host-header loopback or the
-* connection row's `trustedHosts` (the `dsh web` launcher derives LAN IP
-* literals per boot) — with the trustedHosts read live from the connection
-* loader row so the fence never drifts from the deployment's.
+* web runtime's `trustedHosts` (LAN IP literals sampled at boot plus
+* `--trusted-host` authorities), read per request from the live service
+* value so the fence tracks the same trust source the /api gateway derives
+* its list from.
 *
 * All operations are conversation-scoped: requests carry a sessionId, the
 * session's authoritative cwd comes from the session store, and terminal
@@ -1980,11 +2005,11 @@ function buildJobsApi(ctx, outputLimit) {
 */
 /** Plugin identity for cordis.yml rows. */
 const name = "dsh-better-sidebar";
-/** Services required before mounting: the webserver routes, the session store, the loader's connection row, and the tool registry. */
+/** Services required before mounting: the webserver routes, the session store, the web runtime's trusted hosts, and the tool registry. */
 const inject = [
 	"webServer",
 	"sessions",
-	"loader",
+	"webRuntime",
 	"tools"
 ];
 /** Content types for the media route, by extension. */
@@ -2005,11 +2030,6 @@ const MEDIA_TYPES = {
 /** Content type served by /sidebar/file (binary-safe fallback for unknowns). */
 function mediaTypeForPath(path) {
 	return MEDIA_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
-}
-/** The connection row's resolved trustedHosts (live read; the /api fence's own list). */
-function trustedHostsOf(ctx) {
-	for (const entry of ctx.loader.entries()) if (entry.options.name === "connection") return entry.options.config?.trustedHosts ?? [];
-	return [];
 }
 /**
 * Resolve a session's authoritative working directory. The attached session
@@ -2267,7 +2287,7 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, getSettings) {
 }
 /**
 * Plugin body: mount the fenced routes and the pty lifecycle.
-* @param ctx - host plugin context (webServer, sessions, loader).
+* @param ctx - host plugin context (webServer, sessions, webRuntime).
 * @param config - deployment-provided limits; the Loader validates against
 * {@link Config} and fills defaults, direct callers get them from
 * {@link resolveSidebarConfig}.
@@ -2275,8 +2295,7 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, getSettings) {
 function apply(ctx, config) {
 	ensureSpawnHelper();
 	const resolved = resolveSidebarConfig(config);
-	const trustedHosts = trustedHostsOf(ctx);
-	const fence = (req) => isTrustedApiRequest(req, trustedHosts);
+	const fence = (req) => isTrustedApiRequest(req, ctx.webRuntime.trustedHosts);
 	const ptyManager = new PtyManager(defaultShell(), resolved.terminalsPerSession);
 	const agentPtyRegistry = new AgentPtyRegistry(defaultShell());
 	let settingsFace;

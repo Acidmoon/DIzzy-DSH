@@ -1,12 +1,12 @@
 /**
- * @dsh-external/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
+ * @anionex/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
  *
  * Plugin lifecycle follows the documented readiness chain: verify the pinned
  * upstream checkout, publish the vision-tools Skill and its one-shot bootstrap,
  * then mount the execution tools only in Agents that load that Skill. Any
  * failure leaves no model capability behind, and disposal unregisters every
  * global and Agent-scoped contribution the plugin mounted.
- * @module @dsh-external/dsh-vision-toolkit
+ * @module @anionex/dsh-vision-toolkit
  */
 import { ArtifactAccessController, prepareArtifactAccessKey } from "./artifact-access.js";
 import { Config, VISION_TOOLKIT_SETTINGS_NAMESPACE, resolveConfig, } from "./config.js";
@@ -16,9 +16,10 @@ import { VISION_TOOLS_SKILL } from "./skill.js";
 import { createVisionTools } from "./tools.js";
 import { PLUGIN_VERSION } from "./version.js";
 import { installVisionToolkitWeb, VisionToolkitWebBackend } from "./web.js";
-export const name = '@dsh-external/dsh-vision-toolkit';
+import { PastedImageBackend } from "./paste-images.js";
+export const name = '@anionex/dsh-vision-toolkit';
 export { Config };
-export const inject = ['tools', 'credentials', 'skills', 'subprocess', 'settings', 'agents'];
+export const inject = ['tools', 'credentials', 'skills', 'subprocess', 'settings', 'agents', 'sessions'];
 /** Plugin entry: validate configuration synchronously, then mount asynchronously. */
 export async function apply(ctx, config = {}) {
     // Registration itself rejects an invalid stored section before any runtime
@@ -67,7 +68,10 @@ export async function apply(ctx, config = {}) {
         ctx.logger.error('dsh-vision-toolkit %s: runtime not ready; the vision-tools skill, activation bootstrap, and Agent-scoped visual tools are NOT registered. Settings remain available for repair. %s', PLUGIN_VERSION, message);
     }
     const backend = new VisionToolkitWebBackend(ctx, manager, artifacts, ensureOperational);
-    installVisionToolkitWeb(ctx, backend, artifacts);
+    const pastedImages = new PastedImageBackend(ctx, {
+        maxImageBytes: () => manager.status().activeConfig?.maxImageBytes ?? resolveConfig(settings.get()).maxImageBytes,
+    });
+    installVisionToolkitWeb(ctx, backend, artifacts, pastedImages);
     disposers.push(settings.watch(async (next) => {
         try {
             await manager.reconfigure(next);

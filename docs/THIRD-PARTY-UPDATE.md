@@ -18,20 +18,20 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 
 | 插件 | 快照目录 | 上游仓库 | 跟随分支 | 收录版本 | 上游 commit | 手工补丁 |
 |---|---|---|---|---|---|---|
-| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.1 | ceab0ed | 无 |
+| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.5 | fd87f36 | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.2(上游 main 当前 0.1.5) | 8d35621 | 有:exposure.js 核心工具常驻 |
-| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | e1277b5 | 无 |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.7 | 29850a8 | 有:exposure.ts/js 核心工具常驻 |
+| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | db4527a | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local |
-| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.5.2 | 092e181 | 无 |
+| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.2 | c510ba2 | 无 |
 
 各上游形态备注:
 
 - **dsh-genui**:未发布 npm,有版本 tag 但可能落后于 main → 跟 `main`,发布时在 package.json 的 `version` 核对;
 - **dsh-notification**:无 tag、未发布 npm → 只能跟 `main`,用 commit 锚定;
-- **dsh-vision-toolkit**:已发布 npm(0.1.4),上游真实仓库是 **Anionex**(快照内 package.json 的
-  `repository` 字段指向已失效的 dsh-external 地址,勿信);main 已有 0.1.5 未打 tag;
-  有手工补丁,迁移/更新后必须重放;
+- **dsh-vision-toolkit**:已发布 npm `@anionex/dsh-vision-toolkit@0.1.7`(旧 scope
+  `@dsh-external/dsh-vision-toolkit` 已停用,合集依赖与 patch entry 必须跟新包名);
+  有手工补丁,迁移/更新后必须重放 `patches/dsh-vision-toolkit-exposure.patch`;
 - **dsh-anchored-standard**:**agent preset,不是 cordis 插件**——不挂 cordis.patch.yml、不进
   package.json 依赖,subtree pull 后无需 pnpm install;安装 = 复制 `preset/` 到
   `~/.dsh/.agent-presets/anchored-standard`(用 `scripts/install-anchored-standard.ps1`)。
@@ -42,7 +42,7 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
   投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer /
   思考档位对齐官方最高档)。更新后必须先重放 `patches/dsh-subscription-auth-local.patch`,
   再重放 `patches/dsh-subscription-auth-reasoning-effort.patch`。
-- **dsh-gui-customization**:已发布 npm(0.5.2),上游是 monorepo,可安装组合插件在
+- **dsh-gui-customization**:已发布 npm(0.6.2),上游是 monorepo,可安装组合插件在
   `packages/dsh-gui-customization/`;本快照只收录该子包(含已构建 `lib/` 与内置背景图)。
   默认分支 `master`。无本地补丁。未迁 subtree 前用 sparse-checkout 覆盖子包目录;
   迁 subtree 时 prefix 仍是 `third-party/dsh-gui-customization`,但上游路径在
@@ -98,7 +98,7 @@ node scripts/reapply-third-party-patches.mjs
    上游已吸收该改动的 → 删除对应 `.patch` 并更新登记;冲突 → 按 `patches/` 内说明手动适配。
 2. **peer 版本 vs 当前 dsh**:对比新旧 `package.json` 的 `peerDependencies` 与当前 dsh 版本
    (0.1.0-rc.6)是否相容;不相容 → 暂不升级(参考:genui 精确绑定 `^0.1.0-rc.6`,
-   vision-toolkit 0.1.5 已对齐 rc.6,旧快照 0.1.2 反而是 `^0.0.1`)。
+   vision-toolkit 0.1.7 已对齐 rc.6)。
 3. **依赖增删**:`dependencies` 有变化 → profile `pnpm install`;新增 file: 依赖路径要受 `.gitignore` 覆盖。
 4. **构建产物**:快照必须带 `lib/`;上游若只推 `src/`,需在快照内自行
    `pnpm install && pnpm run build`(genui/notification/vision-toolkit 均自带 lib/)。

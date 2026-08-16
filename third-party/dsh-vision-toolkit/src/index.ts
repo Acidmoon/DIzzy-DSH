@@ -1,16 +1,17 @@
 /**
- * @dsh-external/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
+ * @anionex/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
  *
  * Plugin lifecycle follows the documented readiness chain: verify the pinned
  * upstream checkout, publish the vision-tools Skill and its one-shot bootstrap,
  * then mount the execution tools only in Agents that load that Skill. Any
  * failure leaves no model capability behind, and disposal unregisters every
  * global and Agent-scoped contribution the plugin mounted.
- * @module @dsh-external/dsh-vision-toolkit
+ * @module @anionex/dsh-vision-toolkit
  */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-settings'
 import { ArtifactAccessController, prepareArtifactAccessKey } from './artifact-access.ts'
 import {
@@ -25,12 +26,13 @@ import { VISION_TOOLS_SKILL } from './skill.ts'
 import { createVisionTools } from './tools.ts'
 import { PLUGIN_VERSION } from './version.ts'
 import { installVisionToolkitWeb, VisionToolkitWebBackend } from './web.ts'
+import { PastedImageBackend } from './paste-images.ts'
 
-export const name = '@dsh-external/dsh-vision-toolkit'
+export const name = '@anionex/dsh-vision-toolkit'
 
 export { Config }
 
-export const inject = ['tools', 'credentials', 'skills', 'subprocess', 'settings', 'agents']
+export const inject = ['tools', 'credentials', 'skills', 'subprocess', 'settings', 'agents', 'sessions']
 
 /** Plugin entry: validate configuration synchronously, then mount asynchronously. */
 export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Promise<() => void> {
@@ -93,7 +95,10 @@ export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Pro
   }
 
   const backend = new VisionToolkitWebBackend(ctx, manager, artifacts, ensureOperational)
-  installVisionToolkitWeb(ctx, backend, artifacts)
+  const pastedImages = new PastedImageBackend(ctx, {
+    maxImageBytes: () => manager.status().activeConfig?.maxImageBytes ?? resolveConfig(settings.get()).maxImageBytes,
+  })
+  installVisionToolkitWeb(ctx, backend, artifacts, pastedImages)
   disposers.push(settings.watch(async (next) => {
     try {
       await manager.reconfigure(next)

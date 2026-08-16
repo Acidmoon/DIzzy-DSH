@@ -6,13 +6,14 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Context } from 'cordis'
-import type { CredentialInfo } from '@deepseek-ai/dsh-credentials'
+import type { Context } from '@deepseek-ai/cordis'
+import type { CredentialInfo, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { SettingsConflictError, type SettingsDescriptor } from '@deepseek-ai/dsh-settings'
-// Type-only import activates the optional httpServer Context declaration.
+// Type-only import activates the optional webServer Context declaration.
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { ArtifactAccessController, ARTIFACT_ROUTE_PREFIX } from './artifact-access.ts'
+import { PastedImageBackend, PASTE_IMAGES_ROUTE } from './paste-images.ts'
 import {
   resolveConfig,
   VISION_TOOLKIT_SETTINGS_NAMESPACE,
@@ -26,6 +27,7 @@ import {
   type RuntimeManagerStatus,
 } from './runtime-manager.ts'
 import { PLUGIN_VERSION, UPSTREAM_COMMIT, UPSTREAM_REPOSITORY, UPSTREAM_VERSION } from './version.ts'
+import { sameOriginPost } from './web-request.ts'
 
 /** Exact route used by the browser Settings page. */
 export const SETTINGS_ROUTE = '/_dsh/vision-toolkit/settings'
@@ -68,7 +70,14 @@ interface HealthRequest {
   testConnection: boolean
 }
 
-type SettingsRequest = SaveRequest | HealthRequest
+interface CredentialRequest {
+  action: 'credential'
+  expectedRevision: number
+  ref: CredentialRef
+  value: string
+}
+
+type SettingsRequest = SaveRequest | HealthRequest | CredentialRequest
 
 interface JsonError {
   ok: false
@@ -99,6 +108,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+class CredentialReferenceConflictError extends Error {}
+
 function descriptorOf(ctx: Context): SettingsDescriptor {
   const descriptor = ctx.settings.describe().find(row => row.ns === VISION_TOOLKIT_SETTINGS_NAMESPACE)
   if (descriptor === undefined) throw new Error('vision-toolkit Settings namespace is not registered')
@@ -118,21 +129,6 @@ function responseJson<T>(res: ServerResponse, status: number, body: JsonResponse
 
 function requestError(res: ServerResponse, status: number, code: string, message: string): void {
   responseJson(res, status, { ok: false, error: { code, message } })
-}
-
-function sameOriginPost(req: IncomingMessage): boolean {
-  const fetchSite = req.headers['sec-fetch-site']
-  if (fetchSite === 'cross-site') return false
-  const origin = req.headers.origin
-  if (origin === undefined) return fetchSite === 'same-origin' || fetchSite === 'same-site' || fetchSite === 'none'
-  const host = req.headers.host
-  if (host === undefined) return false
-  try {
-    const parsed = new URL(origin)
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host
-  } catch {
-    return false
-  }
 }
 
 async function readJson(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
@@ -165,6 +161,27 @@ function parseRequest(value: unknown): SettingsRequest {
       action: 'save',
       expectedRevision: value.expectedRevision as number,
       value: value.value as VisionToolkitConfig,
+    }
+  }
+  if (value.action === 'credential') {
+    if (!Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0) {
+      throw new TypeError('credential.expectedRevision must be a non-negative integer')
+    }
+    if (typeof value.ref !== 'string') throw new TypeError('credential.ref must be a string')
+    if (typeof value.value !== 'string') throw new TypeError('credential.value must be a string')
+    const secret = value.value.trim()
+    if (secret.length === 0) throw new TypeError('API key cannot be blank')
+    const first = secret[0]
+    const quoted = secret.length > 1 && (first === '"' || first === '\'' || first === '`') && secret.endsWith(first)
+    const environmentLine = /^[A-Z][A-Z0-9_]*=[^=]/u.test(secret)
+    if (quoted || environmentLine || !/^[\x21-\x7E]+$/u.test(secret)) {
+      throw new TypeError('paste only the API key, without a variable name, quotes, spaces, or line breaks')
+    }
+    return {
+      action: 'credential',
+      expectedRevision: value.expectedRevision as number,
+      ref: credentialRef(value.ref),
+      value: secret,
     }
   }
   throw new TypeError(`unsupported action: ${value.action}`)
@@ -240,6 +257,26 @@ export class VisionToolkitWebBackend {
     return this.snapshot()
   }
 
+  private async saveCredential(request: CredentialRequest): Promise<VisionToolkitSettingsSnapshot> {
+    const descriptor = descriptorOf(this.ctx)
+    if (descriptor.revision !== request.expectedRevision) {
+      throw new SettingsConflictError(
+        VISION_TOOLKIT_SETTINGS_NAMESPACE,
+        request.expectedRevision,
+        descriptor.revision,
+      )
+    }
+    const resolved = resolveConfig(descriptor.value as VisionToolkitConfig)
+    const currentRef = credentialRef(String(resolved.provider.credential))
+    if (currentRef !== request.ref) {
+      throw new CredentialReferenceConflictError(
+        `credential reference changed from "${request.ref}" to "${currentRef}"; reload Settings and try again`,
+      )
+    }
+    await this.ctx.credentials.set(currentRef, request.value)
+    return this.snapshot()
+  }
+
   private async health(request: HealthRequest, req: IncomingMessage): Promise<VisionToolkitHealthResult> {
     if (!this.manager.ready) throw new Error('runtime is not ready; fix Settings and save a valid configuration first')
     const controller = new AbortController()
@@ -286,15 +323,30 @@ export class VisionToolkitWebBackend {
       return
     }
     try {
-      if (parsed.action === 'health') {
-        responseJson(res, 200, { ok: true, value: await this.health(parsed, req) })
-      } else {
-        responseJson(res, 200, { ok: true, value: await this.save(parsed) })
+      switch (parsed.action) {
+        case 'health':
+          responseJson(res, 200, { ok: true, value: await this.health(parsed, req) })
+          break
+        case 'save':
+          responseJson(res, 200, { ok: true, value: await this.save(parsed) })
+          break
+        case 'credential':
+          responseJson(res, 200, { ok: true, value: await this.saveCredential(parsed) })
+          break
       }
     } catch (error) {
-      const conflict = error instanceof SettingsConflictError
-      const code = conflict ? 'settings-conflict' : parsed.action === 'health' ? 'health-failed' : 'settings-rejected'
-      const status = conflict ? 409 : parsed.action === 'health' ? 503 : 400
+      const settingsConflict = error instanceof SettingsConflictError
+      const credentialConflict = error instanceof CredentialReferenceConflictError
+      const code = settingsConflict
+        ? 'settings-conflict'
+        : credentialConflict
+          ? 'credential-conflict'
+          : parsed.action === 'health'
+            ? 'health-failed'
+            : parsed.action === 'credential'
+              ? 'credential-rejected'
+              : 'settings-rejected'
+      const status = settingsConflict || credentialConflict ? 409 : parsed.action === 'health' ? 503 : 400
       this.ctx.logger.warn('dsh-vision-toolkit Web action=%s failed: %s', parsed.action, publicMessage(error))
       requestError(res, status, code, publicMessage(error))
     }
@@ -311,6 +363,7 @@ export function installVisionToolkitWeb(
   ctx: Context,
   backend: VisionToolkitWebBackend,
   artifacts: ArtifactAccessController,
+  pastedImages: PastedImageBackend,
 ): void {
   ctx.inject(['webServer'], (webCtx) => {
     webCtx.effect(() => {
@@ -325,7 +378,13 @@ export function installVisionToolkitWeb(
         path: SETTINGS_ROUTE,
         handler: (req, res) => backend.handle(req, res),
       })
+      const disposePasteImages = webCtx.webServer.register({
+        kind: 'exact',
+        path: PASTE_IMAGES_ROUTE,
+        handler: (req, res) => pastedImages.handle(req, res),
+      })
       return () => {
+        disposePasteImages()
         disposeSettings()
         disposeArtifact()
         detach()

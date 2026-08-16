@@ -30,13 +30,17 @@ export type SidebarDiffRef = {
     subject: string;
 };
 /** One open tab. `path` carries the file (editor) or is absent (explorer/git);
- *  `diff` carries the change a diff tab shows. */
+ *  `diff` carries the change a diff tab shows; `meta` (v0.12.0+) carries
+ *  plugin-owned JSON-serializable state, preserved across reloads. */
 export interface SidebarTab {
     id: string;
     type: TabType;
     title: string;
     path?: string;
     diff?: SidebarDiffRef;
+    /** Plugin-owned state (v0.12.0+): MUST be JSON-serializable — it is
+     *  persisted with the layout and restored verbatim on reload. */
+    meta?: unknown;
 }
 /** A tab group. */
 export interface SidebarLeaf {
@@ -164,13 +168,14 @@ export declare function removeLeafAt(node: SplitNode, paneId: string): SplitNode
 export declare function closeTab(state: SidebarState, paneId: string, tabId: string): SidebarState;
 /** Activate a tab in its pane (the pane's own tree). */
 export declare function activateTab(state: SidebarState, paneId: string, tabId: string): SidebarState;
-/** Update the display fields of one open tab (title / path) without
+/** Update the display fields of one open tab (title / path / meta) without
  *  re-opening it. The browser tab persists its current URL and hostname
  *  title through this reducer so a reload restores the visited page. A
  *  missing tab id is a no-op. The tab may live in either tree. */
 export declare function patchTab(state: SidebarState, tabId: string, patch: {
     title?: string;
     path?: string;
+    meta?: unknown;
 }): SidebarState;
 /**
  * Land a tab in the active pane (or focus its existing instance by id).
@@ -279,7 +284,9 @@ export declare class SidebarStore {
     private readonly bySession;
     private snapshot;
     private readonly listeners;
-    private persistTimer;
+    /** Per-session persist debounce timers (v0.12.0+: one per session, so a
+     *  targeted open never cancels another session's pending write). */
+    private readonly persistTimers;
     /** User-facing side card prefs seeding brand-new session states (defaults until the settings RPC resolves). */
     private prefs;
     /**
@@ -309,6 +316,14 @@ export declare class SidebarStore {
     tabOpen(sessionId: string, tabId: string): boolean;
     /** Apply a pure reducer (returns the next state). */
     reduce(reducer: (state: SidebarState) => SidebarState): void;
+    /**
+     * Apply a pure reducer to a TARGET session's state (not the active one),
+     * loading it on demand and persisting the result — WITHOUT switching the
+     * active snapshot or notifying (the UI must not follow along). Used by the
+     * service's targeted `openTab(seed, scope)`: the open lands in the target
+     * session's layout and is visible whenever the user switches to it.
+     */
+    reduceFor(sessionId: string, reducer: (state: SidebarState) => SidebarState): void;
     private schedulePersist;
     private notify;
 }

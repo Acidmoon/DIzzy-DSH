@@ -7,12 +7,16 @@
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings';
 import { ARTIFACT_ROUTE_PREFIX } from "./artifact-access.js";
+import { PASTE_IMAGES_ROUTE } from "./paste-images.js";
 import { resolveConfig, VISION_TOOLKIT_SETTINGS_NAMESPACE, } from "./config.js";
 import { PLUGIN_VERSION, UPSTREAM_COMMIT, UPSTREAM_REPOSITORY, UPSTREAM_VERSION } from "./version.js";
+import { sameOriginPost } from "./web-request.js";
 /** Exact route used by the browser Settings page. */
 export const SETTINGS_ROUTE = '/_dsh/vision-toolkit/settings';
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+class CredentialReferenceConflictError extends Error {
 }
 function descriptorOf(ctx) {
     const descriptor = ctx.settings.describe().find(row => row.ns === VISION_TOOLKIT_SETTINGS_NAMESPACE);
@@ -32,24 +36,6 @@ function responseJson(res, status, body) {
 }
 function requestError(res, status, code, message) {
     responseJson(res, status, { ok: false, error: { code, message } });
-}
-function sameOriginPost(req) {
-    const fetchSite = req.headers['sec-fetch-site'];
-    if (fetchSite === 'cross-site')
-        return false;
-    const origin = req.headers.origin;
-    if (origin === undefined)
-        return fetchSite === 'same-origin' || fetchSite === 'same-site' || fetchSite === 'none';
-    const host = req.headers.host;
-    if (host === undefined)
-        return false;
-    try {
-        const parsed = new URL(origin);
-        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host;
-    }
-    catch {
-        return false;
-    }
 }
 async function readJson(req, maxBytes = 64 * 1024) {
     const contentType = req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase();
@@ -86,6 +72,30 @@ function parseRequest(value) {
             action: 'save',
             expectedRevision: value.expectedRevision,
             value: value.value,
+        };
+    }
+    if (value.action === 'credential') {
+        if (!Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0) {
+            throw new TypeError('credential.expectedRevision must be a non-negative integer');
+        }
+        if (typeof value.ref !== 'string')
+            throw new TypeError('credential.ref must be a string');
+        if (typeof value.value !== 'string')
+            throw new TypeError('credential.value must be a string');
+        const secret = value.value.trim();
+        if (secret.length === 0)
+            throw new TypeError('API key cannot be blank');
+        const first = secret[0];
+        const quoted = secret.length > 1 && (first === '"' || first === '\'' || first === '`') && secret.endsWith(first);
+        const environmentLine = /^[A-Z][A-Z0-9_]*=[^=]/u.test(secret);
+        if (quoted || environmentLine || !/^[\x21-\x7E]+$/u.test(secret)) {
+            throw new TypeError('paste only the API key, without a variable name, quotes, spaces, or line breaks');
+        }
+        return {
+            action: 'credential',
+            expectedRevision: value.expectedRevision,
+            ref: credentialRef(value.ref),
+            value: secret,
         };
     }
     throw new TypeError(`unsupported action: ${value.action}`);
@@ -158,6 +168,19 @@ export class VisionToolkitWebBackend {
         this.onRuntimeActivated();
         return this.snapshot();
     }
+    async saveCredential(request) {
+        const descriptor = descriptorOf(this.ctx);
+        if (descriptor.revision !== request.expectedRevision) {
+            throw new SettingsConflictError(VISION_TOOLKIT_SETTINGS_NAMESPACE, request.expectedRevision, descriptor.revision);
+        }
+        const resolved = resolveConfig(descriptor.value);
+        const currentRef = credentialRef(String(resolved.provider.credential));
+        if (currentRef !== request.ref) {
+            throw new CredentialReferenceConflictError(`credential reference changed from "${request.ref}" to "${currentRef}"; reload Settings and try again`);
+        }
+        await this.ctx.credentials.set(currentRef, request.value);
+        return this.snapshot();
+    }
     async health(request, req) {
         if (!this.manager.ready)
             throw new Error('runtime is not ready; fix Settings and save a valid configuration first');
@@ -207,17 +230,31 @@ export class VisionToolkitWebBackend {
             return;
         }
         try {
-            if (parsed.action === 'health') {
-                responseJson(res, 200, { ok: true, value: await this.health(parsed, req) });
-            }
-            else {
-                responseJson(res, 200, { ok: true, value: await this.save(parsed) });
+            switch (parsed.action) {
+                case 'health':
+                    responseJson(res, 200, { ok: true, value: await this.health(parsed, req) });
+                    break;
+                case 'save':
+                    responseJson(res, 200, { ok: true, value: await this.save(parsed) });
+                    break;
+                case 'credential':
+                    responseJson(res, 200, { ok: true, value: await this.saveCredential(parsed) });
+                    break;
             }
         }
         catch (error) {
-            const conflict = error instanceof SettingsConflictError;
-            const code = conflict ? 'settings-conflict' : parsed.action === 'health' ? 'health-failed' : 'settings-rejected';
-            const status = conflict ? 409 : parsed.action === 'health' ? 503 : 400;
+            const settingsConflict = error instanceof SettingsConflictError;
+            const credentialConflict = error instanceof CredentialReferenceConflictError;
+            const code = settingsConflict
+                ? 'settings-conflict'
+                : credentialConflict
+                    ? 'credential-conflict'
+                    : parsed.action === 'health'
+                        ? 'health-failed'
+                        : parsed.action === 'credential'
+                            ? 'credential-rejected'
+                            : 'settings-rejected';
+            const status = settingsConflict || credentialConflict ? 409 : parsed.action === 'health' ? 503 : 400;
             this.ctx.logger.warn('dsh-vision-toolkit Web action=%s failed: %s', parsed.action, publicMessage(error));
             requestError(res, status, code, publicMessage(error));
         }
@@ -229,7 +266,7 @@ export class VisionToolkitWebBackend {
  * @param backend - Settings handler.
  * @param artifacts - signed Artifact handler.
  */
-export function installVisionToolkitWeb(ctx, backend, artifacts) {
+export function installVisionToolkitWeb(ctx, backend, artifacts, pastedImages) {
     ctx.inject(['webServer'], (webCtx) => {
         webCtx.effect(() => {
             const detach = artifacts.attachRoute();
@@ -243,7 +280,13 @@ export function installVisionToolkitWeb(ctx, backend, artifacts) {
                 path: SETTINGS_ROUTE,
                 handler: (req, res) => backend.handle(req, res),
             });
+            const disposePasteImages = webCtx.webServer.register({
+                kind: 'exact',
+                path: PASTE_IMAGES_ROUTE,
+                handler: (req, res) => pastedImages.handle(req, res),
+            });
             return () => {
+                disposePasteImages();
                 disposeSettings();
                 disposeArtifact();
                 detach();

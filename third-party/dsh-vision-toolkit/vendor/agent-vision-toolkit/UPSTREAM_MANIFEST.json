@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Anionex/agent-vision-toolkit",
-  "version": "v0.1.0+snapshot.c27d1a3",
-  "commit": "c27d1a300962b553c0884993c575cd3e819465ce",
-  "contentSha256": "e17395b3d30d00d8bf3c8d79a38ce63d0545bb52db27c8e004f9b89f451c36ed",
+  "version": "v0.1.0+snapshot.bc9803d",
+  "commit": "bc9803d7d6300c864d17460ecbb33540b26638e0",
+  "contentSha256": "6936f8fba3ed40f54267245e717603c2622649ce4bd7ccf3c1b23f39047b1f3f",
   "files": [
     {
       "path": "CHANGELOG.md",
-      "bytes": 913,
-      "sha256": "3eb86d51d5fd89714045e73a29ebd4aa5b146e9bf5f8c8620cc9b452a8d4bbe0"
+      "bytes": 1671,
+      "sha256": "0bb23408797c8e5389abc0b34d47b43907316f8bd106420e4c05f25606bccde1"
     },
     {
       "path": "LICENSE",
@@ -17,8 +17,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 19058,
-      "sha256": "8190e93421995302cafb56048e98dfb41510a7fc5fe7208cc21b496c48baab45"
+      "bytes": 23625,
+      "sha256": "55d880175b51d288f5b817d064ebb79e6c8663ee0bb1817f4a0390ab18b5c3ee"
     },
     {
       "path": "bin/crop",
@@ -42,8 +42,8 @@
     },
     {
       "path": "bin/trace",
-      "bytes": 5490,
-      "sha256": "969df93cd4e97d64b7c755be467d44480dd5eff54571353c6b642544cc0331be"
+      "bytes": 5691,
+      "sha256": "9c473dbd4cc35085fa0a81ea08cf3cfd76dbacd0f75cbacbb7288efa28dfe371"
     },
     {
       "path": "detect.py",
@@ -81,9 +81,14 @@
       "sha256": "70e04fea9bf452f35d12bed0c19c7e2be46934a5423caa778b24da82b78f2251"
     },
     {
+      "path": "tests/test_vision_client.py",
+      "bytes": 17933,
+      "sha256": "eb31118751a5724385f486b98d45af83cad1cf7e4506b79ddf9a840d08f22367"
+    },
+    {
       "path": "vision_client.py",
-      "bytes": 6117,
-      "sha256": "5450985379a0c1e6460594a8739966fe1e2489311ce473b1d92021ccf41d0be8"
+      "bytes": 10610,
+      "sha256": "7a899d08b1c65721c9fdfd42d9d3288671c149fdc919b5dedb5b36cc6b06ddce"
     }
   ]
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
 import type { Credentials } from '@deepseek-ai/dsh-credentials'
 import { resolveConfig, type VisionToolkitConfig } from '../src/config.ts'
@@ -33,6 +33,7 @@ async function tempWorkspace(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
@@ -270,6 +271,16 @@ describe('VisionToolkitRuntime', () => {
     await expect(readFile(result.outputPath, 'utf8')).resolves.toBe(svg)
   })
 
+  it('rejects a trace character count when the generated SVG contains expanded CRLF bytes', async () => {
+    const { adapter, runtime } = await setup({}, null)
+    const workspace = await tempWorkspace()
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg">\r\n<path/>\r\n</svg>\r\n'
+    mockTraceDocument(adapter, svg, 1, Buffer.byteLength(svg) - 3)
+
+    await expect(runtime.trace({ image: 'sample.png' }, { signal, workspace }))
+      .rejects.toMatchObject({ code: 'output', message: 'trace: reported byte count does not match the generated SVG' })
+  })
+
   it.each([
     ['a doctype', '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"><path/></svg>\n'],
     ['malformed nesting', '<svg xmlns="http://www.w3.org/2000/svg"><path></svg>\n'],
@@ -413,9 +424,12 @@ describe('VisionToolkitRuntime', () => {
     expect(await readFile(resumed.output?.path ?? '', 'utf8')).toContain('Fixture merged OCR')
   })
 
-  it('extracts transparent foregrounds and returns component metrics', async () => {
-    const { runtime } = await setup({}, null)
+  it('extracts transparent foregrounds from UTF-8 Chinese subprocess output', async () => {
+    vi.stubEnv('PYTHONIOENCODING', 'cp936')
+    vi.stubEnv('PYTHONUTF8', '0')
+    const { ctx, runtime } = await setup({}, null)
     const workspace = await tempWorkspace()
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
     const result = await runtime.extractForeground(
       { image: 'sample.png', region: '0,0,128,128' },
       { signal, workspace },
@@ -428,6 +442,8 @@ describe('VisionToolkitRuntime', () => {
       largestComponentPct: 88,
       artifact: { mimeType: 'image/png', kind: 'image', sourceTool: 'vision_extract_foreground' },
     })
+    const extractSpawn = spawn.mock.calls.find(([spec]) => spec.argv.some(arg => arg.endsWith('extract_fg.py')))
+    expect(extractSpawn?.[0].env).toMatchObject({ PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' })
   })
 
   it('parses palette extraction and candidate scoring into structure', async () => {
@@ -470,6 +486,7 @@ describe('VisionToolkitRuntime', () => {
     const server = createServer((request, response) => {
       expect(request.url).toBe('/v1/models')
       expect(request.headers.authorization).toBe('Bearer test-vision-key')
+      expect(request.headers['user-agent']).toContain('Mozilla/5.0')
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end('{"data":[]}')
     })
@@ -492,6 +509,37 @@ describe('VisionToolkitRuntime', () => {
       })
       const active = await runtime.health(true, { signal, workspace })
       expect(active).toMatchObject({ connectionTested: true, checks: { service: { status: 'ok' } } })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
+    }
+  })
+
+  it('uses Anthropic authentication for an explicit connection test', async () => {
+    const server = createServer((request, response) => {
+      expect(request.url).toBe('/v1/models')
+      expect(request.headers.authorization).toBeUndefined()
+      expect(request.headers['x-api-key']).toBe('test-vision-key')
+      expect(request.headers['anthropic-version']).toBe('2023-06-01')
+      expect(request.headers['user-agent']).toBe('fixture-agent/1.0')
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end('{"data":[]}')
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('fixture server did not bind')
+      const { runtime } = await setup({
+        provider: {
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          credential: 'VISION_API_KEY',
+          model: 'fixture-model',
+          protocol: 'anthropic',
+          userAgent: 'fixture-agent/1.0',
+        },
+      })
+      const workspace = await tempWorkspace()
+      await expect(runtime.health(true, { signal, workspace }))
+        .resolves.toMatchObject({ connectionTested: true, checks: { service: { status: 'ok' } } })
     } finally {
       await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
     }
@@ -627,6 +675,43 @@ describe('upstream adapter version facts', () => {
       dependencies: { pillow: 'fixture' },
     })
     expect(await adapter.readCheckoutVersion()).toBe(UPSTREAM_VERSION)
+  })
+
+  it('forces UTF-8 for direct tools, image probes, and Python helpers', async () => {
+    const { ctx, adapter } = await setup({}, null)
+    const workspace = await tempWorkspace()
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+
+    await adapter.run('crop', [SAMPLE_IMAGE, '--region', '0,0,2,2', '-o', join(workspace, 'crop.png')], { signal })
+    await adapter.probeImageSize(SAMPLE_IMAGE, { signal })
+    await adapter.renderAnnotatedPreview(SAMPLE_IMAGE, join(workspace, 'preview.png'), [], { signal })
+
+    expect(spawn).toHaveBeenCalledTimes(3)
+    for (const [spec] of spawn.mock.calls) {
+      expect(spec.env).toMatchObject({ PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' })
+    }
+  })
+
+  it('forwards the resolved Anthropic protocol to remote upstream tools', async () => {
+    const { ctx, adapter, runtime } = await setup({
+      provider: {
+        baseUrl: 'https://vision.example/v1',
+        credential: 'VISION_API_KEY',
+        model: 'fixture-model',
+        protocol: 'anthropic',
+      },
+    })
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+
+    await adapter.run('glance', [SAMPLE_IMAGE], { signal, env: await runtime.resolveVisionEnv() })
+
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(spawn.mock.calls[0]?.[0].env).toMatchObject({
+      VISION_API_PROTOCOL: 'anthropic',
+      VISION_ANTHROPIC_THINKING: 'omit',
+      VISION_API_KEY: 'test-vision-key',
+      VISION_USER_AGENT: expect.stringContaining('Mozilla/5.0'),
+    })
   })
 
   it('fails prepare with a clear runtime error when the external path is missing', async () => {

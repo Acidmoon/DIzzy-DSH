@@ -2,12 +2,15 @@
 
 # DSH Vision Toolkit
 
-[![Release v0.1.2](https://img.shields.io/badge/release-v0.1.2-5B4CF0?style=flat-square)](https://github.com/dsh-external/dsh-vision-toolkit/releases/tag/v0.1.2)
-[![Verified: 134 tests](https://img.shields.io/badge/verified-134%20tests-2EA44F?style=flat-square)](tests)
+[![X (Twitter)](https://img.shields.io/badge/-@anion__ex-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/anion_ex)
+[![Release v0.1.7](https://img.shields.io/badge/release-v0.1.7-5B4CF0?style=flat-square)](https://github.com/Anionex/dsh-vision-toolkit/releases/tag/v0.1.7)
+[![Verified: 168 tests](https://img.shields.io/badge/verified-168%20tests-2EA44F?style=flat-square)](tests)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0B7285?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%5E22.19%20%7C%20%3E%3D24-339933?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](runtime/requirements.lock)
 [![DSH profiles](https://img.shields.io/badge/DSH-Web%20%2B%20Headless-5B4CF0?style=flat-square)](cordis.patch.yml)
+
+**安装：** `dsh plugin --profile web add @anionex/dsh-vision-toolkit`
 
 **DSH Vision Toolkit 将 [`agent-vision-toolkit`](https://github.com/Anionex/agent-vision-toolkit) 作为原生 Profile Bundle 带入 DeepSeek Harness。**
 
@@ -70,7 +73,7 @@ DSH Vision Toolkit 在这些上游能力之外增加原生工具 schema、版本
 | 已验证范围 | 证据 |
 |---|---|
 | 产品范围 | 10 个独立视觉工具、匹配的 `vision-tools` Skill、产物、专用 Web 卡片和实时 Settings |
-| 自动化覆盖 | 17 个 Vitest 文件 / 134 项通过测试，以及不依赖 DSH 开发树的可移植包检查 |
+| 自动化覆盖 | 17 个 Vitest 文件 / 136 项通过测试，以及不依赖 DSH 开发树的可移植包检查 |
 | 真实 Profile | 干净临时 Web 与 Headless 安装、激活、禁用、重新启用和卸载 |
 | 视觉验收 | 可复现的 HTML 截图 → 像素对比示例，最终差异为 `0%` |
 
@@ -85,16 +88,16 @@ DSH Vision Toolkit 在这些上游能力之外增加原生工具 schema、版本
 
 ## 快速开始
 
-前置条件：拥有此私有仓库的访问权限、DeepSeek Harness、Python 3.11+，并确保 `dsh plugin` 可以使用 `pnpm`。使用已认证的 GitHub 凭据克隆发布仓库，将其加入所需 Profile，并确认 Bundle 行已经挂载：
+前置条件：DeepSeek Harness `0.1.0-rc.6` 或兼容的后续 `0.1.x` 版本、Python 3.11+，并确保 `dsh plugin` 可以使用 `pnpm`。从 npm 安装已发布的 Bundle，将其加入所需 Profile，并确认 Bundle 行已经挂载：
 
 ```sh
-git clone https://github.com/dsh-external/dsh-vision-toolkit.git
-PLUGIN="$PWD/dsh-vision-toolkit"
-dsh plugin --profile web add "$PLUGIN"
-dsh plugin --profile headless add "$PLUGIN"
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+dsh plugin --profile headless add @anionex/dsh-vision-toolkit
 dsh --profile web --dump-config | grep vision-toolkit
 dsh --profile headless --dump-config | grep vision-toolkit
 ```
+
+旧 Profile 的 `pnpm-workspace.yaml` 必须使用 `nodeLinker: hoisted` 和 `autoInstallPeers: false`。更新后的 DSH launcher 会在 `dsh plugin` 运行前修复这两个自有设置；使用旧 launcher 时，应在安装前手动设置，避免 pnpm 在 Profile 内组装第二套 Harness 依赖图。
 
 安装后重启正在运行的 Web Profile，打开 **设置 → 视觉工具**，为远程工具选择 DSH Credential，并显式执行**测试连接**。在会话中把图片放进工作区路径，调用 `/vision-tools`，再让 Agent 使用明确的 `vision_*` 工具。本地裁剪、SVG、像素、颜色、前景和 HTML 操作不需要视觉 API Credential。
 
@@ -117,7 +120,7 @@ flowchart LR
     Artifacts --> Web["Preview, download, or open file"]
 ```
 
-所有工具定义都调用同一个 Runtime；Runtime 在分发到固定上游快照或已配置的 OpenAI 兼容视觉端点前，统一验证路径、限制、Credential、取消和超时。Web 展示读取相同的结构化结果与产物描述，因此不会改变 Headless 语义。健康、连接测试和版本检查只留在 Settings，不进入模型工具 schema。
+所有工具定义都调用同一个 Runtime；Runtime 在分发到固定上游快照或已配置的视觉提供方端点前，统一验证路径、限制、Credential、取消和超时。Web 展示读取相同的结构化结果与产物描述，因此不会改变 Headless 语义。健康、连接测试和版本检查只留在 Settings，不进入模型工具 schema。
 
 ## 工具
 
@@ -147,7 +150,7 @@ flowchart LR
 - 启用 Web 或 Headless Profile 的 DeepSeek Harness，并确保 `dsh plugin` 可以使用 `pnpm`。
 - Python 3.11 或更高版本。Managed 模式会创建隔离环境，用户无需手工安装上游 CLI（命令行界面）或 Python 包。
 - 首次启用 managed 运行时需要联网；如果配置的软件包缓存已有 `runtime/requirements.lock` 中的精确版本，则无需联网。
-- `vision_glance`、`vision_ground`、`vision_detect` 和非仅切分长截图 OCR 需要 OpenAI 兼容视觉端点及 DSH Credential。本地工具无需该 Credential 也可使用。
+- `vision_glance`、`vision_ground`、`vision_detect` 和非仅切分长截图 OCR 需要 OpenAI 兼容或 Anthropic 视觉端点及 DSH Credential。本地工具无需该 Credential 也可使用。
 - 只有 `vision_html_screenshot` 需要 Chrome、Chromium 或 Edge；未安装受支持浏览器时，其他工具保持可用。
 - 输入必须是会话工作区或显式 `allowedDirs` 根目录内的 PNG、JPEG、GIF 或 WebP。
 
@@ -158,8 +161,8 @@ flowchart LR
 将 Bundle 安装到需要暴露能力的每个 Profile：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-vision-toolkit
-dsh plugin --profile headless add /path/to/dsh-vision-toolkit
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+dsh plugin --profile headless add @anionex/dsh-vision-toolkit
 dsh --profile web --dump-config | grep vision-toolkit
 dsh --profile headless --dump-config | grep vision-toolkit
 ```
@@ -181,11 +184,20 @@ dsh --profile headless --dump-config | grep vision-toolkit
 
 ### 升级
 
+**从已停用的 `@dsh-external/dsh-vision-toolkit` 迁移：** npm 包现在位于 `@anionex` 作用域。如果你安装的是已停用的旧包，**不要**对它执行 `update`——该账号无法发布本版本。请迁移到新包名并重启 Web Profile：
+
+```sh
+dsh plugin --profile web remove @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+```
+
+重启后，Settings → 视觉工具 应显示插件版本 **0.1.7**。
+
 通过注册表安装时，使用 Profile 的包管理命令更新依赖：
 
 ```sh
-dsh plugin --profile web update @dsh-external/dsh-vision-toolkit
-dsh plugin --profile headless update @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web update @anionex/dsh-vision-toolkit
+dsh plugin --profile headless update @anionex/dsh-vision-toolkit
 ```
 
 通过本地路径安装时，对替换后的 checkout 或 tarball 再次执行 `add`。Settings 保存在 Profile 的 Settings 提供方中。候选运行时完成验证和准备后才会持久化并启用；失败候选或已经陈旧的并发候选无法替换当前服务 generation。
@@ -193,8 +205,8 @@ dsh plugin --profile headless update @dsh-external/dsh-vision-toolkit
 ### 卸载
 
 ```sh
-dsh plugin --profile web remove @dsh-external/dsh-vision-toolkit
-dsh plugin --profile headless remove @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web remove @anionex/dsh-vision-toolkit
+dsh plugin --profile headless remove @anionex/dsh-vision-toolkit
 ```
 
 `dsh plugin remove` 会同时移除依赖及其 Bundle 层。Profile 随即不再暴露激活引导工具、Agent 级 Vision Toolkit 工具或 skill 条目。没有 Profile 使用本包时可以另行删除 managed 缓存；缓存不是活动配置，无法自行注册任何能力。
@@ -210,6 +222,9 @@ Bundle 默认使用 managed 运行时。Profile patch 可以覆盖提供方与�
       baseUrl: https://api.inferera.com/v1
       credential: VISION_API_KEY
       model: gemini-3.6-flash
+      protocol: openai
+      anthropicThinking: omit
+      userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36
     language: zh
     timeoutMs: 60000
     maxImageBytes: 10485760
@@ -224,9 +239,12 @@ Bundle 默认使用 managed 运行时。Profile patch 可以覆盖提供方与�
 
 | 字段 | 默认值 | 契约 |
 |---|---|---|
-| `provider.baseUrl` | `https://api.inferera.com/v1` | OpenAI 兼容基础 URL；去除结尾斜杠后使用 |
+| `provider.baseUrl` | `https://api.inferera.com/v1` | 提供方 API 基础 URL；去除结尾斜杠后使用。Anthropic 应填写以 `/v1` 结尾的基础 URL，不要填写完整 `/messages` URL |
 | `provider.credential` | `VISION_API_KEY` | DSH Credential 引用，不是密钥值 |
 | `provider.model` | `gemini-3.6-flash` | 远程工具使用的多模态模型名 |
+| `provider.protocol` | `openai` | `openai` 发送 Chat Completions 请求；`anthropic` 发送原生 Messages 请求 |
+| `provider.anthropicThinking` | `omit` | Anthropic thinking 字段。`omit` 不发送 thinking 字段，兼容性最好；仅当所选模型明确支持时使用 `disabled` 或 `adaptive`，提供方返回 HTTP 400 时应先恢复 `omit`。 |
+| `provider.userAgent` | 浏览器兼容默认值 | 视觉请求和显式连接测试发送的 User-Agent；可为提供方或代理兼容性覆盖 |
 | `language` | `zh` | 视觉输出语言：`zh` 或 `en` |
 | `timeoutMs` | `60000` | 完整操作截止时间，1000-600000 毫秒；每个工具可请求更窄的覆盖值 |
 | `maxImageBytes` | `10485760` | 每张输入图片的编码字节上限 |
@@ -239,13 +257,9 @@ Bundle 默认使用 managed 运行时。Profile patch 可以覆盖提供方与�
 
 ### Credential
 
-通过 DSH Credentials 创建或替换引用指向的密钥：
+Web 设置页的只写 **API 密钥** 输入框直接接收真实密钥。留空表示保留现有密钥；填写后保存，会把密钥写入高级设置中的 **凭据名称**，默认名称是 `VISION_API_KEY`。Headless 部署可以在 `$DSH_HOME/.credentials.yaml` 中预置同名引用。
 
-```sh
-dsh credentials set VISION_API_KEY
-```
-
-Settings 只保存引用，不保存值。每次远程操作都会重新解析引用，并只把值注入对应子进程环境。插件排除用户 `.env`、checkout `.env`、`PYTHONPATH`、`PYTHONHOME`、`VIRTUAL_ENV` 和用户 site-packages，避免环境中的 Python 或上游配置覆盖选定的 DSH 提供方。日志、错误、工具结果、产物元数据和 Settings 响应都不包含密钥。
+Settings 只保存引用，不保存值。浏览器不会读取已保存的密钥，保存成功后输入框也会立即清空而不是回显。每次远程操作都会重新解析引用，并只把值注入对应子进程环境。插件排除用户 `.env`、checkout `.env`、`PYTHONPATH`、`PYTHONHOME`、`VIRTUAL_ENV` 和用户 site-packages，避免环境中的 Python 或上游配置覆盖选定的 DSH 提供方。日志、错误、工具结果、产物元数据和 Settings 响应都不包含密钥。
 
 ### Managed 与 external 运行时
 
@@ -262,15 +276,15 @@ External 模式用于开发或受控部署：
       python: python3.12
 ```
 
-该路径必须是与打包 manifest 一致的导出副本，或 commit `c27d1a300962b553c0884993c575cd3e819465ce` 的干净 Git checkout 根目录。插件拒绝已修改的 tracked 文件和 untracked 文件，因为它们可能改变或遮蔽固定 Python 行为。
+该路径必须是与打包 manifest 一致的导出副本，或 commit `bc9803d7d6300c864d17460ecbb33540b26638e0` 的干净 Git checkout 根目录。插件拒绝已修改的 tracked 文件和 untracked 文件，因为它们可能改变或遮蔽固定 Python 行为。
 
 ## Web Settings
 
-Web Profile 会注册 Vision Toolkit Settings 分区，可配置提供方 URL、Credential 引用、模型、语言、超时、字节/像素限制、并发数、运行时模式、Python 覆盖值、external 源码路径和允许目录。该页面还会显示插件/上游版本、当前运行时 generation、不含密钥的 Credential configured/source/writable 状态、运行时路径、健康检查结果和产物路由可用性。
+Web Profile 会注册 Vision Toolkit Settings 分区，可配置提供方 URL、Credential 引用、模型、OpenAI/Anthropic 协议、Anthropic thinking 模式、User-Agent、语言、超时、字节/像素限制、并发数、运行时模式、Python 覆盖值、external 源码路径和允许目录。该页面还会显示插件/上游版本、当前运行时 generation、不含密钥的 Credential configured/source/writable 状态、运行时路径、健康检查结果和产物路由可用性。
 
 “保存并应用”会验证完整配置，准备候选 Python/上游运行时，提交 Settings revision，最后才原子切换 generation。候选被拒绝时，之前的 generation 继续服务，页面也会把这种状态与运行时确实不可用区分开来。“重新加载”始终恢复后端已保存的权威值，即使 revision 没有变化也会丢弃被拒绝的浏览器草稿。初始启动无法准备运行时时，Settings 路由仍可用于提交有效配置并激活首个 generation。陈旧浏览器 revision 不会覆盖较新的保存结果，而是返回冲突；刷新后再重试。只读 Settings 提供方允许查看和健康检查，但禁用保存。
 
-“运行健康检查”只执行本地检查。“测试连接”是显式操作，会把已配置 Credential 发送到 `GET /models`；它不会上传图片，也不会创建 completion。插件加载和普通 Settings 读取不会发送该请求。
+“运行健康检查”只执行本地检查。“测试连接”是显式操作，会把已配置 Credential 发送到 `GET /models`；OpenAI 使用 Bearer 认证，Anthropic 使用 `x-api-key` 与 `anthropic-version`。该检查不会上传图片，也不会创建 completion。插件加载和普通 Settings 读取不会发送该请求。
 
 健康检查、连接测试以及插件/上游版本检查属于 Web Settings 管理能力，而不是模型工具，因此其 schema 永远不会占用 agent 请求上下文。
 
@@ -328,7 +342,7 @@ npm run example:ui-restoration:write
 | 症状 | 解决方法 |
 |---|---|
 | `Model "..." does not support image input. (attachment-error)` | 图片走了 DSH 的模型原生附件通道，纯文本模型会在 Skill 或 Vision Toolkit 运行前拒绝该轮。请使用 DSH Paste Input 的附件按钮、粘贴或拖放流程，让文件先复制到会话工作区并以路径形式进入消息，再调用 `/vision-tools`。安装或升级任一浏览器插件后，需要重启 Web Profile 并刷新页面。 |
-| Credential 显示缺失 | 执行 `dsh credentials set <REF>`，确认 `provider.credential` 指向该引用，再重新运行健康检查。本地工具不需要它。 |
+| Credential 显示缺失 | 在 Web 设置页的 **API 密钥** 中粘贴密钥，确认高级设置中的 **凭据名称** 与 `provider.credential` 一致，保存后重新运行健康检查。Headless 部署可以在 `$DSH_HOME/.credentials.yaml` 中预置同名引用。本地工具不需要它。 |
 | 运行时准备失败 | 查看 Settings 中的运行时错误，检查 Python 3.11+、软件包缓存/网络、磁盘权限和精确 external 固定版本。修正候选后再保存；当前 generation 不受影响。 |
 | 找不到 Chrome | 安装 Chrome、Chromium 或 Edge，或让其中一个可被运行环境发现。只有 `vision_html_screenshot` 不可用。 |
 | macOS 弹出钥匙串对话框 | 确认安装的是当前构建产物，且没有遗留的外部 `html_shot`/headless Chrome 进程。当前启动使用 mock keychain 和一次性 profile；取消对话框，不要重置登录钥匙串。 |
@@ -343,14 +357,15 @@ npm run example:ui-restoration:write
 ## 开发与验证
 
 ```sh
-npm run verify:portable
+pnpm install --frozen-lockfile --trust-lockfile
+pnpm run verify:portable
 pnpm run build
 pnpm test
 pnpm run example:ui-restoration
 pnpm pack --dry-run
 ```
 
-`npm run verify:portable` 是不依赖外部开发包的可移植验证门禁：验证上游快照、package 元数据与 exports、已提交 JavaScript 语法、README 链接和图片、必需的开源门面文件、social preview 尺寸以及 dry-run tarball。完整 TypeScript 构建和 134 项测试会在 DeepSeek Harness 源码树中运行，本 checkout 需位于其中的 `dsh-vision-toolkit/`，以使用对应的 peer API 类型和真实 Profile fixture。
+`pnpm run verify:portable` 是不依赖外部开发包的可移植验证门禁：验证上游快照、package 元数据与 exports、已提交 JavaScript 语法、README 链接和图片、必需的开源门面文件、social preview 尺寸以及 dry-run tarball。完整 TypeScript 构建和测试会在这个独立 checkout 中直接使用 lockfile 锁定的 DSH `0.1.0-rc.6` registry 包；客户端构建还通过独立 compiler face 验证这些包的公开 exports，不使用内部路径 alias。PATH 中存在兼容的 `dsh` 与 `pnpm` 时会执行真实 Profile 验收，CI 会强制要求该路径，而不会静默跳过。
 
 `pnpm run build` 会先验证 vendored manifest，再生成 JavaScript、声明文件和 loader 兼容 Web 客户端。本包提交 `lib/`，因此从 checkout 安装时不要求消费方构建。无真实 Key 的真实 Profile 测试会安装到干净 `DSH_HOME`、启动 Headless、通过真实工具调用执行全部五个 P0 工具和具有代表性的 P1 本地/远程工具、验证禁用与重新启用行为，并卸载 Bundle。每项 P0/P1 需求对应的实现与验证位置见[需求追踪参考](docs/requirements-traceability/README.md)。
 
@@ -358,12 +373,12 @@ pnpm pack --dry-run
 
 ## 项目状态与范围
 
-版本 `0.1.2` 是当前 GitHub 私有发布。P0 和 P1 是本包的产品承诺。P2 是设计门槛：至少一个独立插件消费内部能力形态前，不发布稳定 `ctx.visionToolkit` 服务、能力发现 API 或提供方生态。Web 上传、拖拽、摄像头/视频/音频/文档输入、交互式标注框编辑、GUI 自动点击、远程服务集群、模型路由、模型投票和跨会话视觉缓存不属于当前产品范围。
+版本 `0.1.4` 是当前公开 npm 发布。P0 和 P1 是本包的产品承诺。P2 是设计门槛：至少一个独立插件消费内部能力形态前，不发布稳定 `ctx.visionToolkit` 服务、能力发现 API 或提供方生态。Web 上传、拖拽、摄像头/视频/音频/文档输入、交互式标注框编辑、GUI 自动点击、远程服务集群、模型路由、模型投票和跨会话视觉缓存不属于当前产品范围。
 
 ## 社区与关于
 
 - 提交代码、协议或上游快照变更前，请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 可复现缺陷、范围明确的功能建议和使用问题请提交到 [GitHub Issues](https://github.com/dsh-external/dsh-vision-toolkit/issues)；如何选择渠道见 [SUPPORT.md](SUPPORT.md)。
+- 可复现缺陷、范围明确的功能建议和使用问题请提交到 [GitHub Issues](https://github.com/Anionex/dsh-vision-toolkit/issues)；如何选择渠道见 [SUPPORT.md](SUPPORT.md)。
 - 安全漏洞必须按 [SECURITY.md](SECURITY.md) 私下报告，不要创建公开 Issue。
 - 版本与兼容性变化记录在 [CHANGELOG.md](CHANGELOG.md)。
 - 可选赞助方式与用途见 [FUNDING.md](FUNDING.md)；赞助不购买路线图优先级或私有支持。
@@ -371,6 +386,8 @@ pnpm pack --dry-run
 - 如果 `agent-vision-toolkit` 的算法或方法节省了时间，欢迎为上游 star、分享、贡献或赞助；DSH 专属缺陷和集成需求请提交到本仓库。
 
 [`agent-vision-toolkit`](https://github.com/Anionex/agent-vision-toolkit) 由 [Anionex](https://anionex.me/) 创建。本仓库维护它面向 DeepSeek Harness 的原生集成：DSH 侧负责生命周期、安全、结构化 schema、Credentials、产物和 Web 展示；视觉算法与可复用 playbook 继续由上游项目维护。
+
+如果你想了解我后续的更多工作，欢迎在 [X](https://x.com/anion_ex) 或 [GitHub](https://github.com/Anionex) 关注我。
 
 ## 许可证
 

@@ -12,10 +12,10 @@
 |---|---|
 | 上游仓库 | https://github.com/LAN-TINA-WS/dsh-gui-customization |
 | 作者 | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) |
-| 收录版本 | `0.5.2` |
-| 上游 commit | `092e181`(docs: GitHub direct install as primary method (subdirectory path); tag `v0.5.2` = `3b77c12`) |
+| 收录版本 | `0.6.2` |
+| 上游 commit | `c510ba2`(chore: bump version to 0.6.2; tag `v0.6.2`) |
 | License | MIT |
-| 功能 | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义、氛围光、图片/视频背景、配色导入导出、中英双语;入口在「设置 → 界面设定」 |
+| 功能 | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景、配色导入导出、中英双语;入口在「设置 → 界面设定」 |
 
 ## 收录说明
 

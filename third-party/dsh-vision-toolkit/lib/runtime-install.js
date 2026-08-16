@@ -31,19 +31,18 @@ export function displayCommand(command) {
 function sha256(bytes) {
     return createHash('sha256').update(bytes).digest('hex');
 }
-function isolatedPythonEnv(home) {
+export function isolatedPythonEnvironment(home) {
     return {
         HOME: home,
-        // Windows Store/WindowsApps Python resolves its own install layout through
-        // USERPROFILE; redirecting it breaks venv ensurepip (exit 101). Keep the
-        // real user profile on Windows while still isolating HOME/LOCALAPPDATA.
-        USERPROFILE: process.platform === 'win32' ? process.env.USERPROFILE : home,
+        USERPROFILE: home,
         LOCALAPPDATA: home,
         PYTHONHOME: undefined,
         PYTHONPATH: undefined,
         VIRTUAL_ENV: undefined,
         PYTHONDONTWRITEBYTECODE: '1',
+        PYTHONIOENCODING: 'utf-8',
         PYTHONNOUSERSITE: '1',
+        PYTHONUTF8: '1',
     };
 }
 async function runCollected(ctx, argv, cwd, options = {}) {
@@ -162,7 +161,7 @@ async function pythonMetadata(ctx, command, cwd) {
     let result;
     try {
         result = await runCollected(ctx, [command.program, ...command.prefix, '-c', script], cwd, {
-            env: isolatedPythonEnv(cwd),
+            env: isolatedPythonEnvironment(cwd),
         });
     }
     catch {
@@ -232,7 +231,7 @@ async function dependencyVersions(ctx, python, cwd) {
     let result;
     try {
         result = await runCollected(ctx, [python.program, ...python.prefix, '-c', script], cwd, {
-            env: isolatedPythonEnv(cwd),
+            env: isolatedPythonEnvironment(cwd),
         });
     }
     catch (error) {
@@ -398,7 +397,7 @@ async function prepareManaged(ctx, config, manifest) {
     }
     const staging = await mkdtemp(join(parent, '.prepare-'));
     const installEnv = {
-        ...isolatedPythonEnv(cleanHome),
+        ...isolatedPythonEnvironment(cleanHome),
         UV_CACHE_DIR: join(stateRoot, 'uv-cache'),
     };
     const heartbeat = setInterval(() => {
@@ -413,7 +412,9 @@ async function prepareManaged(ctx, config, manifest) {
             try {
                 const uv = await runCollected(ctx, ['uv', '--version'], stateRoot, { env: installEnv });
                 if (uv.exitCode === 0 && !uv.timedOut) {
-                    const create = await runCollected(ctx, ['uv', 'venv', '--python', bootstrap.command.program, staging], stateRoot, { timeoutMs: PREPARE_TIMEOUT_MS, env: installEnv });
+                    const executableEnv = Object.fromEntries(Object.entries(installEnv).filter((entry) => entry[1] !== undefined));
+                    const interpreter = await ctx.subprocess.resolveExecutable(bootstrap.command.program, executableEnv);
+                    const create = await runCollected(ctx, ['uv', 'venv', '--python', interpreter, staging], stateRoot, { timeoutMs: PREPARE_TIMEOUT_MS, env: installEnv });
                     if (create.exitCode !== 0 || create.timedOut) {
                         throw new VisionToolkitError('runtime', `uv failed to create the managed runtime: ${create.stderr.trim()}`);
                     }

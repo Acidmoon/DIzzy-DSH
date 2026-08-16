@@ -6,7 +6,7 @@
  */
 import z from 'schemastery';
 import { type SidebarPrefs } from './prefs-shared.ts';
-export { SIDEBAR_PREFS_DEFAULTS, SIDEBAR_PREFS_NS, WIDTH_PERCENT_DEFAULT, WIDTH_PERCENT_MAX, WIDTH_PERCENT_MIN, type SidebarPrefs, } from './prefs-shared.ts';
+export { SIDEBAR_PREFS_DEFAULTS, SIDEBAR_PREFS_NS, TERMINAL_FONT_SIZE_DEFAULT, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN, TITLE_BAR_STRIP_DEFAULT, TITLE_BAR_STRIP_MAX, TITLE_BAR_STRIP_MIN, WIDTH_PERCENT_DEFAULT, WIDTH_PERCENT_MAX, WIDTH_PERCENT_MIN, type SidebarPrefs, } from './prefs-shared.ts';
 /** Tunable sidebar host limits (every field optional; defaults fill in). */
 export interface SidebarConfig {
     /** Read cap of one text file (bytes); larger files return truncated. */

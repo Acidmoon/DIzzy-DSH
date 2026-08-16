@@ -9,12 +9,12 @@
 
 ## 现有补丁
 
-### `patches/dsh-vision-toolkit-exposure.patch`(尚未生成,迁移时生成)
+### `patches/dsh-vision-toolkit-exposure.patch`
 
 **插件**:dsh-vision-toolkit
-**目标文件**:`third-party/dsh-vision-toolkit/lib/exposure.js`
+**目标文件**:`third-party/dsh-vision-toolkit/src/exposure.ts`、`third-party/dsh-vision-toolkit/lib/exposure.js`
 **目的**:视觉工具不再全部依赖 vision-tools skill 加载后才注入;高频核心工具常驻,任何会话创建即可直接调用。
-**登记日期**:2026-08-14(已应用在快照内,补丁文件待「一次性迁移」步骤 1 生成)
+**登记日期**:2026-08-16(已对照上游 v0.1.7/`29850a8` 重放并入库补丁文件)
 
 **改动内容**:
 

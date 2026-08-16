@@ -1,41 +1,45 @@
 # dsh-vision-toolkit —— 收录的第三方插件
 
-> 本目录是 **dsh-vision-toolkit 上游发布包快照**(源自本机本地 checkout
-> `E:\vibecoding\dsh-vision-toolkit`),由 Dizzy-DSH 收录以便"克隆即装",
-> 并以主插件 `dependencies` 的 `file:./third-party/...` 依赖形式随主插件安装。
-> 对上游的修改请到上游仓库提交,本目录只做同步,不做修改。
+> 本目录是 **dsh-vision-toolkit 上游仓库快照**,由 Dizzy-DSH 收录以便
+> "克隆即装",并以主插件 `dependencies` 的 `file:./third-party/...`
+> 依赖形式随主插件安装。
+>
+> **本快照含本地补丁**,不是上游原版。功能修改应尽量回馈上游;合集侧的
+> 持久载体是 `patches/dsh-vision-toolkit-exposure.patch`,覆盖更新后必须重放。
 
 ## 上游信息
 
 | 项 | 值 |
 |---|---|
 | 上游仓库 | https://github.com/Anionex/dsh-vision-toolkit |
-| 收录版本 | `0.1.2` |
-| 上游 commit | `8d35621`(docs: keep use-case structure and use DSH screenshots for image Q&A) |
+| 收录版本 | `0.1.7`(npm 包 `@anionex/dsh-vision-toolkit@0.1.7`) |
+| 上游 commit | `29850a8`(release: prepare v0.1.7; tag `v0.1.7`) |
 | License | MIT |
-| 功能 | DSH 视觉工程工具集:`vision_glance / ground / detect / crop / trace / pixel_diff` 等原生视觉工具,基于上游 [agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit)(`v0.1.0+snapshot.c27d1a3`) |
+| 功能 | DSH 视觉工程工具集:`vision_glance / ground / detect / crop / trace / pixel_diff` 等原生视觉工具,基于上游 [agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit)(`v0.1.0+snapshot.bc9803d`) |
+| 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-vision-toolkit-exposure.patch` |
 
 ## 收录说明
 
-- 快照取自本机已安装的本地 checkout,**包含本地未提交改动**(`src/` 与 `lib/` 中
-  `web.ts / upstream.ts / runtime-install.ts` 及对应产物,整文件格式层面重排,
-  功能与上游 `0.1.2` 一致)。
-- 已排除 `.git`、`node_modules`、`__pycache__`。
+- 快照取自上游 `main`(`29850a8` / v0.1.7),排除 `.git`、`node_modules`、`__pycache__`。
+- 包名已从停用的 `@dsh-external/dsh-vision-toolkit` 迁到 `@anionex/dsh-vision-toolkit`;
+  合集 `package.json` 与 `cordis.patch.yml` 必须跟新包名。
+- 本地补丁只改 `src/exposure.ts` 与已构建的 `lib/exposure.js`:四个核心视觉工具
+  (`vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff`)随会话常驻。
 
 ## 更新方式
 
 ```bash
-# 在上游仓库目录拉取最新
-git -C <dsh-vision-toolkit 本地路径> pull
-# 重新同步快照(排除 .git / node_modules / __pycache__)
-robocopy <dsh-vision-toolkit 本地路径> third-party/dsh-vision-toolkit /E /XD .git node_modules __pycache__ /XF *.tgz
-# 更新后同步修改上方"收录版本 / 上游 commit"并提交
+git clone --depth 1 https://github.com/Anionex/dsh-vision-toolkit.git <tmp>
+robocopy <tmp> third-party/dsh-vision-toolkit /MIR /XD .git node_modules __pycache__ /XF UPSTREAM.md
+node scripts/reapply-third-party-patches.mjs dsh-vision-toolkit
+# 更新后同步修改上方「收录版本 / 上游 commit」以及
+# docs/THIRD-PARTY-SNAPSHOTS.md、docs/THIRD-PARTY-UPDATE.md
 ```
 
 ## 本地安装
 
 本插件**无需单独安装**:它是主插件 `dizzy-dsh` 的 `package.json`
-`dependencies` 声明(`"@dsh-external/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit"`),
+`dependencies` 声明(`"@anionex/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit"`),
 安装主插件时随依赖自动装入:
 
 ```bash
@@ -45,3 +49,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 重启 `dsh web` 生效;挂载由主插件 `cordis.patch.yml` 的 entry
 (id `dsh-vision-toolkit`)完成,无需手改 profile。卸载随主插件
 `remove dizzy-dsh` 一起移除。
+
+> 本机若还留着单独安装的 `@dsh-external/dsh-vision-toolkit`,先
+> `dsh plugin --profile web remove @dsh-external/dsh-vision-toolkit`,
+> 再重装合集,否则会撞旧包名或留下失效 junction。

@@ -2,12 +2,15 @@
 
 # DSH Vision Toolkit
 
-[![Release v0.1.2](https://img.shields.io/badge/release-v0.1.2-5B4CF0?style=flat-square)](https://github.com/dsh-external/dsh-vision-toolkit/releases/tag/v0.1.2)
-[![Verified: 134 tests](https://img.shields.io/badge/verified-134%20tests-2EA44F?style=flat-square)](tests)
+[![X (Twitter)](https://img.shields.io/badge/-@anion__ex-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/anion_ex)
+[![Release v0.1.7](https://img.shields.io/badge/release-v0.1.7-5B4CF0?style=flat-square)](https://github.com/Anionex/dsh-vision-toolkit/releases/tag/v0.1.7)
+[![Verified: 168 tests](https://img.shields.io/badge/verified-168%20tests-2EA44F?style=flat-square)](tests)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0B7285?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%5E22.19%20%7C%20%3E%3D24-339933?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](runtime/requirements.lock)
 [![DSH profiles](https://img.shields.io/badge/DSH-Web%20%2B%20Headless-5B4CF0?style=flat-square)](cordis.patch.yml)
+
+**Install:** `dsh plugin --profile web add @anionex/dsh-vision-toolkit`
 
 **DSH Vision Toolkit brings [`agent-vision-toolkit`](https://github.com/Anionex/agent-vision-toolkit) into DeepSeek Harness as a native Profile Bundle.**
 
@@ -70,7 +73,7 @@ The checked-in UI-restoration workflow renders an intentionally inaccurate HTML 
 | Verified surface | Evidence |
 |---|---|
 | Product scope | 10 independent visual tools, matching `vision-tools` Skill, Artifacts, dedicated Web cards, and live Settings |
-| Automated coverage | 17 Vitest files / 134 passing tests, plus a dependency-free portable package check |
+| Automated coverage | 17 Vitest files / 136 passing tests, plus a dependency-free portable package check |
 | Real profiles | Clean temporary Web and Headless installation, activation, disable, re-enable, and uninstall |
 | Visual acceptance | Reproducible HTML screenshot → pixel diff example with a final `0%` difference |
 
@@ -85,16 +88,16 @@ The checked-in UI-restoration workflow renders an intentionally inaccurate HTML 
 
 ## Quick start
 
-Prerequisites: access to this private repository, DeepSeek Harness, Python 3.11+, and `pnpm` available to `dsh plugin`. Clone the release checkout with your authenticated GitHub credentials, add it to the profiles you use, and confirm the bundle row:
+Prerequisites: DeepSeek Harness `0.1.0-rc.6` or a compatible later `0.1.x` release, Python 3.11+, and `pnpm` available to `dsh plugin`. Install the published bundle from npm, add it to the profiles you use, and confirm the bundle row:
 
 ```sh
-git clone https://github.com/dsh-external/dsh-vision-toolkit.git
-PLUGIN="$PWD/dsh-vision-toolkit"
-dsh plugin --profile web add "$PLUGIN"
-dsh plugin --profile headless add "$PLUGIN"
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+dsh plugin --profile headless add @anionex/dsh-vision-toolkit
 dsh --profile web --dump-config | grep vision-toolkit
 dsh --profile headless --dump-config | grep vision-toolkit
 ```
+
+Legacy profiles must use `nodeLinker: hoisted` and `autoInstallPeers: false` in their `pnpm-workspace.yaml`. An updated DSH launcher repairs these owned settings before `dsh plugin` runs; when using an older launcher, set them before installation so pnpm does not assemble a second Harness dependency graph inside the profile.
 
 Restart a running Web profile, open **Settings → Vision Toolkit**, select a DSH Credential for remote tools, and explicitly run **Test connection**. In a conversation, make an image available as a workspace path, invoke `/vision-tools`, and ask the Agent to call a specific `vision_*` tool. Local crop, trace, pixel, color, foreground, and HTML operations do not require a visual API credential.
 
@@ -117,7 +120,7 @@ flowchart LR
     Artifacts --> Web["Preview, download, or open file"]
 ```
 
-Tool definitions call one runtime; the runtime validates paths, limits, credentials, cancellation, and deadlines before dispatching to the pinned upstream snapshot or configured OpenAI-compatible vision endpoint. Web presentation consumes the same structured results and Artifact descriptors, so it does not change Headless behavior. Health, connection testing, and version inspection stay in Settings rather than model tool schemas.
+Tool definitions call one runtime; the runtime validates paths, limits, credentials, cancellation, and deadlines before dispatching to the pinned upstream snapshot or configured vision provider endpoint. Web presentation consumes the same structured results and Artifact descriptors, so it does not change Headless behavior. Health, connection testing, and version inspection stay in Settings rather than model tool schemas.
 
 ## Tools
 
@@ -147,7 +150,7 @@ Health checks, connection testing, and plugin/upstream version inspection are ad
 - DeepSeek Harness with a Web or Headless profile and `pnpm` available to `dsh plugin`.
 - Python 3.11 or newer. Managed mode creates an isolated environment, so users do not install the upstream CLI or Python packages manually.
 - Network access on the first managed-runtime activation unless the exact packages in `runtime/requirements.lock` are already available in the configured package cache.
-- An OpenAI-compatible vision endpoint and DSH Credential for `vision_glance`, `vision_ground`, `vision_detect`, and non-split-only long-screenshot OCR. Local tools remain usable without that credential.
+- An OpenAI-compatible or Anthropic vision endpoint and DSH Credential for `vision_glance`, `vision_ground`, `vision_detect`, and non-split-only long-screenshot OCR. Local tools remain usable without that credential.
 - Chrome, Chromium, or Edge only for `vision_html_screenshot`; all other tools remain available when no supported browser is installed.
 - PNG, JPEG, GIF, or WebP inputs inside the session workspace or an explicitly configured `allowedDirs` root.
 
@@ -158,8 +161,8 @@ Health checks, connection testing, and plugin/upstream version inspection are ad
 Install the bundle into each profile that should expose it:
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-vision-toolkit
-dsh plugin --profile headless add /path/to/dsh-vision-toolkit
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+dsh plugin --profile headless add @anionex/dsh-vision-toolkit
 dsh --profile web --dump-config | grep vision-toolkit
 dsh --profile headless --dump-config | grep vision-toolkit
 ```
@@ -181,11 +184,20 @@ Remove the flag or set it to `false` to re-enable the plugin. Disposal first can
 
 ### Upgrade
 
+**Migrating from the retired `@dsh-external/dsh-vision-toolkit`:** the npm package now lives under the `@anionex` scope. If you installed the retired package, do **not** run `update` on it — that account cannot publish this release. Migrate to the new package name and restart the Web profile:
+
+```sh
+dsh plugin --profile web remove @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web add @anionex/dsh-vision-toolkit
+```
+
+After restarting, Settings → Vision should report plugin version **0.1.7**.
+
 For a registry installation, update the dependency through the profile package manager:
 
 ```sh
-dsh plugin --profile web update @dsh-external/dsh-vision-toolkit
-dsh plugin --profile headless update @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web update @anionex/dsh-vision-toolkit
+dsh plugin --profile headless update @anionex/dsh-vision-toolkit
 ```
 
 For a local path installation, run `add` again against the replacement checkout or tarball. Settings remain in the profile's Settings provider. A candidate runtime is fully validated and prepared before it is persisted and made active; a failed or obsolete concurrent candidate cannot replace the current serving generation.
@@ -193,8 +205,8 @@ For a local path installation, run `add` again against the replacement checkout 
 ### Uninstall
 
 ```sh
-dsh plugin --profile web remove @dsh-external/dsh-vision-toolkit
-dsh plugin --profile headless remove @dsh-external/dsh-vision-toolkit
+dsh plugin --profile web remove @anionex/dsh-vision-toolkit
+dsh plugin --profile headless remove @anionex/dsh-vision-toolkit
 ```
 
 `dsh plugin remove` removes both the dependency and its bundle layer. The profile no longer exposes the activation bootstrap, Agent-scoped Vision Toolkit tools, or Skill entries. Managed cache data may be deleted separately when no profile uses the package; it is not active configuration and cannot register anything by itself.
@@ -210,6 +222,9 @@ The bundle defaults to the managed runtime. A profile patch can override the pro
       baseUrl: https://api.inferera.com/v1
       credential: VISION_API_KEY
       model: gemini-3.6-flash
+      protocol: openai
+      anthropicThinking: omit
+      userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36
     language: zh
     timeoutMs: 60000
     maxImageBytes: 10485760
@@ -224,9 +239,12 @@ The bundle defaults to the managed runtime. A profile patch can override the pro
 
 | Field | Default | Contract |
 |---|---|---|
-| `provider.baseUrl` | `https://api.inferera.com/v1` | OpenAI-compatible base URL; normalized without trailing slashes |
+| `provider.baseUrl` | `https://api.inferera.com/v1` | Provider API base URL, normalized without trailing slashes; for Anthropic use a base ending in `/v1`, not the full `/messages` URL |
 | `provider.credential` | `VISION_API_KEY` | DSH Credential reference, never a secret value |
 | `provider.model` | `gemini-3.6-flash` | Multimodal model name sent to remote tools |
+| `provider.protocol` | `openai` | `openai` sends Chat Completions requests; `anthropic` sends native Messages requests |
+| `provider.anthropicThinking` | `omit` | Anthropic thinking field. `omit` sends no thinking field and has the broadest compatibility. Use `disabled` or `adaptive` only when the selected model documents that mode; restore `omit` first if the provider returns HTTP 400. |
+| `provider.userAgent` | browser-compatible default | User-Agent sent by vision requests and explicit connection tests; override it for provider or proxy compatibility |
 | `language` | `zh` | Vision output language: `zh` or `en` |
 | `timeoutMs` | `60000` | Whole-operation deadline, 1000-600000 ms; each tool may request a narrower override |
 | `maxImageBytes` | `10485760` | Encoded-byte limit per input image |
@@ -239,13 +257,9 @@ The bundle defaults to the managed runtime. A profile patch can override the pro
 
 ### Credentials
 
-Create or replace the referenced secret through DSH Credentials:
+The Web Settings page accepts the actual value in its write-only **API key** field. Leave that field blank to retain an existing key; saving a non-empty value writes it under the advanced **Credential name** reference, which defaults to `VISION_API_KEY`. Headless deployments can pre-provision the same reference in `$DSH_HOME/.credentials.yaml`.
 
-```sh
-dsh credentials set VISION_API_KEY
-```
-
-The reference is stored in Settings; the value is not. Remote operations resolve it once per call and inject it only into that subprocess environment. The plugin excludes user `.env` files, checkout `.env` files, `PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`, and user site-packages so ambient Python or upstream configuration cannot override the selected DSH provider. Logs, errors, tool results, Artifact metadata, and Settings responses never contain the secret.
+Settings store only the reference, never the value. The browser does not receive a stored value, and a successful save clears the field instead of echoing it. Remote operations resolve the reference once per call and inject the value only into that subprocess environment. The plugin excludes user `.env` files, checkout `.env` files, `PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`, and user site-packages so ambient Python or upstream configuration cannot override the selected DSH provider. Logs, errors, tool results, Artifact metadata, and Settings responses never contain the secret.
 
 ### Managed and external runtimes
 
@@ -262,15 +276,15 @@ External mode is intended for development or controlled deployments:
       python: python3.12
 ```
 
-The path must be an exported copy matching the packaged manifest or the root of a clean Git checkout at `c27d1a300962b553c0884993c575cd3e819465ce`. Modified tracked files and untracked files are rejected because they can change or shadow the pinned Python behavior.
+The path must be an exported copy matching the packaged manifest or the root of a clean Git checkout at `bc9803d7d6300c864d17460ecbb33540b26638e0`. Modified tracked files and untracked files are rejected because they can change or shadow the pinned Python behavior.
 
 ## Web Settings
 
-The Web profile registers a Vision Toolkit Settings section for the provider URL, Credential reference, model, language, timeout, byte/pixel limits, concurrency, runtime mode, Python override, external source path, and allowed directories. It also shows plugin/upstream versions, the active runtime generation, non-secret Credential configured/source/writable facts, runtime paths, health results, and Artifact-route availability.
+The Web profile registers a Vision Toolkit Settings section for the provider URL, Credential reference, model, OpenAI/Anthropic protocol, Anthropic thinking mode, User-Agent, language, timeout, byte/pixel limits, concurrency, runtime mode, Python override, external source path, and allowed directories. It also shows plugin/upstream versions, the active runtime generation, non-secret Credential configured/source/writable facts, runtime paths, health results, and Artifact-route availability.
 
 `Save and apply` validates the complete value, prepares the candidate Python/upstream runtime, commits the Settings revision, and only then atomically switches generations. A rejected candidate leaves the previous generation serving and is reported separately from a genuinely unavailable runtime. `Reload` always restores the authoritative saved value, even when its revision did not change, so a rejected browser draft is discarded. If initial startup cannot prepare a runtime, the Settings route remains available so a valid configuration can make the first generation operational. A stale browser revision receives a conflict instead of overwriting a newer save; reload before retrying. A read-only Settings provider allows inspection and health checks but disables saves.
 
-`Run health check` performs local checks only. `Test connection` is an explicit action that sends the configured Credential to `GET /models`; it uploads no image and creates no completion. Plugin load and ordinary Settings reads never make that request.
+`Run health check` performs local checks only. `Test connection` is an explicit action that sends the configured Credential to `GET /models`; OpenAI uses Bearer authentication, while Anthropic uses `x-api-key` and `anthropic-version`. The check uploads no image and creates no completion. Plugin load and ordinary Settings reads never make that request.
 
 Health, connection testing, and plugin/upstream version inspection are administrative Web Settings capabilities rather than model-facing tools, so their schemas never occupy an agent request.
 
@@ -328,7 +342,7 @@ The committed evidence records an initial `6.04%` difference across six non-zero
 | Symptom | Resolution |
 |---|---|
 | `Model "..." does not support image input. (attachment-error)` | The image used DSH's native model-attachment channel, so a text-only model rejected the turn before the Skill or Vision Toolkit could run. Use DSH Paste Input's attachment button, paste, or drop flow so the file is copied into the session workspace and represented by a path, then invoke `/vision-tools`. Restart the Web profile and reload the page after installing or upgrading either browser plugin. |
-| Credential reported missing | Run `dsh credentials set <REF>`, ensure `provider.credential` names that reference, then rerun health. Local-only tools do not need it. |
+| Credential reported missing | Paste the key into Web Settings **API key**, keep the advanced **Credential name** aligned with `provider.credential`, save, then rerun health. Headless deployments can provision the same reference in `$DSH_HOME/.credentials.yaml`. Local-only tools do not need it. |
 | Runtime preparation fails | Read the Settings runtime error, verify Python 3.11+, package-cache/network access, disk permissions, and the exact external pin. Save only after correcting the candidate; the active generation remains intact. |
 | Chrome is not found | Install Chrome, Chromium, or Edge or configure an environment where one is discoverable. Only `vision_html_screenshot` is unavailable. |
 | macOS displays a keychain dialog | Confirm the current built adapter is installed and no stale external `html_shot`/headless Chrome process is running. Current launches use a mock keychain and disposable profile; cancel the dialog rather than resetting the login keychain. |
@@ -343,14 +357,15 @@ The committed evidence records an initial `6.04%` difference across six non-zero
 ## Development and verification
 
 ```sh
-npm run verify:portable
+pnpm install --frozen-lockfile --trust-lockfile
+pnpm run verify:portable
 pnpm run build
 pnpm test
 pnpm run example:ui-restoration
 pnpm pack --dry-run
 ```
 
-`npm run verify:portable` is the dependency-free portable verification gate: it validates the vendored snapshot, package metadata and exports, committed JavaScript syntax, README links and images, required facade files, social-preview dimensions, and the dry-run tarball. The full TypeScript build and 134-test suite intentionally run with this checkout at `dsh-vision-toolkit/` inside a DeepSeek Harness source tree, where the peer API types and real profile fixtures live.
+`pnpm run verify:portable` is the dependency-free portable verification gate: it validates the vendored snapshot, package metadata and exports, committed JavaScript syntax, README links and images, required facade files, social-preview dimensions, and the dry-run tarball. The full TypeScript build and test suite run from this standalone checkout against the locked DSH `0.1.0-rc.6` registry packages; the client build also has a separate compiler face that resolves the packages' public exports without internal path aliases. The real Profile acceptance runs when compatible `dsh` and `pnpm` commands are on PATH, and CI requires that path instead of silently skipping it.
 
 `pnpm run build` verifies the vendored manifest before emitting JavaScript, declarations, and the loader-compatible Web client. The package commits `lib/`, so installation from a checkout does not require a consumer-side build. The keyless real-profile test installs into a clean `DSH_HOME`, boots Headless, executes all five P0 tools plus representative P1 local/remote tools through real tool calls, verifies disable and re-enable behavior, and uninstalls the bundle. See the [requirements traceability reference](docs/requirements-traceability/README.md) for the implementation and verification home of every P0/P1 requirement.
 
@@ -358,12 +373,12 @@ Update the upstream snapshot only through `pnpm run upstream:sync -- <checkout>`
 
 ## Project status and scope
 
-Version `0.1.2` is the current private GitHub release. P0 and P1 are product commitments in this package. P2 is a design threshold: no stable `ctx.visionToolkit` service, capability-discovery API, or provider ecosystem is published until at least one independent plugin consumes the internal capability shape. Web upload, drag-and-drop, camera/video/audio/document ingestion, interactive box editing, automatic GUI clicking, service clusters, model routing, model voting, and cross-session vision caches remain outside the current product.
+Version `0.1.4` is the current public npm release. P0 and P1 are product commitments in this package. P2 is a design threshold: no stable `ctx.visionToolkit` service, capability-discovery API, or provider ecosystem is published until at least one independent plugin consumes the internal capability shape. Web upload, drag-and-drop, camera/video/audio/document ingestion, interactive box editing, automatic GUI clicking, service clusters, model routing, model voting, and cross-session vision caches remain outside the current product.
 
 ## Community and About
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing code, protocol, or upstream-snapshot changes.
-- Use [GitHub Issues](https://github.com/dsh-external/dsh-vision-toolkit/issues) for reproducible bugs, focused feature requests, and usage questions; use [SUPPORT.md](SUPPORT.md) to choose the right channel.
+- Use [GitHub Issues](https://github.com/Anionex/dsh-vision-toolkit/issues) for reproducible bugs, focused feature requests, and usage questions; use [SUPPORT.md](SUPPORT.md) to choose the right channel.
 - Report vulnerabilities privately through the process in [SECURITY.md](SECURITY.md), never in a public issue.
 - Follow releases and compatibility notes in [CHANGELOG.md](CHANGELOG.md).
 - Optional sponsorship is described transparently in [FUNDING.md](FUNDING.md); support does not purchase roadmap priority or private support.
@@ -371,6 +386,8 @@ Version `0.1.2` is the current private GitHub release. P0 and P1 are product com
 - Star, share, contribute to, or sponsor `agent-vision-toolkit` if its algorithms or methods save time; DSH-specific bugs and integration requests belong in this repository.
 
 [`agent-vision-toolkit`](https://github.com/Anionex/agent-vision-toolkit) was created by [Anionex](https://anionex.me/). This repository maintains its native DeepSeek Harness integration: DSH owns lifecycle, security, structured schemas, Credentials, Artifacts, and Web presentation, while the upstream project remains the home of the visual algorithms and reusable playbooks.
+
+If you would like to follow my future work, [follow me on X](https://x.com/anion_ex) or [GitHub](https://github.com/Anionex).
 
 ## License
 

@@ -209,6 +209,29 @@
   padding-right: 40px;
 }
 
+/* ── Position compatibility mode (Windows native title bar) ────────────── */
+
+/* Windows frameless / hidden-title-bar windows draw the native caption
+   strip (minimize / maximize / close) at the window's top-right corner,
+   OVER the web content. When the user enables the "position compatibility"
+   pref, the sidebar yields the strip: the toggle cluster drops below it and
+   the right panel's content starts below it — the panel's surface still
+   spans the full height, so the caption buttons float over empty sidebar
+   fill (the VSCode hidden-title-bar look). The strip height is user-tunable
+   (`--dsh-title-bar-strip`, written by the Sidebar shell from
+   `titleBarStripPx`; 40px fallback). The bottom panel is unaffected: it
+   sits at the window's bottom, never under the top strip. */
+:global(body[data-dsh-title-bar-compat]) .toggleCluster {
+  top: calc(var(--dsh-title-bar-strip, 40px) + 3px);
+}
+
+:global(body[data-dsh-title-bar-compat]) .panel {
+  /* The caption strip is drawn over the panel's own top edge: keep the
+     surface full-height and push the content (the tab strip) below the
+     strip instead. .panelResize is absolutely positioned and unaffected. */
+  padding-top: var(--dsh-title-bar-strip, 40px);
+}
+
 /* The shared corner (both panels open): the intersection of the right
    panel's left edge and the bottom panel's top edge. Horizontal drags
    resize the width, vertical drags the height — the two panels drag
@@ -522,6 +545,21 @@
   white-space: nowrap;
 }
 
+/* One tab's descriptor badge (a count capped at 99+, or a short text). */
+.tabBadge {
+  flex: none;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font: var(--dsw-font-xxxs-strong-11);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-brand-primary);
+}
+
 .tabClose {
   display: inline-flex;
   align-items: center;
@@ -757,7 +795,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Binary / download-only files (pptx, OLE .doc/.xls/.ppt, unknown binaries):
+/* Binary / download-only files (legacy OLE .doc/.xls/.ppt, unknown binaries):
    a centered notice plus a download link — the user always gets the file. */
 .editorBinary {
   flex: 1;
@@ -1093,62 +1131,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Word preview: the document scrolls independently while the zoom control
-   stays pinned to the bottom edge. */
-.editorDocx {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--dsw-alias-bg-base);
-}
-
-.editorDocxViewport {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  background: var(--dsw-alias-bg-base);
-}
-
-/* docx-preview renders into a wrapper div with .docx className; the host
-   above scrolls while the wrapper holds the page flow. */
-.editorDocxWrap {
-  flex: none;
-  padding: 16px;
-}
-
-.editorDocxZoom {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 4px 10px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.editorDocxZoomHint,
-.editorDocxZoomValue {
-  flex: none;
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.editorDocxZoomValue {
-  width: 36px;
-  text-align: right;
-}
-
-.editorDocxZoomRange {
-  flex: 1;
-  min-width: 72px;
-  accent-color: var(--dsw-alias-brand-primary);
-  cursor: pointer;
-}
-
 .editorPdf {
   flex: 1;
   min-height: 0;
@@ -1205,94 +1187,6 @@
 
 :global(body[data-dsh-tab-dragging]) .editorPdfDragShield {
   pointer-events: auto !important;
-}
-
-.editorXlsx {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--dsw-alias-bg-base);
-}
-
-.editorUniverHost {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-
-.editorOfficeOverlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  background: var(--dsw-alias-bg-base);
-}
-
-.editorPptx {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--dsw-alias-bg-base);
-}
-
-.editorPptxToolbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
-}
-
-.editorPptxToolbar .editorDownloadLink {
-  margin-left: auto;
-}
-
-.editorPptxButton {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-strong-12);
-  cursor: pointer;
-}
-
-.editorPptxButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.editorPptxButton:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.editorPptxPosition {
-  min-width: 64px;
-  text-align: center;
-  font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.editorPptxStage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.editorPptxHost {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
 }
 
 /* ── Terminal ──────────────────────────────────────────────────────────── */
@@ -1368,6 +1262,22 @@
 .terminalRetry:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The PER-TAB error strip: fills one tab's content area (unlike
+   .boundaryError, the full-height fixed rail for shell-level crashes), so a
+   crashing viewer/editor never hides the toggle cluster or the other tabs. */
+.tabBoundaryError {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  overflow: auto;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* ── Git ───────────────────────────────────────────────────────────────── */

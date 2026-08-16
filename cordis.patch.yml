@@ -11,7 +11,7 @@
 #   - Client 半区:client-modules 按包名扫描 dsh.client 声明 + exports["./client"],
 #     自动把 client bundle 注入浏览器
 # 自有子包(plugins/*)经主包 dependencies 的 file: 依赖安装并提升到
-# profile 顶层 node_modules,与 @dsh-external/dsh-vision-toolkit 同构。
+# profile 顶层 node_modules,与 @anionex/dsh-vision-toolkit 同构。
 #
 # 新增插件:在 plugins/ 下建子包(自己的 package.json/main/client bundle),
 # 主包 package.json 加 file: 依赖,再在本文件加一行 entry。
@@ -50,7 +50,7 @@
     - id: better-sidebar
       name: 'dsh-better-sidebar'
     - id: dsh-vision-toolkit
-      name: '@dsh-external/dsh-vision-toolkit'
+      name: '@anionex/dsh-vision-toolkit'
 
     # GenUI:模型在回答正文内输出 dsh-ui 围栏(JSON 规格),浏览器端渲染
     # 为可交互组件(卡片/图表/表单/quiz/mermaid/3D),action 事件环回传模型。
