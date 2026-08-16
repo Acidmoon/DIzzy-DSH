@@ -91,7 +91,6 @@ describe('external pinned runtime preparation', () => {
     for (const spawn of service.spawns) {
       expect(spawn.env).toMatchObject({
         HOME: prepared.cleanHome,
-        USERPROFILE: prepared.cleanHome,
         PYTHONHOME: undefined,
         PYTHONPATH: undefined,
         VIRTUAL_ENV: undefined,
@@ -100,6 +99,12 @@ describe('external pinned runtime preparation', () => {
         PYTHONNOUSERSITE: '1',
         PYTHONUTF8: '1',
       })
+      if (process.platform !== 'win32') {
+        expect(spawn.env).toMatchObject({
+          USERPROFILE: prepared.cleanHome,
+          LOCALAPPDATA: prepared.cleanHome,
+        })
+      }
     }
   })
 

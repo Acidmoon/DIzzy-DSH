@@ -33,6 +33,15 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 **重放失败时的处理**:上游若已重构 exposure.js(如版本升级),补丁冲突 → 手动按上面 4 条改动适配新文件,
 更新补丁后重新提交。
 
+### `patches/dsh-vision-toolkit-windows-ensurepip.patch`
+
+**插件**:dsh-vision-toolkit
+**目标文件**:`third-party/dsh-vision-toolkit/src/runtime-install.ts`、`lib/runtime-install.js`、`tests/runtime-install.spec.ts`
+**目的**:Windows 微软商店版 Python 在 `USERPROFILE`/`LOCALAPPDATA` 被指到隔离 home 时,`python -m venv` 调 `ensurepip` 会以 101 退出,设置页显示「运行环境尚未就绪」。Windows 上不再重定向这两项,用户站点隔离仍靠 `PYTHONNOUSERSITE`。
+**登记日期**:2026-08-16
+
+**重放失败时的处理**:上游若已改隔离环境策略,按当前 Windows Store Python 行为适配后再更新本补丁。
+
 ### `patches/dsh-subscription-auth-local.patch`
 
 **插件**:dsh-subscription-auth

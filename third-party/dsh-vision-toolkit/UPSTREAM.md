@@ -16,15 +16,18 @@
 | 上游 commit | `29850a8`(release: prepare v0.1.7; tag `v0.1.7`) |
 | License | MIT |
 | 功能 | DSH 视觉工程工具集:`vision_glance / ground / detect / crop / trace / pixel_diff` 等原生视觉工具,基于上游 [agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit)(`v0.1.0+snapshot.bc9803d`) |
-| 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-vision-toolkit-exposure.patch` |
+| 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-vision-toolkit-exposure.patch` 与 `dsh-vision-toolkit-windows-ensurepip.patch` |
 
 ## 收录说明
 
 - 快照取自上游 `main`(`29850a8` / v0.1.7),排除 `.git`、`node_modules`、`__pycache__`。
 - 包名已从停用的 `@dsh-external/dsh-vision-toolkit` 迁到 `@anionex/dsh-vision-toolkit`;
   合集 `package.json` 与 `cordis.patch.yml` 必须跟新包名。
-- 本地补丁只改 `src/exposure.ts` 与已构建的 `lib/exposure.js`:四个核心视觉工具
-  (`vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff`)随会话常驻。
+- 本地补丁:
+  - `src/exposure.ts` 与已构建的 `lib/exposure.js`:四个核心视觉工具
+    (`vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff`)随会话常驻;
+  - `src/runtime-install.ts`:Windows 上不把 `USERPROFILE`/`LOCALAPPDATA` 指到隔离 home,
+    避免微软商店版 Python 的 `ensurepip` 以 101 退出。
 
 ## 更新方式
 

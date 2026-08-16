@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|---|
 | dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.5 | fd87f36 | 2026-08-16 | 无 |
 | dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 2026-08-14 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.7 | 29850a8 | 2026-08-16 | 有:exposure.ts/js(见 THIRD-PARTY-PATCHES.md) |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.7 | 29850a8 | 2026-08-16 | 有:exposure + windows-ensurepip(见 THIRD-PARTY-PATCHES.md) |
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | db4527a | 2026-08-16 | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 2026-08-15 | 有:local(见 THIRD-PARTY-PATCHES.md) |
 | dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.2 | c510ba2 | 2026-08-16 | 无 |
