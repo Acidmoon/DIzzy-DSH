@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 安装 Anchored Standard 预设(两阶段工具目录引导,来自 third-party 快照)。
 
