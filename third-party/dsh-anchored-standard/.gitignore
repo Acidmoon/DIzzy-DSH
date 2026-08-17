@@ -1,9 +1,0 @@
-node_modules/
-npm-debug.log*
-.DS_Store
-Thumbs.db
-.zcode/
-
-# One-shot verification harness artifacts (verify/run-verify.mjs)
-verify/patch.generated.yml
-verify/wd/
