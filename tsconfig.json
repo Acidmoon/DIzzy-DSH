@@ -1,0 +1,122 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "declaration": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "rootDir": "src",
+    "outDir": "lib",
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/dsh-client-ui-primitives": [
+        "../../.dsh/source/current/packages/client/ui-primitives/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-ui-primitives/*": [
+        "../../.dsh/source/current/packages/client/ui-primitives/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-system-prompt": [
+        "../../.dsh/source/current/packages/core/system-prompt/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-system-prompt/*": [
+        "../../.dsh/source/current/packages/core/system-prompt/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-invariants": [
+        "../../.dsh/source/current/packages/runtime-diagnostics/invariants/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-invariants/*": [
+        "../../.dsh/source/current/packages/runtime-diagnostics/invariants/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-tools": [
+        "../../.dsh/source/current/packages/core/tools/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-tools/*": [
+        "../../.dsh/source/current/packages/core/tools/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-llm": [
+        "../../.dsh/source/current/packages/llm/llm/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-llm/*": [
+        "../../.dsh/source/current/packages/llm/llm/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-session": [
+        "../../.dsh/source/current/packages/core/session/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-session/*": [
+        "../../.dsh/source/current/packages/core/session/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-ui-slots": [
+        "../../.dsh/source/current/packages/client/ui-slots/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-ui-slots/*": [
+        "../../.dsh/source/current/packages/client/ui-slots/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-ui-tool/src/client/contract/slots": [
+        "../../.dsh/source/current/packages/client/ui-tool/lib/types/client/contract/slots"
+      ],
+      "@deepseek-ai/dsh-client-ui-tool/*": [
+        "../../.dsh/source/current/packages/client/ui-tool/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-runtime/client": [
+        "../../.dsh/source/current/packages/client/runtime/lib/types/client/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-runtime/*": [
+        "../../.dsh/source/current/packages/client/runtime/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-ui-conversation/client": [
+        "../../.dsh/source/current/packages/client/ui-conversation/lib/types/client/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-ui-conversation/*": [
+        "../../.dsh/source/current/packages/client/ui-conversation/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-ui-input-trigger/client": [
+        "../../.dsh/source/current/packages/client/ui-input-trigger/lib/types/client/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-ui-input-trigger/*": [
+        "../../.dsh/source/current/packages/client/ui-input-trigger/lib/types/*"
+      ],
+      "@deepseek-ai/dsh-client-locale/client": [
+        "../../.dsh/source/current/packages/client/locale/lib/types/client/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-locale/*": [
+        "../../.dsh/source/current/packages/client/locale/lib/types/*"
+      ],
+      "@deepseek-ai/cordis": [
+        "../../.dsh/source/current/vendor/cordis/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/cordis/*": [
+        "../../.dsh/source/current/vendor/cordis/lib/types/*"
+      ],
+      "cosmokit": [
+        "../../.dsh/source/current/vendor/cosmokit/lib/types/index.d.ts"
+      ],
+      "cosmokit/*": [
+        "../../.dsh/source/current/vendor/cosmokit/lib/types/*"
+      ]
+    },
+    "emitDeclarationOnly": true,
+    "declarationDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ]
+}
