@@ -944,7 +944,7 @@ export function apply(ctx: Ctx) {
     () => createElement(AmbientLayer),
   ))
   slots.inject('settings.plugin.item', () => slots.register(
-    { name: 'settings.plugin.item', id: 'gui-customization', order: 30, label: () => t('nav.label') },
+    { name: 'settings.plugin.item', key: 'gui-customization', id: 'gui-customization', order: 30, label: () => t('nav.label') },
     () => createElement(PluginCard),
   ))
 }

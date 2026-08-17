@@ -78,6 +78,16 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 
 **重放失败时的处理**:上游若已改官方字段,按各渠道当前 API 适配后再更新本补丁。
 
+### `patches/dsh-gui-customization-keyed-slot.patch`
+
+**插件**:dsh-gui-customization
+**目标文件**:`third-party/dsh-gui-customization/src/client/index.ts`、`third-party/dsh-gui-customization/lib/client.js`
+**目的**:适配 DSH 新版 slot 契约——`settings.plugin.item` 为 keyed slot,`slots.register` 的 descriptor 必须带 `key`;v0.6.2 旧式注册缺 `key`,导致插件树加载直接报
+`keyed slot "settings.plugin.item" requires options.key`。两处同步补 `key: 'gui-customization'`(源码 + 编译产物,运行时实际加载 `lib/client.js`)。
+**登记日期**:2026-08-18
+
+**重放失败时的处理**:上游若已适配新 slot 契约或重构 client 入口,按当前 `slots.register("settings.plugin.item", ...)` 调用形态补齐/删除本补丁后更新登记。
+
 ## 重放工具
 
 ```sh

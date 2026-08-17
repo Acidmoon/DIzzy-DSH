@@ -1,0 +1,25 @@
+diff --git a/third-party/dsh-gui-customization/lib/client.js b/third-party/dsh-gui-customization/lib/client.js
+index 3c67db7..ac633dd 100644
+--- a/third-party/dsh-gui-customization/lib/client.js
++++ b/third-party/dsh-gui-customization/lib/client.js
+@@ -1259,6 +1259,7 @@ window.__ModuleLoader__.load({
+ 			}, () => (0, react.createElement)(AmbientLayer)));
+ 			slots.inject("settings.plugin.item", () => slots.register({
+ 				name: "settings.plugin.item",
++				key: "gui-customization",
+ 				id: "gui-customization",
+ 				order: 30,
+ 				label: () => t("nav.label")
+diff --git a/third-party/dsh-gui-customization/src/client/index.ts b/third-party/dsh-gui-customization/src/client/index.ts
+index 28229f9..3db8c6c 100644
+--- a/third-party/dsh-gui-customization/src/client/index.ts
++++ b/third-party/dsh-gui-customization/src/client/index.ts
+@@ -944,7 +944,7 @@ export function apply(ctx: Ctx) {
+     () => createElement(AmbientLayer),
+   ))
+   slots.inject('settings.plugin.item', () => slots.register(
+-    { name: 'settings.plugin.item', id: 'gui-customization', order: 30, label: () => t('nav.label') },
++    { name: 'settings.plugin.item', key: 'gui-customization', id: 'gui-customization', order: 30, label: () => t('nav.label') },
+     () => createElement(PluginCard),
+   ))
+ }
