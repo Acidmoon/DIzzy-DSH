@@ -117,7 +117,7 @@ git rm --cached third-party/dsh-genui/assets/demo.mp4 third-party/dsh-genui/pnpm
    上游已吸收该改动的 → 删除对应 `.patch` 并更新登记;冲突 → 按 `patches/` 内说明手动适配。
 2. **peer 版本 vs 当前 dsh**:对比新旧 `package.json` 的 `peerDependencies` 与当前 dsh 版本
    (0.1.0-rc.6)是否相容;不相容 → 暂不升级(参考:genui 精确绑定 `^0.1.0-rc.6`,
-   vision-toolkit 0.1.7 已对齐 rc.6)。
+   vision-toolkit 0.1.24 已对齐 rc.6)。
 3. **依赖增删**:`dependencies` 有变化 → profile `pnpm install`;新增 file: 依赖路径要受 `.gitignore` 覆盖。
 4. **构建产物**:快照必须带 `lib/`;上游若只推 `src/`,需在快照内自行
    `pnpm install && pnpm run build`(genui/notification/vision-toolkit 均自带 lib/)。

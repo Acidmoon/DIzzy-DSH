@@ -33,10 +33,10 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
     │   ├── usage-card/       #   dizzy-dsh-usage-card:同上
     │   ├── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
     │   └── kimi-webbridge/   #   dizzy-dsh-kimi-webbridge:Host 工具集
-    └── third-party/          # 收录的第三方快照
+    └── third-party/          # 收录的第三方插件(git subtree 跟随上游)
         ├── dsh-subscription-auth/ # OAuth 订阅登录(上游快照 + 本地补丁)
-        ├── dsh-gui-customization/ # 界面设定/时装工坊(上游插件包快照)
-        └── …                  # genui / notification / vision-toolkit / anchored-standard
+        ├── dsh-gui-customization/ # 界面设定/时装工坊(上游插件包子目录,sparse 覆盖)
+        └── …                  # genui / notification / vision-toolkit / anchored-standard(subtree)
 ```
 
 ### 安装与生命周期
@@ -52,7 +52,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
 2. 主插件 `package.json` 的 `dependencies` 声明自有子包
-   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.12.2`
+   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.12.3`
    走 registry、其余含 `dsh-subscription-auth` 走仓库快照)—— `file:`
    安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
@@ -462,7 +462,7 @@ git add -A && git commit -m "feat: ..." && git push
   收录位置 / 说明
 
 安装收录的插件**不需要单独 add**:主插件 `package.json` 的 `dependencies`
-声明了它们(`dsh-better-sidebar@0.12.2` registry + `@anionex/dsh-vision-toolkit`
+声明了它们(`dsh-better-sidebar@0.12.3` registry + `@anionex/dsh-vision-toolkit`
 `file:./third-party/...` 快照),一条 `dsh plugin add file:<仓库>` 全部安装
 并随主插件 patch 一起挂载:
 
