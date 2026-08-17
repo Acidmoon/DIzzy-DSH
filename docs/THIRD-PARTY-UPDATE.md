@@ -1,7 +1,9 @@
 # 第三方插件更新方案:git subtree 跟随上游
 
-**状态:方案已定稿(2026-08-14),尚未执行迁移。** 当前 `third-party/` 还是纯拷贝快照;
-下次任一上游需要同步时,先按「一次性迁移」把该插件(或全部)转为 subtree,之后按「例行更新」走。
+**状态:已迁移(2026-08-16)。** `third-party/dsh-genui`、`dsh-notification`、
+`dsh-vision-toolkit`、`dsh-anchored-standard` 已转为 git subtree(`--squash`);
+`dsh-gui-customization` 是 monorepo 子包,继续 sparse 覆盖;`dsh-better-sidebar`
+走 npm registry。例行更新直接按下方「例行更新流程」执行,不再走纯拷贝覆盖。
 
 ## 方案总览
 
@@ -18,70 +20,61 @@ clone-覆盖。本地对上游的任何改动**禁止直接改快照内文件**,
 
 | 插件 | 快照目录 | 上游仓库 | 跟随分支 | 收录版本 | 上游 commit | 手工补丁 |
 |---|---|---|---|---|---|---|
-| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.5 | fd87f36 | 无 |
-| dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.1 | 3e33100 | 无 |
-| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.7 | 29850a8 | 有:exposure + windows-ensurepip |
-| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | db4527a | 无 |
+| dsh-genui | third-party/dsh-genui | https://github.com/omdsh-dev/dsh-genui | main | 0.8.6 | 2187fa4 | 无 |
+| dsh-notification | third-party/dsh-notification | https://github.com/omdsh-dev/dsh-notification | main | 0.1.2 | 2399457 | 无 |
+| dsh-vision-toolkit | third-party/dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | main | 0.1.24 | 86fcf71 | 有:exposure + windows-ensurepip |
+| dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | 25f21ae | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local |
-| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.2 | c510ba2 | 无 |
+| dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.2 | 57d7098 | 无 |
 
 各上游形态备注:
 
 - **dsh-genui**:未发布 npm,有版本 tag 但可能落后于 main → 跟 `main`,发布时在 package.json 的 `version` 核对;
 - **dsh-notification**:无 tag、未发布 npm → 只能跟 `main`,用 commit 锚定;
-- **dsh-vision-toolkit**:已发布 npm `@anionex/dsh-vision-toolkit@0.1.7`(旧 scope
+- **dsh-vision-toolkit**:已发布 npm `@anionex/dsh-vision-toolkit@0.1.24`(旧 scope
   `@dsh-external/dsh-vision-toolkit` 已停用,合集依赖与 patch entry 必须跟新包名);
-  有手工补丁,迁移/更新后必须重放 `patches/dsh-vision-toolkit-exposure.patch`;
+  有手工补丁,迁移/更新后必须重放 `patches/dsh-vision-toolkit-exposure.patch`
+  与 `patches/dsh-vision-toolkit-windows-ensurepip.patch`。上游 0.1.8+ 新增
+  `workers/`(Cloudflare Worker 部署,与 DSH 插件本体无关),subtree pull 带入时
+  被 `.gitignore` 排除,不入库。
 - **dsh-anchored-standard**:**agent preset,不是 cordis 插件**——不挂 cordis.patch.yml、不进
   package.json 依赖,subtree pull 后无需 pnpm install;安装 = 复制 `preset/` 到
   `~/.dsh/.agent-presets/anchored-standard`(用 `scripts/install-anchored-standard.ps1`)。
-  上游基于 rc.5/47f9438 开发,收录时已对照 rc.6 核对:agent.cordis.yml 全部 entry 与官方
-  standard 一致(仅多 `tool-bootstrap` 行、persona 用 minimal 风格),`system-prompt/assemble`
-  事件与 `systemPrompt` inject 在 rc.6 均存在;后续更新仍应按「适配检查」第 2 项重核。
+  上游 HEAD 另含 `zero-anchored-standard/`、`whoami-standard/`、`wire-think-standard/`
+  等变体,需单独复制才会出现;`preset/` 下新增的 mjs 文件(如 `context-gate.mjs`)
+  会被安装脚本整目录复制,不影响必备列表校验。
 - **dsh-subscription-auth**:已发布 npm(0.2.1),合集走仓库快照因为有本地补丁(usage 钳零 /
   投影守卫 / 独立 OAuth state / Grok 设备流 / 代理感知 / schemastery 改 peer /
   思考档位对齐官方最高档)。更新后必须先重放 `patches/dsh-subscription-auth-local.patch`,
   再重放 `patches/dsh-subscription-auth-reasoning-effort.patch`。
 - **dsh-gui-customization**:已发布 npm(0.6.2),上游是 monorepo,可安装组合插件在
   `packages/dsh-gui-customization/`;本快照只收录该子包(含已构建 `lib/` 与内置背景图)。
-  默认分支 `master`。无本地补丁。未迁 subtree 前用 sparse-checkout 覆盖子包目录;
-  迁 subtree 时 prefix 仍是 `third-party/dsh-gui-customization`,但上游路径在
-  `packages/dsh-gui-customization/`,**不能**对整个上游仓直接 subtree(会把动态原型
-  和 docs 一并带入)。优先继续 sparse 覆盖或 `npm pack`。
+  默认分支 `master`。无本地补丁。monorepo 无法对子包直接 subtree,继续 sparse 覆盖
+  (见下方「gui-customization 更新」)或 `npm pack`。
 
-## 一次性迁移(未执行;下次同步前完成)
+## 一次性迁移(已完成,2026-08-16)
 
-把当前纯拷贝快照转为 subtree。对每个插件(无补丁的先做,有补丁的最后做):
+genui / notification / vision-toolkit / anchored-standard 已按下方步骤转为
+subtree(`--squash`,每条合并只留一个 squash commit)。迁移过程记录:
 
-```sh
-# 1. 备份被补丁的文件(现在只有 dsh-vision-toolkit/lib/exposure.js)到临时位置。
-#    注意:快照的 git 历史里只有补丁版,没有上游原版,不能用 git diff 生成。
-#    补丁文件在步骤 3 之后用「上游新版 vs 备份」diff 生成(可能要适配新版)。
+1. 备份被补丁的文件与 `UPSTREAM.md`;
+2. `git rm -r third-party/<name>` 提交「移除纯拷贝快照」;
+3. 逐个 `git subtree add --squash --prefix=third-party/<name> <上游URL> <分支>`;
+4. 重放补丁 `node scripts/reapply-third-party-patches.mjs`;
+5. 适配检查通过后提交。
 
-# 2. 移除旧快照(内容已在 git 历史,可回滚)
-git rm -r third-party/<name>
-git commit -m "chore: 移除 <name> 纯拷贝快照,准备改为 subtree 跟随"
+> 注意:git subtree add/pull 走 read-tree,**不受 `.gitignore` 约束**,上游被忽略的
+> 文件(demo.mp4、pnpm-lock.yaml)会进 index。迁移/更新后要 `git rm --cached` 这些
+> 文件再提交,保持忽略规则生效。
 
-# 3. 以上游为源挂入 subtree(--squash 只保留一条合并历史,仓库不膨胀)
-git subtree add --squash --prefix=third-party/<name> <上游URL> <分支>
-
-# 4. 重放补丁
-node scripts/reapply-third-party-patches.mjs
-
-# 5. 适配检查(见下)→ profile pnpm install → 重启验证 → 提交
-```
-
-> 迁移后 `.gitignore` 中针对快照的忽略规则(demo.mp4、pnpm-lock.yaml 等)继续生效:
-> subtree pull 带入的被忽略文件只存在于工作区,不进 commit。
-
-## 例行更新流程(迁移完成后)
+## 例行更新流程
 
 ```sh
 # 1. 跟随上游(逐插件执行;也可一次全部)
 git subtree pull --squash --prefix=third-party/dsh-genui https://github.com/omdsh-dev/dsh-genui main
 git subtree pull --squash --prefix=third-party/dsh-notification https://github.com/omdsh-dev/dsh-notification main
 git subtree pull --squash --prefix=third-party/dsh-vision-toolkit https://github.com/Anionex/dsh-vision-toolkit main
-git subtree pull --squash --prefix=third-party/dsh-subscription-auth https://github.com/Khellendros97/dsh-subscription-auth main
+git subtree pull --squash --prefix=third-party/dsh-anchored-standard https://github.com/xiaobright/dsh-anchored-standard main
 
 # 2. 重放补丁(上游已吸收则删除对应 .patch;冲突则手动适配)
 node scripts/reapply-third-party-patches.mjs
@@ -90,6 +83,32 @@ node scripts/reapply-third-party-patches.mjs
 # 4. 依赖变化时:cd C:\Users\17740\.dsh\profiles\web && pnpm install
 # 5. 重启 dsh web + 硬刷新 + 冒烟验证(见下)
 # 6. 更新本登记表(版本/commit 列),提交
+```
+
+### gui-customization 更新(monorepo 子包,非 subtree)
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/LAN-TINA-WS/dsh-gui-customization.git <tmp>
+git -C <tmp> sparse-checkout set packages/dsh-gui-customization
+robocopy <tmp>\packages\dsh-gui-customization third-party\dsh-gui-customization /E /XD .git node_modules /XF UPSTREAM.md
+# 还原 UPSTREAM.md(robocopy /E 不删,若用 /MIR 则先备份);也可 npm pack dsh-gui-customization@<版本>(不含 src/)
+```
+
+### better-sidebar 更新(npm registry)
+
+```sh
+npm pack dsh-better-sidebar@<新版本>
+tar -xzf dsh-better-sidebar-<版本>.tgz -C third-party/DSH-better-sidebar --strip-components=1
+# 同步把根 package.json 的 "dsh-better-sidebar" 依赖版本钉到同一号
+```
+
+### subtree 更新后的忽略文件处理
+
+`git subtree pull` 走 read-tree,`third-party/**/pnpm-lock.yaml`、demo.mp4 等
+被忽略文件会重新进入 index。提交前执行:
+
+```sh
+git rm --cached third-party/dsh-genui/assets/demo.mp4 third-party/dsh-genui/pnpm-lock.yaml third-party/dsh-notification/pnpm-lock.yaml third-party/dsh-vision-toolkit/pnpm-lock.yaml third-party/dsh-vision-toolkit/workers/moondream-openai-proxy/pnpm-lock.yaml
 ```
 
 ## 适配检查清单(每次 pull 后必过)

@@ -25,6 +25,10 @@ export interface FsEntry {
   path: string
   isDir: boolean
   hidden: boolean
+  /** Whether the row is a symlink; `isDir` then describes the link's target. */
+  isSymlink: boolean
+  /** For symlinks: the target is missing or unreadable (stat failed). */
+  broken: boolean
 }
 
 /** Git status entry (host git shape). */
@@ -74,6 +78,21 @@ export interface JobOutputResult {
   /** Whether the model has read the job at least once. */
   read: boolean
 }
+
+/** Terminal dependency status (mirror of the host's depsStatus; issue #140). */
+export type TerminalDepsStatus =
+  | { ok: true }
+  | {
+    ok: false
+    /** The require-time error message (module missing, native binding broken…). */
+    cause: string
+    /** The pasteable repair command (terminal/cmd). */
+    command: string
+    /** The detected profile name (null when undetected → the command defaults to web). */
+    profile: string | null
+    /** Optional supplementary hint (fallback command only). */
+    note?: string
+  }
 
 async function call<T>(method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   let response: Response
@@ -160,6 +179,11 @@ export const api = {
   /** Release an agent terminal by uuid (tab closed while WS was down). */
   agentPtyClose: (uuid: string) =>
     call<{ ok: true }>('agent-pty.close', { uuid }),
+  /** Terminal dependency status (issue #140): after a WS close 1011 with
+   *  reason `pty-deps-missing` the view fetches the full repair details here
+   *  (the close reason itself is capped at 123 bytes). */
+  terminalDeps: () =>
+    call<TerminalDepsStatus>('terminal.deps', {}),
   /**
    * The output the model has read so far for one background job (replayed
    * from the owner session's event log — never the model's job_output
@@ -207,9 +231,14 @@ function fileUrl(scope: SessionScope, path: string, download: boolean): string {
   return `/sidebar/file?${params.toString()}`
 }
 
-/** Absolute URL of the HTML preview route (see html-route.ts): the path is
- *  fully encoded so the previewed page's relative assets resolve back into
- *  the same route with the session scope intact. */
+/**
+ * Absolute URL of the HTML preview route (see html-route.ts): the path is
+ * fully encoded so the previewed page's relative assets resolve back into
+ * the same route with the session scope intact. The UNC marker is
+ * platform-neutral — the host's requireAbsolute resolves the decoded
+ * forward-slash `//server/share/...` form on both win32 and POSIX — so no
+ * client-side platform signal is needed.
+ */
 export function htmlUrl(scope: SessionScope, path: string): string {
   return encodeHtmlUrl(scope.sessionId, path)
 }

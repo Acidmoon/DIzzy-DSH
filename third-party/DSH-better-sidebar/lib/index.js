@@ -7,9 +7,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
-import { chmodSync, existsSync } from "node:fs";
-import { userInfo } from "node:os";
-import * as nodePty from "node-pty";
+import { chmodSync, existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 //#region src/prefs-shared.ts
 /**
@@ -35,7 +34,8 @@ const Config = z.object({
 	mediaLimit: z.number().step(1).min(1).default(20971520),
 	listLimit: z.number().step(1).min(1).default(1e3),
 	terminalsPerSession: z.number().step(1).min(1).default(3),
-	reconnectGraceMs: z.number().step(1).min(0).default(3e4)
+	reconnectGraceMs: z.number().step(1).min(0).default(3e4),
+	shell: z.string().default("")
 });
 /**
 * Apply direct-call defaults after Loader schema validation has normally run.
@@ -49,7 +49,8 @@ function resolveSidebarConfig(config) {
 		mediaLimit: config?.mediaLimit ?? 20971520,
 		listLimit: config?.listLimit ?? 1e3,
 		terminalsPerSession: config?.terminalsPerSession ?? 3,
-		reconnectGraceMs: config?.reconnectGraceMs ?? 3e4
+		reconnectGraceMs: config?.reconnectGraceMs ?? 3e4,
+		shell: config?.shell?.trim() ?? ""
 	};
 }
 /** Schemastery schema for the user-facing preferences (validated by the settings service). */
@@ -152,8 +153,10 @@ function requireString(payload, key) {
 * Single-level directory listing for the sidebar explorer. Streams the level
 * with opendir, sorts directories first then names (case-insensitive), and
 * marks POSIX-hidden entries (dot-prefixed) for dimmed display. Symlinks are
-* reported as files without probing their target — the explorer shows what
-* dirent says, keeping the read cheap for arbitrarily large levels.
+* stat'ed once to expose their target kind — a symlink to a directory
+* expands like a directory — and dangling links are flagged broken. The
+* probe runs only for entries that are actually symlinks, so levels without
+* links stay as cheap as before.
 */
 /** Directory-first, case-insensitive name ordering (VSCode explorer order). */
 function compareEntries(a, b) {
@@ -186,18 +189,40 @@ async function listDirectory(path, maxEntries = 1e3) {
 				name: dirent.name,
 				path: join(path, dirent.name),
 				isDir: dirent.isDirectory(),
+				isSymlink: dirent.isSymbolicLink(),
+				broken: false,
 				hidden: dirent.name.startsWith(".")
 			});
 		}
 	} catch (error) {
 		throw new SidebarError("fs-error", `cannot list "${path}": ${messageOf(error)}`, 400);
 	}
+	await probeSymlinkTargets(rows);
 	rows.sort(compareEntries);
 	return {
 		path,
 		entries: rows,
 		truncated: overflow > 0
 	};
+}
+/** How many symlink target stats run in flight during one level listing. */
+const SYMLINK_PROBE_CONCURRENCY = 32;
+/** Probe each symlink row's target once (bounded concurrency, order-preserving). */
+async function probeSymlinkTargets(rows, concurrency = SYMLINK_PROBE_CONCURRENCY) {
+	let next = 0;
+	const workers = Array.from({ length: Math.min(concurrency, rows.length) }, async () => {
+		for (;;) {
+			const index = next;
+			next += 1;
+			if (index >= rows.length) return;
+			const row = rows[index];
+			if (!row.isSymlink) continue;
+			const info = await stat(row.path).catch(() => void 0);
+			row.isDir = info !== void 0 ? info.isDirectory() : row.isDir;
+			row.broken = info === void 0;
+		}
+	});
+	await Promise.all(workers);
 }
 /** The root row label of a listing: the last path segment (or the full path at the filesystem root). */
 function rootLabel(path) {
@@ -209,9 +234,15 @@ function parentOf(path) {
 	const parent = dirname(path);
 	return parent === path ? void 0 : parent;
 }
-/** Normalize a caller-supplied path to an absolute, resolved path or throw fs-error. */
+/**
+* Normalize a caller-supplied path to an absolute, resolved path or throw
+* fs-error. `path.isAbsolute()` is the OS's own notion of absolute: POSIX
+* roots (`/...`), Windows drive letters (`C:\...`) and — on win32 — UNC
+* network shares (`\\server\share\...`); drive-relative forms (`C:foo`)
+* stay rejected.
+*/
 function requireAbsolute(path) {
-	if (!path.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(path)) throw new SidebarError("fs-error", `"${path}" is not an absolute path`, 400);
+	if (!isAbsolute(path)) throw new SidebarError("fs-error", `"${path}" is not an absolute path`, 400);
 	return resolve(path);
 }
 /**
@@ -240,10 +271,10 @@ function messageOf(error) {
 }
 /**
 * Decode a route pathname into the session + absolute file path. Rejects
-* a wrong prefix (404), an empty or double-slash path, malformed percent
-* encoding, and a missing sessionId or file path (400). The caller still
-* must bound the decoded path with requireAbsolute + isWithin(cwd) — a
-* decoded `..` segment resolves outside the cwd and is refused there.
+* a wrong prefix (404), an empty path, malformed percent encoding, and a
+* missing sessionId or file path (400). The caller still must bound the
+* decoded path with requireAbsolute + isWithin(cwd) — a decoded `..`
+* segment resolves outside the cwd and is refused there.
 */
 function decodeHtmlUrl(pathname) {
 	if (!pathname.startsWith("/sidebar/html/")) return {
@@ -252,7 +283,7 @@ function decodeHtmlUrl(pathname) {
 		message: "not an html route"
 	};
 	const rest = pathname.slice(14);
-	if (rest === "" || rest.includes("//")) return {
+	if (rest === "") return {
 		ok: false,
 		status: 400,
 		message: "invalid html route path"
@@ -268,17 +299,27 @@ function decodeHtmlUrl(pathname) {
 		};
 	}
 	const [sessionId, ...pathSegments] = segments;
-	if (sessionId === void 0 || sessionId === "" || pathSegments.length === 0 || pathSegments.some((segment) => segment === "")) return {
+	if (sessionId === void 0 || sessionId === "") return {
 		ok: false,
 		status: 400,
 		message: "sessionId and file path are required"
 	};
-	const first = pathSegments[0] ?? "";
+	const unc = pathSegments[0] === "";
+	const tail = unc ? pathSegments.slice(1) : pathSegments;
+	if (tail.length === 0 || tail.some((segment) => segment === "")) return {
+		ok: false,
+		status: 400,
+		message: "sessionId and file path are required"
+	};
+	let path;
+	if (unc) path = `//${tail.join("/")}`;
+	else if (/^[A-Za-z]:$/.test(tail[0] ?? "")) path = tail.join("/");
+	else path = `/${tail.join("/")}`;
 	return {
 		ok: true,
 		ref: {
 			sessionId,
-			path: /^[A-Za-z]:$/.test(first) ? pathSegments.join("/") : `/${pathSegments.join("/")}`
+			path
 		}
 	};
 }
@@ -725,6 +766,179 @@ async function cherryPick(cwd, hash) {
 	await runGit(cwd, ["cherry-pick", hash]);
 }
 //#endregion
+//#region src/pty-deps.ts
+/**
+* node-pty dependency loading for the host half (issue #140, plugin side).
+*
+* The terminal surfaces (UI tabs + model-facing terminal_* tools) need
+* node-pty, but the package must NEVER be imported statically at module
+* top level: a missing or broken install (pnpm 11's strict-dep-builds
+* skipping node-pty's install script, a pruned store entry, a failed
+* prebuilt-binary download…) would then fail the plugin module load and —
+* because a loader entry apply failure aborts the boot — take the whole
+* `dsh web` server down with it.
+*
+* Instead the host half loads node-pty lazily (synchronously, via
+* createRequire — the same resolution `ensureSpawnHelper` already uses in
+* production). When the load fails the plugin stays mounted in a degraded
+* state: the terminal tab shows a friendly error carrying a pasteable
+* repair command (see scripts/install.sh / install.ps1 `--repair`), and the
+* agent terminal tools are simply not registered.
+*
+* Version contract: the plugin must stay in sync with DSH core —
+* `@deepseek-ai/dsh-subprocess-local` declares `"node-pty": "^1.1.0"` in
+* its `dependencies`. Both sides then resolve the SAME pnpm store entry
+* (same range, same integrity → one native binding, no drift). Do NOT
+* switch to a fork (e.g. @lydell/node-pty) or a different range without
+* re-checking the core declaration.
+*/
+/**
+* The node-pty version range this plugin ships. MUST stay identical to the
+* range DSH core declares (`@deepseek-ai/dsh-subprocess-local`): the same
+* range keeps pnpm resolving both to one physical package.
+*/
+const DSH_NODE_PTY_RANGE = "^1.1.0";
+/**
+* The WebSocket close-code-1011 reason the host sends when node-pty is
+* unavailable. The client recognizes this exact marker and fetches the full
+* repair details from `/sidebar/api/terminal.deps` (a WS close reason is
+* capped at 123 bytes, so the command itself cannot ride the close frame).
+*/
+const PTY_DEPS_MISSING = "pty-deps-missing";
+const defaultRequire = createRequire(import.meta.url);
+let cached;
+/**
+* Load node-pty once (synchronously) and cache the outcome. Returns null
+* when the package or its native binding cannot be loaded; the cause stays
+* queryable through {@link nodePtyLoadCause}. Never throws.
+*/
+function loadNodePty(requireImpl = defaultRequire) {
+	if (cached === void 0) try {
+		cached = {
+			ok: true,
+			module: requireImpl("node-pty")
+		};
+	} catch (cause) {
+		cached = {
+			ok: false,
+			cause
+		};
+	}
+	return cached.ok ? cached.module : null;
+}
+/** The recorded load failure (undefined when the load succeeded or never ran). */
+function nodePtyLoadCause() {
+	return cached !== void 0 && !cached.ok ? cached.cause : void 0;
+}
+/** Load node-pty or throw the canonical degraded-mode error (class-constructor default). */
+function loadRequiredNodePty() {
+	const module = loadNodePty();
+	if (module === null) {
+		const cause = describeCause(nodePtyLoadCause());
+		throw new SidebarError("pty-deps-missing", `node-pty (${DSH_NODE_PTY_RANGE}) failed to load: ${cause} — run the repair command shown in the terminal tab`, 503);
+	}
+	return module;
+}
+/** Resolve a directory to its physical location (symlinked/link: installs). */
+function realDir(file) {
+	try {
+		return dirname(realpathSync(file));
+	} catch {
+		return dirname(file);
+	}
+}
+/** Walk up from `dir` looking for a DSH profile root (package.json + pnpm-workspace.yaml). */
+function walkUp(dir, isRoot) {
+	let current = dir;
+	for (let depth = 0; depth < 16; depth += 1) {
+		if (isRoot(current)) return current;
+		const parent = dirname(current);
+		if (parent === current) break;
+		current = parent;
+	}
+	return null;
+}
+/** Whether `dir` looks like a DSH profile root (the plugin lives under its node_modules). */
+function isProfileRoot(dir) {
+	return existsSync(join(dir, "package.json")) && existsSync(join(dir, "pnpm-workspace.yaml"));
+}
+/**
+* Detect the DSH profile directory this plugin is installed into: the
+* nearest ancestor of the plugin module that carries both `package.json`
+* and `pnpm-workspace.yaml` (the profile root; the plugin resolves from the
+* profile's node_modules). Falls back to `$DSH_HOME/profiles/web` (the
+* standard web profile), then null.
+*/
+function findProfileDir(fromFile = fileURLToPath(import.meta.url)) {
+	const detected = walkUp(realDir(fromFile), isProfileRoot);
+	if (detected !== null) return detected;
+	const home = process.env.DSH_HOME !== void 0 && process.env.DSH_HOME.trim() !== "" ? process.env.DSH_HOME : join(homedir(), ".dsh");
+	const web = join(home, "profiles", "web");
+	return isProfileRoot(web) ? realpathSync(web) : null;
+}
+/** Whether `dir`'s package.json declares this plugin's name. */
+function isPluginRoot(dir) {
+	const file = join(dir, "package.json");
+	if (!existsSync(file)) return false;
+	try {
+		return JSON.parse(readFileSync(file, "utf8")).name === "dsh-better-sidebar";
+	} catch {
+		return false;
+	}
+}
+/** The plugin package root (walk-up from the module; works for lib/ and src/ layouts). */
+function findPluginRoot(fromFile = fileURLToPath(import.meta.url)) {
+	return walkUp(realDir(fromFile), isPluginRoot);
+}
+/**
+* The pasteable repair command for a broken node-pty install: rerun the
+* plugin's own installer in `--repair` mode (idempotent: it re-writes the
+* profile's `allowBuilds: node-pty: true` and re-installs/rebuilds the
+* dependency). Falls back to DSH's plugin command when the scripts are not
+* shipped (exotic layouts).
+*/
+function buildRepairCommand(options) {
+	const { pluginRoot, profileDir } = options;
+	const platform = options.platform ?? process.platform;
+	const profileName = profileDir !== null ? basename(profileDir) : null;
+	const profileArg = profileName !== null ? platform === "win32" ? ` -Profile "${profileName}"` : ` --profile "${profileName}"` : "";
+	if (pluginRoot !== null) {
+		if (platform === "win32") {
+			const script = join(pluginRoot, "scripts", "install.ps1");
+			if (existsSync(script)) return { command: `powershell -ExecutionPolicy Bypass -File "${script}" -Repair${profileArg}` };
+		} else {
+			const script = join(pluginRoot, "scripts", "install.sh");
+			if (existsSync(script)) return { command: `bash "${script}" --repair${profileArg}` };
+		}
+	}
+	return {
+		command: `dsh plugin --profile "${profileName ?? "web"}" install`,
+		note: "If pnpm 11 blocked node-pty's build script, ensure `allowBuilds: node-pty: true` in the profile's pnpm-workspace.yaml (the plugin's scripts/install.sh / install.ps1 --repair does this automatically)."
+	};
+}
+/** One-line human description of the recorded load cause. */
+function describeCause(cause) {
+	if (cause instanceof Error) return cause.message;
+	return String(cause);
+}
+/** Current node-pty dependency status (loaded vs degraded + repair info). */
+function depsStatus(options = {}) {
+	if (loadNodePty() !== null) return { ok: true };
+	const pluginRoot = findPluginRoot(options.fromFile);
+	const profileDir = findProfileDir(options.fromFile);
+	const { command, note } = buildRepairCommand({
+		pluginRoot,
+		profileDir
+	});
+	return {
+		ok: false,
+		cause: describeCause(nodePtyLoadCause()),
+		command,
+		profile: profileDir !== null ? basename(profileDir) : null,
+		...note !== void 0 ? { note } : {}
+	};
+}
+//#endregion
 //#region src/pty-manager.ts
 /**
 * PTY session table for the sidebar terminals. One node-pty process per
@@ -759,11 +973,13 @@ function ensureSpawnHelper() {
 var PtyManager = class {
 	shell;
 	maxPerSession;
+	nodePty;
 	sessions = /* @__PURE__ */ new Map();
 	pendingCloses = /* @__PURE__ */ new Map();
-	constructor(shell, maxPerSession) {
+	constructor(shell, maxPerSession, nodePty = loadRequiredNodePty()) {
 		this.shell = shell;
 		this.maxPerSession = maxPerSession;
+		this.nodePty = nodePty;
 	}
 	/** All live terminal keys of one session. */
 	keysOf(sessionId) {
@@ -802,7 +1018,7 @@ var PtyManager = class {
 			sessionId,
 			tabId,
 			cwd,
-			pty: nodePty.spawn(this.shell, shellSpawnArgs(), {
+			pty: this.nodePty.spawn(this.shell, shellSpawnArgs(), {
 				name: "xterm-256color",
 				cols: Math.max(2, Math.floor(cols)),
 				rows: Math.max(2, Math.floor(rows)),
@@ -867,18 +1083,68 @@ var PtyManager = class {
 	}
 };
 /**
-* The interactive shell for this platform, resolved like a terminal
-* emulator: an explicit `$SHELL` on the dsh process wins (deployment
-* override), then the account's login shell from passwd, then `/bin/bash`.
-* The passwd step matters because service managers and container inits
-* often start dsh without `SHELL`, and the tab should still open the
-* user's login shell (e.g. zsh) instead of silently degrading to bash.
-* Windows short-circuits to `powershell.exe` before any resolution.
+* Candidate directories that may contain a `pwsh.exe` on Windows: PATH
+* entries first, then the well-known machine/user install locations
+* (including preview channels and per-user MSI/portable layouts). The
+* machine-scope search reads both `ProgramW6432` and `ProgramFiles` so a
+* 32-bit Node process — whose `ProgramFiles` points at `(x86)` — still
+* finds a 64-bit PowerShell 7 install. De-duped while preserving priority
+* order.
 */
-function defaultShell() {
-	if (process.platform === "win32") return "powershell.exe";
-	const envShell = process.env.SHELL;
-	if (envShell !== void 0 && envShell.trim() !== "") return envShell;
+function windowsPwshCandidateDirs(env) {
+	const dirs = [];
+	const pathEntries = env.PATH;
+	if (pathEntries !== void 0) for (const entry of pathEntries.split(";")) {
+		const trimmed = entry.trim();
+		if (trimmed !== "") dirs.push(trimmed);
+	}
+	for (const programFiles of [env.ProgramW6432, env.ProgramFiles]) {
+		if (programFiles === void 0 || programFiles.trim() === "") continue;
+		dirs.push(join(programFiles, "PowerShell", "7"));
+		dirs.push(join(programFiles, "PowerShell", "7-preview"));
+	}
+	const localAppData = env.LOCALAPPDATA;
+	if (localAppData !== void 0 && localAppData.trim() !== "") {
+		dirs.push(join(localAppData, "Microsoft", "PowerShell", "7"));
+		dirs.push(join(localAppData, "Microsoft", "PowerShell", "7-preview"));
+		dirs.push(join(localAppData, "Programs", "PowerShell", "7"));
+		dirs.push(join(localAppData, "Programs", "PowerShell", "7-preview"));
+	}
+	return [...new Set(dirs)];
+}
+/**
+* The interactive shell for this platform, resolved like a terminal
+* emulator: an explicitly configured shell (the `shell` config field) wins,
+* then `$SHELL` on POSIX (deployment override), then the account's login
+* shell from passwd, then `/bin/bash`. The passwd step matters because
+* service managers and container inits often start dsh without `SHELL`, and
+* the tab should still open the user's login shell (e.g. zsh) instead of
+* silently degrading to bash.
+*
+* Windows previously short-circuited to `powershell.exe` (the inbox 5.1)
+* before any resolution, so PowerShell 7 users always got a legacy shell
+* without `??`/`?.`/ternary and with poor ANSI/UTF-8 defaults. The Windows
+* chain is now: explicit shell → `DSH_SIDEBAR_SHELL` env override → first
+* `pwsh.exe` found on PATH or in a known install directory → the 5.1
+* fallback (machines without PowerShell 7 keep working).
+*/
+function defaultShell(options = {}) {
+	const platform = options.platform ?? process.platform;
+	const env = options.env ?? process.env;
+	const exists = options.exists ?? existsSync;
+	const explicit = options.explicit;
+	if (explicit !== void 0 && explicit.trim() !== "") return explicit.trim();
+	if (platform === "win32") {
+		const envShell = env.DSH_SIDEBAR_SHELL;
+		if (envShell !== void 0 && envShell.trim() !== "") return envShell.trim();
+		for (const dir of windowsPwshCandidateDirs(env)) {
+			const candidate = join(dir, "pwsh.exe");
+			if (exists(candidate)) return candidate;
+		}
+		return "powershell.exe";
+	}
+	const envShell = env.SHELL;
+	if (envShell !== void 0 && envShell.trim() !== "") return envShell.trim();
 	try {
 		const loginShell = userInfo().shell;
 		if (typeof loginShell === "string" && loginShell.trim() !== "") return loginShell;
@@ -988,10 +1254,12 @@ function snapshotOf(handle) {
 */
 var AgentPtyRegistry = class {
 	shell;
+	nodePty;
 	sessions = /* @__PURE__ */ new Map();
 	changeListeners = /* @__PURE__ */ new Set();
-	constructor(shell) {
+	constructor(shell, nodePty = loadRequiredNodePty()) {
 		this.shell = shell;
+		this.nodePty = nodePty;
 		ensureSpawnHelper();
 	}
 	/**
@@ -1005,7 +1273,7 @@ var AgentPtyRegistry = class {
 	create(sessionId, title, command, cwd, cols = 80, rows = 24) {
 		const uuid = randomUUID();
 		const dims = clampDims(cols, rows);
-		const pty = nodePty.spawn(this.shell, shellSpawnArgs(), {
+		const pty = this.nodePty.spawn(this.shell, shellSpawnArgs(), {
 			name: "xterm-256color",
 			cols: dims.cols,
 			rows: dims.rows,
@@ -2215,14 +2483,15 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, getSettings) {
 		"pty.close": (payload) => {
 			const sessionId = requireString(payload, "sessionId");
 			const tab = requireString(payload, "tab");
-			ptyManager.close(`${sessionId}:${tab}`);
+			ptyManager?.close(`${sessionId}:${tab}`);
 			return { ok: true };
 		},
 		"agent-pty.close": (payload) => {
 			const uuid = requireString(payload, "uuid");
-			agentPtyRegistry.close(uuid);
+			agentPtyRegistry?.close(uuid);
 			return { ok: true };
 		},
+		"terminal.deps": () => depsStatus(),
 		"jobs.output": (payload) => jobsApi.output(payload),
 		"jobs.kill": (payload) => jobsApi.kill(payload),
 		"settings.get": () => {
@@ -2295,18 +2564,28 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, getSettings) {
 function apply(ctx, config) {
 	ensureSpawnHelper();
 	const resolved = resolveSidebarConfig(config);
+	const terminalShell = defaultShell({ explicit: resolved.shell });
 	const fence = (req) => isTrustedApiRequest(req, ctx.webRuntime.trustedHosts);
-	const ptyManager = new PtyManager(defaultShell(), resolved.terminalsPerSession);
-	const agentPtyRegistry = new AgentPtyRegistry(defaultShell());
+	const nodePty = loadNodePty();
+	if (nodePty === null) {
+		const status = depsStatus();
+		const detail = status.ok ? "unknown cause" : `${status.cause}. Repair: ${status.command}`;
+		ctx.logger?.warn(`[dsh-better-sidebar] node-pty (${DSH_NODE_PTY_RANGE}) failed to load: ${detail}`);
+	}
+	const ptyManager = nodePty !== null ? new PtyManager(terminalShell, resolved.terminalsPerSession, nodePty) : null;
+	const agentPtyRegistry = nodePty !== null ? new AgentPtyRegistry(terminalShell, nodePty) : null;
 	let settingsFace;
 	let toolsDisposers = null;
 	const syncToolsGate = (scope) => {
 		if (scope.get().agentTerminalTools) {
-			if (toolsDisposers === null) toolsDisposers = registerTools(ctx, agentPtyRegistry, (sessionId) => sessionCwdOf(ctx, sessionId));
+			if (toolsDisposers === null) {
+				if (agentPtyRegistry === null) return;
+				toolsDisposers = registerTools(ctx, agentPtyRegistry, (sessionId) => sessionCwdOf(ctx, sessionId));
+			}
 		} else if (toolsDisposers !== null) {
 			toolsDisposers();
 			toolsDisposers = null;
-			agentPtyRegistry.disposeAll();
+			agentPtyRegistry?.disposeAll();
 		}
 	};
 	ctx.inject(["settings"], (sctx) => {
@@ -2483,8 +2762,8 @@ function apply(ctx, config) {
 	}), "dsh-better-sidebar: agent-terminals push WebSocket");
 	ctx.effect(() => () => {
 		toolsDisposers?.();
-		ptyManager.disposeAll();
-		agentPtyRegistry.disposeAll();
+		ptyManager?.disposeAll();
+		agentPtyRegistry?.disposeAll();
 		wss.close();
 		agentListWss.close();
 	}, "dsh-better-sidebar: teardown");
@@ -2498,15 +2777,15 @@ async function attachAgentList(registry, ws, req) {
 			return;
 		}
 		const send = () => {
-			if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(registry.list(sessionId)));
+			if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(registry?.list(sessionId) ?? []));
 		};
 		send();
-		const unsubscribe = registry.subscribe(send);
+		const unsubscribe = registry?.subscribe(send);
 		ws.on("close", () => {
-			unsubscribe();
+			unsubscribe?.();
 		});
 		ws.on("error", () => {
-			unsubscribe();
+			unsubscribe?.();
 		});
 	} catch (error) {
 		ws.close(1011, error instanceof Error ? error.message : String(error));
@@ -2529,6 +2808,10 @@ async function attachTerminal(ctx, ptyManager, agentPtyRegistry, ws, req, resolv
 		const url = new URL(req.url ?? "/", "http://dsh.internal");
 		const uuid = url.searchParams.get("uuid");
 		if (uuid !== null) {
+			if (agentPtyRegistry === null) {
+				ws.close(1011, `agent terminal "${uuid}" not found`);
+				return;
+			}
 			const handle = agentPtyRegistry.get(uuid);
 			if (handle === void 0) {
 				ws.close(1011, `agent terminal "${uuid}" not found`);
@@ -2541,6 +2824,10 @@ async function attachTerminal(ctx, ptyManager, agentPtyRegistry, ws, req, resolv
 		const tabId = url.searchParams.get("tab");
 		if (sessionId === null || tabId === null) {
 			ws.close(1008, "either ?uuid or ?sessionId+?tab are required");
+			return;
+		}
+		if (ptyManager === null) {
+			ws.close(1011, PTY_DEPS_MISSING);
 			return;
 		}
 		const cwd = sessionCwdOf(ctx, sessionId, url.searchParams.get("cwd") ?? void 0);

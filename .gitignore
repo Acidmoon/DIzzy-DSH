@@ -15,3 +15,6 @@ third-party/**/*.tgz
 # 第三方快照:演示视频与上游锁文件不入库
 third-party/dsh-genui/assets/demo.mp4
 third-party/**/pnpm-lock.yaml
+
+# vision-toolkit 上游 0.1.8+ 的 Cloudflare Worker 部署(与 DSH 插件本体无关)
+third-party/dsh-vision-toolkit/workers/

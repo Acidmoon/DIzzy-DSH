@@ -34,6 +34,7 @@ $files = @(
   'tool-bootstrap.mjs',
   'custom-bash.mjs',
   'compaction-epoch.mjs',
+  'context-gate.mjs',
   'dev-tool-search.mjs',
   'instruction-hint.mjs',
   'skill-search.mjs'

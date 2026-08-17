@@ -19,6 +19,14 @@ export interface SidebarConfig {
     terminalsPerSession?: number;
     /** How long a disconnected terminal process survives awaiting a reconnect. */
     reconnectGraceMs?: number;
+    /**
+     * Terminal shell (absolute path or bare executable name) for BOTH the UI
+     * terminal tabs and the model-facing `terminal_*` tools. Empty = auto:
+     * POSIX follows `$SHELL` then the account login shell; Windows follows
+     * `DSH_SIDEBAR_SHELL`, then probes for `pwsh.exe`, then falls back to the
+     * inbox `powershell.exe` (5.1).
+     */
+    shell?: string;
 }
 /** Schemastery schema for the plugin configuration. */
 export declare const Config: z<SidebarConfig>;
@@ -29,6 +37,7 @@ export interface ResolvedSidebarConfig {
     listLimit: number;
     terminalsPerSession: number;
     reconnectGraceMs: number;
+    shell: string;
 }
 /**
  * Apply direct-call defaults after Loader schema validation has normally run.

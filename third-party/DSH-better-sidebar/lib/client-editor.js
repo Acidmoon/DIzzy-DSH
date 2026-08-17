@@ -4045,13 +4045,13 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		else target = root;
 		return target.getSelection();
 	}
-	function contains(dom, node) {
+	function contains$1(dom, node) {
 		return node ? dom == node || dom.contains(node.nodeType != 1 ? node.parentNode : node) : false;
 	}
 	function hasSelection(dom, selection) {
 		if (!selection.anchorNode) return false;
 		try {
-			return contains(dom, selection.anchorNode);
+			return contains$1(dom, selection.anchorNode);
 		} catch (_) {
 			return false;
 		}
@@ -4458,7 +4458,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		}
 		return true;
 	}
-	const types = [];
+	const types$1 = [];
 	function computeCharTypes(line, rFrom, rTo, isolates, outerType) {
 		for (let iI = 0; iI <= isolates.length; iI++) {
 			let from = iI ? isolates[iI - 1].to : rFrom, to = iI < isolates.length ? isolates[iI].from : rTo;
@@ -4467,22 +4467,22 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				let type = charType(line.charCodeAt(i));
 				if (type == 512) type = prev;
 				else if (type == 8 && prevStrong == 4) type = 16;
-				types[i] = type == 4 ? 2 : type;
+				types$1[i] = type == 4 ? 2 : type;
 				if (type & 7) prevStrong = type;
 				prev = type;
 			}
 			for (let i = from, prev = prevType, prevStrong = prevType; i < to; i++) {
-				let type = types[i];
+				let type = types$1[i];
 				if (type == 128) {
-					if (i < to - 1 && prev == types[i + 1] && prev & 24) type = types[i] = prev;
-					else types[i] = 256;
+					if (i < to - 1 && prev == types$1[i + 1] && prev & 24) type = types$1[i] = prev;
+					else types$1[i] = 256;
 				} else if (type == 64) {
 					let end = i + 1;
-					while (end < to && types[end] == 64) end++;
-					let replace = i && prev == 8 || end < rTo && types[end] == 8 ? prevStrong == 1 ? 1 : 8 : 256;
-					for (let j = i; j < end; j++) types[j] = replace;
+					while (end < to && types$1[end] == 64) end++;
+					let replace = i && prev == 8 || end < rTo && types$1[end] == 8 ? prevStrong == 1 ? 1 : 8 : 256;
+					for (let j = i; j < end; j++) types$1[j] = replace;
 					i = end - 1;
-				} else if (type == 8 && prevStrong == 1) types[i] = 1;
+				} else if (type == 8 && prevStrong == 1) types$1[i] = 1;
 				prev = type;
 				if (type & 7) prevStrong = type;
 			}
@@ -4497,7 +4497,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 					for (let sJ = sI - 3; sJ >= 0; sJ -= 3) if (BracketStack[sJ + 1] == -br) {
 						let flags = BracketStack[sJ + 2];
 						let type = flags & 2 ? outerType : !(flags & 4) ? 0 : flags & 1 ? oppositeType : outerType;
-						if (type) types[i] = types[BracketStack[sJ]] = type;
+						if (type) types$1[i] = types$1[BracketStack[sJ]] = type;
 						sI = sJ;
 						break;
 					}
@@ -4507,7 +4507,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 					BracketStack[sI++] = ch;
 					BracketStack[sI++] = context;
 				}
-			} else if ((type = types[i]) == 2 || type == 1) {
+			} else if ((type = types$1[i]) == 2 || type == 1) {
 				let embed = type == outerType;
 				context = embed ? 0 : 1;
 				for (let sJ = sI - 3; sJ >= 0; sJ -= 3) {
@@ -4526,23 +4526,23 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		for (let iI = 0, prev = outerType; iI <= isolates.length; iI++) {
 			let from = iI ? isolates[iI - 1].to : rFrom, to = iI < isolates.length ? isolates[iI].from : rTo;
 			for (let i = from; i < to;) {
-				let type = types[i];
+				let type = types$1[i];
 				if (type == 256) {
 					let end = i + 1;
 					for (;;) if (end == to) {
 						if (iI == isolates.length) break;
 						end = isolates[iI++].to;
 						to = iI < isolates.length ? isolates[iI].from : rTo;
-					} else if (types[end] == 256) end++;
+					} else if (types$1[end] == 256) end++;
 					else break;
 					let beforeL = prev == 1;
-					let replace = beforeL == ((end < rTo ? types[end] : outerType) == 1) ? beforeL ? 1 : 2 : outerType;
+					let replace = beforeL == ((end < rTo ? types$1[end] : outerType) == 1) ? beforeL ? 1 : 2 : outerType;
 					for (let j = end, jI = iI, fromJ = jI ? isolates[jI - 1].to : rFrom; j > i;) {
 						if (j == fromJ) {
 							j = isolates[--jI].from;
 							fromJ = jI ? isolates[jI - 1].to : rFrom;
 						}
-						types[--j] = replace;
+						types$1[--j] = replace;
 					}
 					i = end;
 				} else {
@@ -4557,7 +4557,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		if (level % 2 == baseLevel % 2) for (let iCh = from, iI = 0; iCh < to;) {
 			let sameDir = true, isNum = false;
 			if (iI == isolates.length || iCh < isolates[iI].from) {
-				let next = types[iCh];
+				let next = types$1[iCh];
 				if (next != ourType) {
 					sameDir = false;
 					isNum = next == 16;
@@ -4572,7 +4572,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				if (!sameDir) for (let upto = iso.to, jI = iI + 1;;) {
 					if (upto == to) break run;
 					if (jI < isolates.length && isolates[jI].from == upto) upto = isolates[jI++].to;
-					else if (types[upto] == ourType) break run;
+					else if (types$1[upto] == ourType) break run;
 					else break;
 				}
 				iI++;
@@ -4583,7 +4583,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 					iCh = iso.to;
 				}
 				iScan = iso.to;
-			} else if (iScan == to || (sameDir ? types[iScan] != ourType : types[iScan] == ourType)) break;
+			} else if (iScan == to || (sameDir ? types$1[iScan] != ourType : types$1[iScan] == ourType)) break;
 			else iScan++;
 			if (recurse) emitSpans(line, iCh, iScan, level + 1, baseLevel, recurse, order);
 			else if (iCh < iScan) order.push(new BidiSpan(iCh, iScan, localLevel));
@@ -4592,7 +4592,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		else for (let iCh = to, iI = isolates.length; iCh > from;) {
 			let sameDir = true, isNum = false;
 			if (!iI || iCh > isolates[iI - 1].to) {
-				let next = types[iCh - 1];
+				let next = types$1[iCh - 1];
 				if (next != ourType) {
 					sameDir = false;
 					isNum = next == 16;
@@ -4607,7 +4607,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				if (!sameDir) for (let upto = iso.from, jI = iI;;) {
 					if (upto == from) break run;
 					if (jI && isolates[jI - 1].to == upto) upto = isolates[--jI].from;
-					else if (types[upto - 1] == ourType) break run;
+					else if (types$1[upto - 1] == ourType) break run;
 					else break;
 				}
 				if (recurse) recurse.push(iso);
@@ -4617,7 +4617,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 					iCh = iso.from;
 				}
 				iScan = iso.from;
-			} else if (iScan == from || (sameDir ? types[iScan - 1] != ourType : types[iScan - 1] == ourType)) break;
+			} else if (iScan == from || (sameDir ? types$1[iScan - 1] != ourType : types$1[iScan - 1] == ourType)) break;
 			else iScan--;
 			if (recurse) emitSpans(line, iScan, iCh, level + 1, baseLevel, recurse, order);
 			else if (iScan < iCh) order.push(new BidiSpan(iScan, iCh, localLevel));
@@ -4634,7 +4634,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	function computeOrder(line, direction, isolates) {
 		if (!line) return [new BidiSpan(0, 0, direction == RTL ? 1 : 0)];
 		if (direction == LTR && !isolates.length && !BidiRE.test(line)) return trivialOrder(line.length);
-		if (isolates.length) while (line.length > types.length) types[types.length] = 256;
+		if (isolates.length) while (line.length > types$1.length) types$1[types$1.length] = 256;
 		let order = [], level = direction == LTR ? 0 : 1;
 		computeSectionOrder(line, level, level, isolates, 0, line.length, order);
 		return order;
@@ -7054,8 +7054,8 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				this.newSel = selectionFromPoints(selPoints, this.bounds.from);
 			} else {
 				let domSel = view.observer.selectionRange;
-				let head = iHead && iHead.node == domSel.focusNode && iHead.offset == domSel.focusOffset || !contains(view.contentDOM, domSel.focusNode) ? curSel.main.head : view.docView.posFromDOM(domSel.focusNode, domSel.focusOffset);
-				let anchor = iAnchor && iAnchor.node == domSel.anchorNode && iAnchor.offset == domSel.anchorOffset || !contains(view.contentDOM, domSel.anchorNode) ? curSel.main.anchor : view.docView.posFromDOM(domSel.anchorNode, domSel.anchorOffset);
+				let head = iHead && iHead.node == domSel.focusNode && iHead.offset == domSel.focusOffset || !contains$1(view.contentDOM, domSel.focusNode) ? curSel.main.head : view.docView.posFromDOM(domSel.focusNode, domSel.focusOffset);
+				let anchor = iAnchor && iAnchor.node == domSel.anchorNode && iAnchor.offset == domSel.anchorOffset || !contains$1(view.contentDOM, domSel.anchorNode) ? curSel.main.anchor : view.docView.posFromDOM(domSel.anchorNode, domSel.anchorOffset);
 				let vp = view.viewport;
 				if ((browser.ios || browser.chrome) && head != anchor && Math.min(head, anchor) <= curSel.main.from && Math.max(head, anchor) >= curSel.main.to && (vp.from > 0 || vp.to < view.state.doc.length)) {
 					let from = Math.min(head, anchor), to = Math.max(head, anchor);
@@ -17903,8 +17903,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	const HTML_ROUTE_PREFIX = "/sidebar/html/";
 	/** Build the route URL for one absolute file path (client + tests). */
 	function encodeHtmlUrl(sessionId, path) {
+		const unc = /^[\\/]{2}[^\\/]/.test(path);
 		const segments = path.split(/[\\/]+/).filter((segment) => segment !== "");
-		return `${HTML_ROUTE_PREFIX}${encodeURIComponent(sessionId)}/${segments.map(encodeURIComponent).join("/")}`;
+		return `${HTML_ROUTE_PREFIX}${encodeURIComponent(sessionId)}/${unc ? "/" : ""}${segments.map(encodeURIComponent).join("/")}`;
 	}
 	//#endregion
 	//#region src/client/api.ts
@@ -17986,6 +17987,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		ptyClose: (scope, tab) => call("pty.close", scopePayload(scope, { tab })),
 		/** Release an agent terminal by uuid (tab closed while WS was down). */
 		agentPtyClose: (uuid) => call("agent-pty.close", { uuid }),
+		/** Terminal dependency status (issue #140): after a WS close 1011 with
+		*  reason `pty-deps-missing` the view fetches the full repair details here
+		*  (the close reason itself is capped at 123 bytes). */
+		terminalDeps: () => call("terminal.deps", {}),
 		/**
 		* The output the model has read so far for one background job (replayed
 		* from the owner session's event log — never the model's job_output
@@ -18008,9 +18013,14 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		*  check; see the host's browser.probe route). */
 		browserProbe: (url, signal) => call("browser.probe", { url }, signal)
 	};
-	/** Absolute URL of the HTML preview route (see html-route.ts): the path is
-	*  fully encoded so the previewed page's relative assets resolve back into
-	*  the same route with the session scope intact. */
+	/**
+	* Absolute URL of the HTML preview route (see html-route.ts): the path is
+	* fully encoded so the previewed page's relative assets resolve back into
+	* the same route with the session scope intact. The UNC marker is
+	* platform-neutral — the host's requireAbsolute resolves the decoded
+	* forward-slash `//server/share/...` form on both win32 and POSIX — so no
+	* client-side platform signal is needed.
+	*/
 	function htmlUrl(scope, path) {
 		return encodeHtmlUrl(scope.sessionId, path);
 	}
@@ -20776,8 +20786,8 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		label: name,
 		type: "keyword"
 	});
-	const keywords$4 = /*@__PURE__*/ "break case const continue default delete export extends false finally in instanceof let new return static super switch this throw true typeof var yield".split(" ").map(kwCompletion$1);
-	const typescriptKeywords = /*@__PURE__*/ keywords$4.concat(/*@__PURE__*/ [
+	const keywords$5 = /*@__PURE__*/ "break case const continue default delete export extends false finally in instanceof let new return static super switch this throw true typeof var yield".split(" ").map(kwCompletion$1);
+	const typescriptKeywords = /*@__PURE__*/ keywords$5.concat(/*@__PURE__*/ [
 		"declare",
 		"implements",
 		"private",
@@ -20790,7 +20800,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	*/
 	function javascript(config = {}) {
 		let lang = config.jsx ? config.typescript ? tsxLanguage : jsxLanguage : config.typescript ? typescriptLanguage : javascriptLanguage;
-		let completions = config.typescript ? typescriptSnippets.concat(typescriptKeywords) : snippets$2.concat(keywords$4);
+		let completions = config.typescript ? typescriptSnippets.concat(typescriptKeywords) : snippets$2.concat(keywords$5);
 		return new LanguageSupport(lang, [
 			javascriptLanguage.data.of({ autocomplete: ifNotIn(dontComplete$2, completeFromList(completions)) }),
 			javascriptLanguage.data.of({ autocomplete: localCompletionSource$2 }),
@@ -23361,7 +23371,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	//#region node_modules/.pnpm/@lezer+css@1.3.6/node_modules/@lezer/css/dist/index.js
 	const descendantOp = 148;
 	const Unit = 1;
-	const identifier$3 = 149;
+	const identifier$4 = 149;
 	const callee = 150;
 	const VariableName = 2;
 	const queryIdentifier = 151;
@@ -23437,7 +23447,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			}
 		}
 	};
-	const identifiers = new ExternalTokenizer(identifierTokens(identifier$3, VariableName, callee), { contextual: true });
+	const identifiers = new ExternalTokenizer(identifierTokens(identifier$4, VariableName, callee), { contextual: true });
 	const queryIdentifiers = new ExternalTokenizer(identifierTokens(queryIdentifier, queryVariableName, QueryCallee), { contextual: true });
 	const descendant = new ExternalTokenizer((input) => {
 		if (space$3.includes(input.peek(-1))) {
@@ -24388,7 +24398,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		type: "keyword",
 		label
 	}));
-	const identifier$2 = /^(\w[\w-]*|-\w[\w-]*|)$/;
+	const identifier$3 = /^(\w[\w-]*|-\w[\w-]*|)$/;
 	const variable = /^-(-[\w-]*)?$/;
 	function isVarArg(node, doc) {
 		var _a;
@@ -24449,17 +24459,17 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		if (node.name == "PropertyName" || (isDash || node.name == "TagName") && /^(Block|Styles)$/.test(node.resolve(node.to).name)) return {
 			from: node.from,
 			options: properties$1(),
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (node.name == "ValueName") return {
 			from: node.from,
 			options: values,
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (node.name == "PseudoClassName") return {
 			from: node.from,
 			options: pseudoClasses,
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (isVariable(node) || (context.explicit || isDash) && isVarArg(node, state.doc)) return {
 			from: isVariable(node) || isDash ? node.from : pos,
@@ -24470,35 +24480,35 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			for (let { parent } = node; parent; parent = parent.parent) if (parent.name == "Block") return {
 				from: node.from,
 				options: properties$1(),
-				validFor: identifier$2
+				validFor: identifier$3
 			};
 			return {
 				from: node.from,
 				options: tags,
-				validFor: identifier$2
+				validFor: identifier$3
 			};
 		}
 		if (node.name == "AtKeyword") return {
 			from: node.from,
 			options: atRules,
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (!context.explicit) return null;
 		let above = node.resolve(pos), before = above.childBefore(pos);
 		if (before && before.name == ":" && above.name == "PseudoClassSelector") return {
 			from: pos,
 			options: pseudoClasses,
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (before && before.name == ":" && above.name == "Declaration" || above.name == "ArgList") return {
 			from: pos,
 			options: values,
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		if (above.name == "Block" || above.name == "Styles") return {
 			from: pos,
 			options: properties$1(),
-			validFor: identifier$2
+			validFor: identifier$3
 		};
 		return null;
 	};
@@ -25224,7 +25234,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		}
 		return open;
 	}
-	const identifier$1 = /^[:\-\.\w\u00b7-\uffff]*$/;
+	const identifier$2 = /^[:\-\.\w\u00b7-\uffff]*$/;
 	function completeTag(state, schema, tree, from, to) {
 		let end = /\s*>/.test(state.sliceDoc(to, to + 5)) ? "" : ">";
 		let parent = findParentElement$1(tree, tree.name == "StartTag" || tree.name == "TagName");
@@ -25254,7 +25264,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				type: "type",
 				boost: 99 - i
 			})),
-			validFor: identifier$1
+			validFor: identifier$2
 		};
 	}
 	function completeStartTag(state, schema, tree, pos) {
@@ -25285,7 +25295,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				label: attrName,
 				type: "property"
 			})),
-			validFor: identifier$1
+			validFor: identifier$2
 		};
 	}
 	function completeAttrValue(state, schema, tree, from, to) {
@@ -25606,7 +25616,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			return defaultLanguage ? defaultLanguage.parser : null;
 		};
 	}
-	var Context$2 = class {
+	var Context$4 = class {
 		constructor(node, from, to, spaceBefore, spaceAfter, type, item) {
 			this.node = node;
 			this.from = from;
@@ -25640,14 +25650,14 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		for (let i = nodes.length - 1; i >= 0; i--) {
 			let node = nodes[i], match;
 			let line = doc.lineAt(node.from), startPos = node.from - line.from;
-			if (node.name == "Blockquote" && (match = /^ *>( ?)/.exec(line.text.slice(startPos)))) context.push(new Context$2(node, startPos, startPos + match[0].length, "", match[1], ">", null));
+			if (node.name == "Blockquote" && (match = /^ *>( ?)/.exec(line.text.slice(startPos)))) context.push(new Context$4(node, startPos, startPos + match[0].length, "", match[1], ">", null));
 			else if (node.name == "ListItem" && node.parent.name == "OrderedList" && (match = /^( *)\d+([.)])( *)/.exec(line.text.slice(startPos)))) {
 				let after = match[3], len = match[0].length;
 				if (after.length >= 4) {
 					after = after.slice(0, after.length - 4);
 					len -= 4;
 				}
-				context.push(new Context$2(node.parent, startPos, startPos + len, match[1], after, match[2], node));
+				context.push(new Context$4(node.parent, startPos, startPos + len, match[1], after, match[2], node));
 			} else if (node.name == "ListItem" && node.parent.name == "BulletList" && (match = /^( *)([-+*])( {1,4}\[[ xX]\])?( +)/.exec(line.text.slice(startPos)))) {
 				let after = match[4], len = match[0].length;
 				if (after.length > 4) {
@@ -25656,7 +25666,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				}
 				let type = match[2];
 				if (match[3]) type += match[3].replace(/[xX]/, " ");
-				context.push(new Context$2(node.parent, startPos, startPos + len, match[1], after, type, node));
+				context.push(new Context$4(node.parent, startPos, startPos + len, match[1], after, type, node));
 			}
 		}
 		return context;
@@ -26124,13 +26134,13 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	const cx_Long = 8;
 	const cx_Raw = 16;
 	const cx_Format = 32;
-	function Context$1(parent, indent, flags) {
+	function Context$3(parent, indent, flags) {
 		this.parent = parent;
 		this.indent = indent;
 		this.flags = flags;
 		this.hash = (parent ? parent.hash + parent.hash << 8 : 0) + indent + (indent << 4) + flags + (flags << 6);
 	}
-	const topIndent = new Context$1(null, 0, 0);
+	const topIndent = new Context$3(null, 0, 0);
 	function countIndent(space) {
 		let depth = 0;
 		for (let i = 0; i < space.length; i++) depth += space.charCodeAt(i) == tab$1 ? 8 - depth % 8 : 1;
@@ -26161,10 +26171,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			return context;
 		},
 		shift(context, term, stack, input) {
-			if (term == indent) return new Context$1(context, countIndent(input.read(input.pos, stack.pos)), 0);
+			if (term == indent) return new Context$3(context, countIndent(input.read(input.pos, stack.pos)), 0);
 			if (term == dedent) return context.parent;
-			if (term == ParenL$2 || term == BracketL$2 || term == BraceL$2 || term == replacementStart) return new Context$1(context, 0, cx_Bracketed);
-			if (stringFlags.has(term)) return new Context$1(context, 0, stringFlags.get(term) | context.flags & cx_Bracketed);
+			if (term == ParenL$2 || term == BracketL$2 || term == BraceL$2 || term == replacementStart) return new Context$3(context, 0, cx_Bracketed);
+			if (stringFlags.has(term)) return new Context$3(context, 0, stringFlags.get(term) | context.flags & cx_Bracketed);
 			return context;
 		},
 		hash(context) {
@@ -27363,7 +27373,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	const type_Map = 2;
 	const type_Flow = 3;
 	const type_Lit = 4;
-	var Context = class {
+	var Context$2 = class {
 		constructor(parent, depth, type) {
 			this.parent = parent;
 			this.depth = depth;
@@ -27371,7 +27381,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			this.hash = (parent ? parent.hash + parent.hash << 8 : 0) + depth + (depth << 4) + type;
 		}
 	};
-	Context.top = new Context(null, -1, type_Top);
+	Context$2.top = new Context$2(null, -1, type_Top);
 	function findColumn(input, pos) {
 		for (let col = 0, p = pos - input.pos - 1;; p--, col++) {
 			let ch = input.peek(p);
@@ -27391,19 +27401,19 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		return ch < 0 || isSpace$1(ch);
 	}
 	const indentation = new ContextTracker({
-		start: Context.top,
+		start: Context$2.top,
 		reduce(context, term) {
 			return context.type == type_Flow && (term == FlowSequence || term == FlowMapping) ? context.parent : context;
 		},
 		shift(context, term, stack, input) {
-			if (term == sequenceStartMark) return new Context(context, findColumn(input, input.pos), type_Seq);
-			if (term == mapStartMark || term == explicitMapStartMark) return new Context(context, findColumn(input, input.pos), type_Map);
+			if (term == sequenceStartMark) return new Context$2(context, findColumn(input, input.pos), type_Seq);
+			if (term == mapStartMark || term == explicitMapStartMark) return new Context$2(context, findColumn(input, input.pos), type_Map);
 			if (term == blockEnd) return context.parent;
-			if (term == BracketL$1 || term == BraceL$1) return new Context(context, 0, type_Flow);
+			if (term == BracketL$1 || term == BraceL$1) return new Context$2(context, 0, type_Flow);
 			if (term == BlockLiteralContent && context.type == type_Lit) return context.parent;
 			if (term == BlockLiteralHeader) {
 				let indent = /[1-9]/.exec(input.read(input.pos, stack.pos));
-				if (indent) return new Context(context, context.depth + +indent[0], type_Lit);
+				if (indent) return new Context$2(context, context.depth + +indent[0], type_Lit);
 			}
 			return context;
 		},
@@ -27825,7 +27835,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		return false;
 	}
 	const Space$1 = " 	\r\n";
-	function keywords$3(keywords, types, builtin) {
+	function keywords$4(keywords, types, builtin) {
 		let result = Object.create(null);
 		result["true"] = result["false"] = Bool;
 		result["null"] = result["unknown"] = Null;
@@ -27849,12 +27859,12 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		specialVar: "?",
 		identifierQuotes: "\"",
 		caseInsensitiveIdentifiers: false,
-		words: /*@__PURE__*/ keywords$3("absolute action add after all allocate alter and any are as asc assertion at authorization before begin between both breadth by call cascade cascaded case cast catalog check close collate collation column commit condition connect connection constraint constraints constructor continue corresponding count create cross cube current current_date current_default_transform_group current_transform_group_for_type current_path current_role current_time current_timestamp current_user cursor cycle data day deallocate declare default deferrable deferred delete depth deref desc describe descriptor deterministic diagnostics disconnect distinct do domain drop dynamic each else elseif end end-exec equals escape except exception exec execute exists exit external fetch first for foreign found from free full function general get global go goto grant group grouping handle having hold hour identity if immediate in indicator initially inner inout input insert intersect into is isolation join key language last lateral leading leave left level like limit local localtime localtimestamp locator loop map match method minute modifies module month names natural nesting new next no none not of old on only open option or order ordinality out outer output overlaps pad parameter partial path prepare preserve primary prior privileges procedure public read reads recursive redo ref references referencing relative release repeat resignal restrict result return returns revoke right role rollback rollup routine row rows savepoint schema scroll search second section select session session_user set sets signal similar size some space specific specifictype sql sqlexception sqlstate sqlwarning start state static system_user table temporary then timezone_hour timezone_minute to trailing transaction translation treat trigger under undo union unique unnest until update usage user using value values view when whenever where while with without work write year zone ", "array binary bit boolean char character clob date decimal double float int integer interval large national nchar nclob numeric object precision real smallint time timestamp varchar varying ")
+		words: /*@__PURE__*/ keywords$4("absolute action add after all allocate alter and any are as asc assertion at authorization before begin between both breadth by call cascade cascaded case cast catalog check close collate collation column commit condition connect connection constraint constraints constructor continue corresponding count create cross cube current current_date current_default_transform_group current_transform_group_for_type current_path current_role current_time current_timestamp current_user cursor cycle data day deallocate declare default deferrable deferred delete depth deref desc describe descriptor deterministic diagnostics disconnect distinct do domain drop dynamic each else elseif end end-exec equals escape except exception exec execute exists exit external fetch first for foreign found from free full function general get global go goto grant group grouping handle having hold hour identity if immediate in indicator initially inner inout input insert intersect into is isolation join key language last lateral leading leave left level like limit local localtime localtimestamp locator loop map match method minute modifies module month names natural nesting new next no none not of old on only open option or order ordinality out outer output overlaps pad parameter partial path prepare preserve primary prior privileges procedure public read reads recursive redo ref references referencing relative release repeat resignal restrict result return returns revoke right role rollback rollup routine row rows savepoint schema scroll search second section select session session_user set sets signal similar size some space specific specifictype sql sqlexception sqlstate sqlwarning start state static system_user table temporary then timezone_hour timezone_minute to trailing transaction translation treat trigger under undo union unique unnest until update usage user using value values view when whenever where while with without work write year zone ", "array binary bit boolean char character clob date decimal double float int integer interval large national nchar nclob numeric object precision real smallint time timestamp varchar varying ")
 	};
 	function dialect(spec, kws, types, builtin) {
 		let dialect = {};
 		for (let prop in defaults) dialect[prop] = (spec.hasOwnProperty(prop) ? spec : defaults)[prop];
-		if (kws) dialect.words = keywords$3(kws, types || "", builtin);
+		if (kws) dialect.words = keywords$4(kws, types || "", builtin);
 		return dialect;
 	}
 	function tokensFor(d) {
@@ -28605,7 +28615,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	/**
 	Java language support.
 	*/
-	function java() {
+	function java$1() {
 		return new LanguageSupport(javaLanguage);
 	}
 	//#endregion
@@ -29088,7 +29098,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	/**
 	Language support for C++.
 	*/
-	function cpp() {
+	function cpp$1() {
 		return new LanguageSupport(cppLanguage);
 	}
 	//#endregion
@@ -29483,7 +29493,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	//#region node_modules/.pnpm/@lezer+go@1.0.1/node_modules/@lezer/go/dist/index.js
 	const insertedSemi = 177;
 	const space$1 = 179;
-	const identifier = 184;
+	const identifier$1 = 184;
 	const String$1 = 12;
 	const closeParen$1 = 13;
 	const Number$1 = 17;
@@ -29511,7 +29521,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}, { contextual: true });
 	let trackedTokens = /* @__PURE__ */ new Set([
 		IncDecOp,
-		identifier,
+		identifier$1,
 		Rune,
 		String$1,
 		Number$1,
@@ -29942,13 +29952,13 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		label: name,
 		type: "keyword"
 	});
-	const keywords$2 = /*@__PURE__*/ "interface struct chan map package go return break continue goto fallthrough else defer range true false nil".split(" ").map(kwCompletion);
+	const keywords$3 = /*@__PURE__*/ "interface struct chan map package go return break continue goto fallthrough else defer range true false nil".split(" ").map(kwCompletion);
 	/**
 	Go support. Includes [snippet](https://codemirror.net/6/docs/ref/#lang-go.snippets) and local
 	variable completion.
 	*/
 	function go() {
-		let completions = snippets.concat(keywords$2);
+		let completions = snippets.concat(keywords$3);
 		return new LanguageSupport(goLanguage, [goLanguage.data.of({ autocomplete: ifNotIn(dontComplete, completeFromList(completions)) }), goLanguage.data.of({ autocomplete: localCompletionSource })]);
 	}
 	//#endregion
@@ -29964,7 +29974,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	const and = 5;
 	const array = 6;
 	const as = 7;
-	const Boolean = 8;
+	const Boolean$1 = 8;
 	const _break = 9;
 	const _case = 10;
 	const _catch = 11;
@@ -30025,8 +30035,8 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		and,
 		array,
 		as,
-		true: Boolean,
-		false: Boolean,
+		true: Boolean$1,
+		false: Boolean$1,
 		break: _break,
 		case: _case,
 		catch: _catch,
@@ -30089,7 +30099,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		yield: 66,
 		__proto__: null
 	};
-	function keywords$1(name) {
+	function keywords$2(name) {
 		let found = keywordMap[name.toLowerCase()];
 		return found == null ? -1 : found;
 	}
@@ -30396,8 +30406,8 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		dynamicPrecedences: { "298": 1 },
 		specialized: [{
 			term: 284,
-			get: (value, stack) => keywords$1(value) << 1,
-			external: keywords$1
+			get: (value, stack) => keywords$2(value) << 1,
+			external: keywords$2
 		}, {
 			term: 284,
 			get: (value) => spec_name[value] || -1
@@ -30478,9 +30488,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}
 	//#endregion
 	//#region node_modules/.pnpm/@codemirror+legacy-modes@6.5.3/node_modules/@codemirror/legacy-modes/mode/shell.js
-	var words$1 = {};
+	var words$2 = {};
 	function define(style, dict) {
-		for (var i = 0; i < dict.length; i++) words$1[dict[i]] = style;
+		for (var i = 0; i < dict.length; i++) words$2[dict[i]] = style;
 	}
 	var commonAtoms = ["true", "false"];
 	var commonKeywords = [
@@ -30576,7 +30586,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	define("atom", commonAtoms);
 	define("keyword", commonKeywords);
 	define("builtin", commonCommands);
-	function tokenBase$1(stream, state) {
+	function tokenBase$2(stream, state) {
 		if (stream.eatSpace()) return null;
 		var sol = stream.sol();
 		var ch = stream.next();
@@ -30585,7 +30595,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			return null;
 		}
 		if (ch === "'" || ch === "\"" || ch === "`") {
-			state.tokens.unshift(tokenString$1(ch, ch === "`" ? "quote" : "string"));
+			state.tokens.unshift(tokenString$2(ch, ch === "`" ? "quote" : "string"));
 			return tokenize(stream, state);
 		}
 		if (ch === "#") {
@@ -30621,9 +30631,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		stream.eatWhile(/[\w-]/);
 		var cur = stream.current();
 		if (stream.peek() === "=" && /\w+/.test(cur)) return "def";
-		return words$1.hasOwnProperty(cur) ? words$1[cur] : null;
+		return words$2.hasOwnProperty(cur) ? words$2[cur] : null;
 	}
-	function tokenString$1(quote, style) {
+	function tokenString$2(quote, style) {
 		var close = quote == "(" ? ")" : quote == "{" ? "}" : quote;
 		return function(stream, state) {
 			var next, escaped = false;
@@ -30637,7 +30647,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 					state.tokens.unshift(tokenDollar);
 					break;
 				} else if (!escaped && quote !== close && next === quote) {
-					state.tokens.unshift(tokenString$1(quote, style));
+					state.tokens.unshift(tokenString$2(quote, style));
 					return tokenize(stream, state);
 				} else if (!escaped && /['"]/.test(next) && !/['"]/.test(quote)) {
 					state.tokens.unshift(tokenStringStart(next, "string"));
@@ -30651,7 +30661,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}
 	function tokenStringStart(quote, style) {
 		return function(stream, state) {
-			state.tokens[0] = tokenString$1(quote, style);
+			state.tokens[0] = tokenString$2(quote, style);
 			stream.next();
 			return tokenize(stream, state);
 		};
@@ -30660,7 +30670,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		if (state.tokens.length > 1) stream.eat("$");
 		var ch = stream.next();
 		if (/['"({]/.test(ch)) {
-			state.tokens[0] = tokenString$1(ch, ch == "(" ? "quote" : ch == "{" ? "def" : "string");
+			state.tokens[0] = tokenString$2(ch, ch == "(" ? "quote" : ch == "{" ? "def" : "string");
 			return tokenize(stream, state);
 		}
 		if (!/\d/.test(ch)) stream.eatWhile(/\w/);
@@ -30675,7 +30685,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		};
 	}
 	function tokenize(stream, state) {
-		return (state.tokens[0] || tokenBase$1)(stream, state);
+		return (state.tokens[0] || tokenBase$2)(stream, state);
 	}
 	const shell = {
 		name: "shell",
@@ -30758,23 +30768,23 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	};
 	//#endregion
 	//#region node_modules/.pnpm/@codemirror+legacy-modes@6.5.3/node_modules/@codemirror/legacy-modes/mode/nginx.js
-	function words(str) {
+	function words$1(str) {
 		var obj = {}, words = str.split(" ");
 		for (var i = 0; i < words.length; ++i) obj[words[i]] = true;
 		return obj;
 	}
-	var keywords = words("break return rewrite set accept_mutex accept_mutex_delay access_log add_after_body add_before_body add_header addition_types aio alias allow ancient_browser ancient_browser_value auth_basic auth_basic_user_file auth_http auth_http_header auth_http_timeout autoindex autoindex_exact_size autoindex_localtime charset charset_types client_body_buffer_size client_body_in_file_only client_body_in_single_buffer client_body_temp_path client_body_timeout client_header_buffer_size client_header_timeout client_max_body_size connection_pool_size create_full_put_path daemon dav_access dav_methods debug_connection debug_points default_type degradation degrade deny devpoll_changes devpoll_events directio directio_alignment empty_gif env epoll_events error_log eventport_events expires fastcgi_bind fastcgi_buffer_size fastcgi_buffers fastcgi_busy_buffers_size fastcgi_cache fastcgi_cache_key fastcgi_cache_methods fastcgi_cache_min_uses fastcgi_cache_path fastcgi_cache_use_stale fastcgi_cache_valid fastcgi_catch_stderr fastcgi_connect_timeout fastcgi_hide_header fastcgi_ignore_client_abort fastcgi_ignore_headers fastcgi_index fastcgi_intercept_errors fastcgi_max_temp_file_size fastcgi_next_upstream fastcgi_param fastcgi_pass_header fastcgi_pass_request_body fastcgi_pass_request_headers fastcgi_read_timeout fastcgi_send_lowat fastcgi_send_timeout fastcgi_split_path_info fastcgi_store fastcgi_store_access fastcgi_temp_file_write_size fastcgi_temp_path fastcgi_upstream_fail_timeout fastcgi_upstream_max_fails flv geoip_city geoip_country google_perftools_profiles gzip gzip_buffers gzip_comp_level gzip_disable gzip_hash gzip_http_version gzip_min_length gzip_no_buffer gzip_proxied gzip_static gzip_types gzip_vary gzip_window if_modified_since ignore_invalid_headers image_filter image_filter_buffer image_filter_jpeg_quality image_filter_transparency imap_auth imap_capabilities imap_client_buffer index ip_hash keepalive_requests keepalive_timeout kqueue_changes kqueue_events large_client_header_buffers limit_conn limit_conn_log_level limit_rate limit_rate_after limit_req limit_req_log_level limit_req_zone limit_zone lingering_time lingering_timeout lock_file log_format log_not_found log_subrequest map_hash_bucket_size map_hash_max_size master_process memcached_bind memcached_buffer_size memcached_connect_timeout memcached_next_upstream memcached_read_timeout memcached_send_timeout memcached_upstream_fail_timeout memcached_upstream_max_fails merge_slashes min_delete_depth modern_browser modern_browser_value msie_padding msie_refresh multi_accept open_file_cache open_file_cache_errors open_file_cache_events open_file_cache_min_uses open_file_cache_valid open_log_file_cache output_buffers override_charset perl perl_modules perl_require perl_set pid pop3_auth pop3_capabilities port_in_redirect postpone_gzipping postpone_output protocol proxy proxy_bind proxy_buffer proxy_buffer_size proxy_buffering proxy_buffers proxy_busy_buffers_size proxy_cache proxy_cache_key proxy_cache_methods proxy_cache_min_uses proxy_cache_path proxy_cache_use_stale proxy_cache_valid proxy_connect_timeout proxy_headers_hash_bucket_size proxy_headers_hash_max_size proxy_hide_header proxy_ignore_client_abort proxy_ignore_headers proxy_intercept_errors proxy_max_temp_file_size proxy_method proxy_next_upstream proxy_pass_error_message proxy_pass_header proxy_pass_request_body proxy_pass_request_headers proxy_read_timeout proxy_redirect proxy_send_lowat proxy_send_timeout proxy_set_body proxy_set_header proxy_ssl_session_reuse proxy_store proxy_store_access proxy_temp_file_write_size proxy_temp_path proxy_timeout proxy_upstream_fail_timeout proxy_upstream_max_fails random_index read_ahead real_ip_header recursive_error_pages request_pool_size reset_timedout_connection resolver resolver_timeout rewrite_log rtsig_overflow_events rtsig_overflow_test rtsig_overflow_threshold rtsig_signo satisfy secure_link_secret send_lowat send_timeout sendfile sendfile_max_chunk server_name_in_redirect server_names_hash_bucket_size server_names_hash_max_size server_tokens set_real_ip_from smtp_auth smtp_capabilities smtp_client_buffer smtp_greeting_delay so_keepalive source_charset ssi ssi_ignore_recycled_buffers ssi_min_file_chunk ssi_silent_errors ssi_types ssi_value_length ssl ssl_certificate ssl_certificate_key ssl_ciphers ssl_client_certificate ssl_crl ssl_dhparam ssl_engine ssl_prefer_server_ciphers ssl_protocols ssl_session_cache ssl_session_timeout ssl_verify_client ssl_verify_depth starttls stub_status sub_filter sub_filter_once sub_filter_types tcp_nodelay tcp_nopush thread_stack_size timeout timer_resolution types_hash_bucket_size types_hash_max_size underscores_in_headers uninitialized_variable_warn use user userid userid_domain userid_expires userid_mark userid_name userid_p3p userid_path userid_service valid_referers variables_hash_bucket_size variables_hash_max_size worker_connections worker_cpu_affinity worker_priority worker_processes worker_rlimit_core worker_rlimit_nofile worker_rlimit_sigpending worker_threads working_directory xclient xml_entities xslt_stylesheet xslt_typesdrew@li229-23");
-	var keywords_block = words("http mail events server types location upstream charset_map limit_except if geo map");
-	var keywords_important = words("include root server server_name listen internal proxy_pass memcached_pass fastcgi_pass try_files");
+	var keywords$1 = words$1("break return rewrite set accept_mutex accept_mutex_delay access_log add_after_body add_before_body add_header addition_types aio alias allow ancient_browser ancient_browser_value auth_basic auth_basic_user_file auth_http auth_http_header auth_http_timeout autoindex autoindex_exact_size autoindex_localtime charset charset_types client_body_buffer_size client_body_in_file_only client_body_in_single_buffer client_body_temp_path client_body_timeout client_header_buffer_size client_header_timeout client_max_body_size connection_pool_size create_full_put_path daemon dav_access dav_methods debug_connection debug_points default_type degradation degrade deny devpoll_changes devpoll_events directio directio_alignment empty_gif env epoll_events error_log eventport_events expires fastcgi_bind fastcgi_buffer_size fastcgi_buffers fastcgi_busy_buffers_size fastcgi_cache fastcgi_cache_key fastcgi_cache_methods fastcgi_cache_min_uses fastcgi_cache_path fastcgi_cache_use_stale fastcgi_cache_valid fastcgi_catch_stderr fastcgi_connect_timeout fastcgi_hide_header fastcgi_ignore_client_abort fastcgi_ignore_headers fastcgi_index fastcgi_intercept_errors fastcgi_max_temp_file_size fastcgi_next_upstream fastcgi_param fastcgi_pass_header fastcgi_pass_request_body fastcgi_pass_request_headers fastcgi_read_timeout fastcgi_send_lowat fastcgi_send_timeout fastcgi_split_path_info fastcgi_store fastcgi_store_access fastcgi_temp_file_write_size fastcgi_temp_path fastcgi_upstream_fail_timeout fastcgi_upstream_max_fails flv geoip_city geoip_country google_perftools_profiles gzip gzip_buffers gzip_comp_level gzip_disable gzip_hash gzip_http_version gzip_min_length gzip_no_buffer gzip_proxied gzip_static gzip_types gzip_vary gzip_window if_modified_since ignore_invalid_headers image_filter image_filter_buffer image_filter_jpeg_quality image_filter_transparency imap_auth imap_capabilities imap_client_buffer index ip_hash keepalive_requests keepalive_timeout kqueue_changes kqueue_events large_client_header_buffers limit_conn limit_conn_log_level limit_rate limit_rate_after limit_req limit_req_log_level limit_req_zone limit_zone lingering_time lingering_timeout lock_file log_format log_not_found log_subrequest map_hash_bucket_size map_hash_max_size master_process memcached_bind memcached_buffer_size memcached_connect_timeout memcached_next_upstream memcached_read_timeout memcached_send_timeout memcached_upstream_fail_timeout memcached_upstream_max_fails merge_slashes min_delete_depth modern_browser modern_browser_value msie_padding msie_refresh multi_accept open_file_cache open_file_cache_errors open_file_cache_events open_file_cache_min_uses open_file_cache_valid open_log_file_cache output_buffers override_charset perl perl_modules perl_require perl_set pid pop3_auth pop3_capabilities port_in_redirect postpone_gzipping postpone_output protocol proxy proxy_bind proxy_buffer proxy_buffer_size proxy_buffering proxy_buffers proxy_busy_buffers_size proxy_cache proxy_cache_key proxy_cache_methods proxy_cache_min_uses proxy_cache_path proxy_cache_use_stale proxy_cache_valid proxy_connect_timeout proxy_headers_hash_bucket_size proxy_headers_hash_max_size proxy_hide_header proxy_ignore_client_abort proxy_ignore_headers proxy_intercept_errors proxy_max_temp_file_size proxy_method proxy_next_upstream proxy_pass_error_message proxy_pass_header proxy_pass_request_body proxy_pass_request_headers proxy_read_timeout proxy_redirect proxy_send_lowat proxy_send_timeout proxy_set_body proxy_set_header proxy_ssl_session_reuse proxy_store proxy_store_access proxy_temp_file_write_size proxy_temp_path proxy_timeout proxy_upstream_fail_timeout proxy_upstream_max_fails random_index read_ahead real_ip_header recursive_error_pages request_pool_size reset_timedout_connection resolver resolver_timeout rewrite_log rtsig_overflow_events rtsig_overflow_test rtsig_overflow_threshold rtsig_signo satisfy secure_link_secret send_lowat send_timeout sendfile sendfile_max_chunk server_name_in_redirect server_names_hash_bucket_size server_names_hash_max_size server_tokens set_real_ip_from smtp_auth smtp_capabilities smtp_client_buffer smtp_greeting_delay so_keepalive source_charset ssi ssi_ignore_recycled_buffers ssi_min_file_chunk ssi_silent_errors ssi_types ssi_value_length ssl ssl_certificate ssl_certificate_key ssl_ciphers ssl_client_certificate ssl_crl ssl_dhparam ssl_engine ssl_prefer_server_ciphers ssl_protocols ssl_session_cache ssl_session_timeout ssl_verify_client ssl_verify_depth starttls stub_status sub_filter sub_filter_once sub_filter_types tcp_nodelay tcp_nopush thread_stack_size timeout timer_resolution types_hash_bucket_size types_hash_max_size underscores_in_headers uninitialized_variable_warn use user userid userid_domain userid_expires userid_mark userid_name userid_p3p userid_path userid_service valid_referers variables_hash_bucket_size variables_hash_max_size worker_connections worker_cpu_affinity worker_priority worker_processes worker_rlimit_core worker_rlimit_nofile worker_rlimit_sigpending worker_threads working_directory xclient xml_entities xslt_stylesheet xslt_typesdrew@li229-23");
+	var keywords_block = words$1("http mail events server types location upstream charset_map limit_except if geo map");
+	var keywords_important = words$1("include root server server_name listen internal proxy_pass memcached_pass fastcgi_pass try_files");
 	var type;
 	function ret(style, tp) {
 		type = tp;
 		return style;
 	}
-	function tokenBase(stream, state) {
+	function tokenBase$1(stream, state) {
 		stream.eatWhile(/[\w\$_]/);
 		var cur = stream.current();
-		if (keywords.propertyIsEnumerable(cur)) return "keyword";
+		if (keywords$1.propertyIsEnumerable(cur)) return "keyword";
 		else if (keywords_block.propertyIsEnumerable(cur)) return "controlKeyword";
 		else if (keywords_important.propertyIsEnumerable(cur)) return "controlKeyword";
 		var ch = stream.next();
@@ -30790,7 +30800,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		} else if (ch == "=") ret(null, "compare");
 		else if ((ch == "~" || ch == "|") && stream.eat("=")) return ret(null, "compare");
 		else if (ch == "\"" || ch == "'") {
-			state.tokenize = tokenString(ch);
+			state.tokenize = tokenString$1(ch);
 			return state.tokenize(stream, state);
 		} else if (ch == "#") {
 			stream.skipToEnd();
@@ -30812,7 +30822,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		var maybeEnd = false, ch;
 		while ((ch = stream.next()) != null) {
 			if (maybeEnd && ch == "/") {
-				state.tokenize = tokenBase;
+				state.tokenize = tokenBase$1;
 				break;
 			}
 			maybeEnd = ch == "*";
@@ -30823,21 +30833,21 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		var dashes = 0, ch;
 		while ((ch = stream.next()) != null) {
 			if (dashes >= 2 && ch == ">") {
-				state.tokenize = tokenBase;
+				state.tokenize = tokenBase$1;
 				break;
 			}
 			dashes = ch == "-" ? dashes + 1 : 0;
 		}
 		return ret("comment", "comment");
 	}
-	function tokenString(quote) {
+	function tokenString$1(quote) {
 		return function(stream, state) {
 			var escaped = false, ch;
 			while ((ch = stream.next()) != null) {
 				if (ch == quote && !escaped) break;
 				escaped = !escaped && ch == "\\";
 			}
-			if (!escaped) state.tokenize = tokenBase;
+			if (!escaped) state.tokenize = tokenBase$1;
 			return ret("string", "string");
 		};
 	}
@@ -30845,7 +30855,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		name: "nginx",
 		startState: function() {
 			return {
-				tokenize: tokenBase,
+				tokenize: tokenBase$1,
 				baseIndent: 0,
 				stack: []
 			};
@@ -31251,6 +31261,1063 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		}
 	};
 	//#endregion
+	//#region node_modules/.pnpm/@codemirror+legacy-modes@6.5.3/node_modules/@codemirror/legacy-modes/mode/clike.js
+	function Context$1(indented, column, type, info, align, prev) {
+		this.indented = indented;
+		this.column = column;
+		this.type = type;
+		this.info = info;
+		this.align = align;
+		this.prev = prev;
+	}
+	function pushContext$1(state, col, type, info) {
+		var indent = state.indented;
+		if (state.context && state.context.type == "statement" && type != "statement") indent = state.context.indented;
+		return state.context = new Context$1(indent, col, type, info, null, state.context);
+	}
+	function popContext$1(state) {
+		var t = state.context.type;
+		if (t == ")" || t == "]" || t == "}") state.indented = state.context.indented;
+		return state.context = state.context.prev;
+	}
+	function typeBefore(stream, state, pos) {
+		if (state.prevToken == "variable" || state.prevToken == "type") return true;
+		if (/\S(?:[^- ]>|[*\]])\s*$|\*$/.test(stream.string.slice(0, pos))) return true;
+		if (state.typeAtEndOfLine && stream.column() == stream.indentation()) return true;
+	}
+	function isTopScope(context) {
+		for (;;) {
+			if (!context || context.type == "top") return true;
+			if (context.type == "}" && context.prev.info != "namespace") return false;
+			context = context.prev;
+		}
+	}
+	function clike(parserConfig) {
+		var statementIndentUnit = parserConfig.statementIndentUnit, dontAlignCalls = parserConfig.dontAlignCalls, keywords = parserConfig.keywords || {}, types = parserConfig.types || {}, builtin = parserConfig.builtin || {}, blockKeywords = parserConfig.blockKeywords || {}, defKeywords = parserConfig.defKeywords || {}, atoms = parserConfig.atoms || {}, hooks = parserConfig.hooks || {}, multiLineStrings = parserConfig.multiLineStrings, indentStatements = parserConfig.indentStatements !== false, indentSwitch = parserConfig.indentSwitch !== false, namespaceSeparator = parserConfig.namespaceSeparator, isPunctuationChar = parserConfig.isPunctuationChar || /[\[\]{}\(\),;\:\.]/, numberStart = parserConfig.numberStart || /[\d\.]/, number = parserConfig.number || /^(?:0x[a-f\d]+|0b[01]+|(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?)(u|ll?|l|f)?/i, isOperatorChar = parserConfig.isOperatorChar || /[+\-*&%=<>!?|\/]/, isIdentifierChar = parserConfig.isIdentifierChar || /[\w\$_\xa1-\uffff]/, isReservedIdentifier = parserConfig.isReservedIdentifier || false;
+		var curPunc, isDefKeyword;
+		function tokenBase(stream, state) {
+			var ch = stream.next();
+			if (hooks[ch]) {
+				var result = hooks[ch](stream, state);
+				if (result !== false) return result;
+			}
+			if (ch == "\"" || ch == "'") {
+				state.tokenize = tokenString(ch);
+				return state.tokenize(stream, state);
+			}
+			if (numberStart.test(ch)) {
+				stream.backUp(1);
+				if (stream.match(number)) return "number";
+				stream.next();
+			}
+			if (isPunctuationChar.test(ch)) {
+				curPunc = ch;
+				return null;
+			}
+			if (ch == "/") {
+				if (stream.eat("*")) {
+					state.tokenize = tokenComment;
+					return tokenComment(stream, state);
+				}
+				if (stream.eat("/")) {
+					stream.skipToEnd();
+					return "comment";
+				}
+			}
+			if (isOperatorChar.test(ch)) {
+				while (!stream.match(/^\/[\/*]/, false) && stream.eat(isOperatorChar));
+				return "operator";
+			}
+			stream.eatWhile(isIdentifierChar);
+			if (namespaceSeparator) while (stream.match(namespaceSeparator)) stream.eatWhile(isIdentifierChar);
+			var cur = stream.current();
+			if (contains(keywords, cur)) {
+				if (contains(blockKeywords, cur)) curPunc = "newstatement";
+				if (contains(defKeywords, cur)) isDefKeyword = true;
+				return "keyword";
+			}
+			if (contains(types, cur)) return "type";
+			if (contains(builtin, cur) || isReservedIdentifier && isReservedIdentifier(cur)) {
+				if (contains(blockKeywords, cur)) curPunc = "newstatement";
+				return "builtin";
+			}
+			if (contains(atoms, cur)) return "atom";
+			return "variable";
+		}
+		function tokenString(quote) {
+			return function(stream, state) {
+				var escaped = false, next, end = false;
+				while ((next = stream.next()) != null) {
+					if (next == quote && !escaped) {
+						end = true;
+						break;
+					}
+					escaped = !escaped && next == "\\";
+				}
+				if (end || !(escaped || multiLineStrings)) state.tokenize = null;
+				return "string";
+			};
+		}
+		function tokenComment(stream, state) {
+			var maybeEnd = false, ch;
+			while (ch = stream.next()) {
+				if (ch == "/" && maybeEnd) {
+					state.tokenize = null;
+					break;
+				}
+				maybeEnd = ch == "*";
+			}
+			return "comment";
+		}
+		function maybeEOL(stream, state) {
+			if (parserConfig.typeFirstDefinitions && stream.eol() && isTopScope(state.context)) state.typeAtEndOfLine = typeBefore(stream, state, stream.pos);
+		}
+		return {
+			name: parserConfig.name,
+			startState: function(indentUnit) {
+				return {
+					tokenize: null,
+					context: new Context$1(-indentUnit, 0, "top", null, false),
+					indented: 0,
+					startOfLine: true,
+					prevToken: null
+				};
+			},
+			token: function(stream, state) {
+				var ctx = state.context;
+				if (stream.sol()) {
+					if (ctx.align == null) ctx.align = false;
+					state.indented = stream.indentation();
+					state.startOfLine = true;
+				}
+				if (stream.eatSpace()) {
+					maybeEOL(stream, state);
+					return null;
+				}
+				curPunc = isDefKeyword = null;
+				var style = (state.tokenize || tokenBase)(stream, state);
+				if (style == "comment" || style == "meta") return style;
+				if (ctx.align == null) ctx.align = true;
+				if (curPunc == ";" || curPunc == ":" || curPunc == "," && stream.match(/^\s*(?:\/\/.*)?$/, false)) while (state.context.type == "statement") popContext$1(state);
+				else if (curPunc == "{") pushContext$1(state, stream.column(), "}");
+				else if (curPunc == "[") pushContext$1(state, stream.column(), "]");
+				else if (curPunc == "(") pushContext$1(state, stream.column(), ")");
+				else if (curPunc == "}") {
+					while (ctx.type == "statement") ctx = popContext$1(state);
+					if (ctx.type == "}") ctx = popContext$1(state);
+					while (ctx.type == "statement") ctx = popContext$1(state);
+				} else if (curPunc == ctx.type) popContext$1(state);
+				else if (indentStatements && ((ctx.type == "}" || ctx.type == "top") && curPunc != ";" || ctx.type == "statement" && curPunc == "newstatement")) pushContext$1(state, stream.column(), "statement", stream.current());
+				if (style == "variable" && (state.prevToken == "def" || parserConfig.typeFirstDefinitions && typeBefore(stream, state, stream.start) && isTopScope(state.context) && stream.match(/^\s*\(/, false))) style = "def";
+				if (hooks.token) {
+					var result = hooks.token(stream, state, style);
+					if (result !== void 0) style = result;
+				}
+				if (style == "def" && parserConfig.styleDefs === false) style = "variable";
+				state.startOfLine = false;
+				state.prevToken = isDefKeyword ? "def" : style || curPunc;
+				maybeEOL(stream, state);
+				return style;
+			},
+			indent: function(state, textAfter, context) {
+				if (state.tokenize != tokenBase && state.tokenize != null || state.typeAtEndOfLine && isTopScope(state.context)) return null;
+				var ctx = state.context, firstChar = textAfter && textAfter.charAt(0);
+				var closing = firstChar == ctx.type;
+				if (ctx.type == "statement" && firstChar == "}") ctx = ctx.prev;
+				if (parserConfig.dontIndentStatements) while (ctx.type == "statement" && parserConfig.dontIndentStatements.test(ctx.info)) ctx = ctx.prev;
+				if (hooks.indent) {
+					var hook = hooks.indent(state, ctx, textAfter, context.unit);
+					if (typeof hook == "number") return hook;
+				}
+				var switchBlock = ctx.prev && ctx.prev.info == "switch";
+				if (parserConfig.allmanIndentation && /[{(]/.test(firstChar)) {
+					while (ctx.type != "top" && ctx.type != "}") ctx = ctx.prev;
+					return ctx.indented;
+				}
+				if (ctx.type == "statement") return ctx.indented + (firstChar == "{" ? 0 : statementIndentUnit || context.unit);
+				if (ctx.align && (!dontAlignCalls || ctx.type != ")")) return ctx.column + (closing ? 0 : 1);
+				if (ctx.type == ")" && !closing) return ctx.indented + (statementIndentUnit || context.unit);
+				return ctx.indented + (closing ? 0 : context.unit) + (!closing && switchBlock && !/^(?:case|default)\b/.test(textAfter) ? context.unit : 0);
+			},
+			languageData: {
+				indentOnInput: indentSwitch ? /^\s*(?:case .*?:|default:|\{\}?|\})$/ : /^\s*[{}]$/,
+				commentTokens: {
+					line: "//",
+					block: {
+						open: "/*",
+						close: "*/"
+					}
+				},
+				autocomplete: Object.keys(keywords).concat(Object.keys(types)).concat(Object.keys(builtin)).concat(Object.keys(atoms)),
+				...parserConfig.languageData
+			}
+		};
+	}
+	function words(str) {
+		var obj = {}, words = str.split(" ");
+		for (var i = 0; i < words.length; ++i) obj[words[i]] = true;
+		return obj;
+	}
+	function contains(words, word) {
+		if (typeof words === "function") return words(word);
+		else return words.propertyIsEnumerable(word);
+	}
+	var cKeywords = "auto if break case register continue return default do sizeof static else struct switch extern typedef union for goto while enum const volatile inline restrict asm fortran";
+	var cppKeywords = "alignas alignof and and_eq audit axiom bitand bitor catch class compl concept constexpr const_cast decltype delete dynamic_cast explicit export final friend import module mutable namespace new noexcept not not_eq operator or or_eq override private protected public reinterpret_cast requires static_assert static_cast template this thread_local throw try typeid typename using virtual xor xor_eq";
+	var objCKeywords = "bycopy byref in inout oneway out self super atomic nonatomic retain copy readwrite readonly strong weak assign typeof nullable nonnull null_resettable _cmd @interface @implementation @end @protocol @encode @property @synthesize @dynamic @class @public @package @private @protected @required @optional @try @catch @finally @import @selector @encode @defs @synchronized @autoreleasepool @compatibility_alias @available";
+	var objCBuiltins = "FOUNDATION_EXPORT FOUNDATION_EXTERN NS_INLINE NS_FORMAT_FUNCTION  NS_RETURNS_RETAINEDNS_ERROR_ENUM NS_RETURNS_NOT_RETAINED NS_RETURNS_INNER_POINTER NS_DESIGNATED_INITIALIZER NS_ENUM NS_OPTIONS NS_REQUIRES_NIL_TERMINATION NS_ASSUME_NONNULL_BEGIN NS_ASSUME_NONNULL_END NS_SWIFT_NAME NS_REFINED_FOR_SWIFT";
+	var basicCTypes = words("int long char short double float unsigned signed void bool");
+	var basicObjCTypes = words("SEL instancetype id Class Protocol BOOL");
+	function cTypes(identifier) {
+		return contains(basicCTypes, identifier) || /.+_t$/.test(identifier);
+	}
+	function objCTypes(identifier) {
+		return cTypes(identifier) || contains(basicObjCTypes, identifier);
+	}
+	var cBlockKeywords = "case do else for if switch while struct enum union";
+	var cDefKeywords = "struct enum union";
+	function cppHook(stream, state) {
+		if (!state.startOfLine) return false;
+		for (var ch, next = null; ch = stream.peek();) {
+			if (ch == "\\" && stream.match(/^.$/)) {
+				next = cppHook;
+				break;
+			} else if (ch == "/" && stream.match(/^\/[\/\*]/, false)) break;
+			stream.next();
+		}
+		state.tokenize = next;
+		return "meta";
+	}
+	function pointerHook(_stream, state) {
+		if (state.prevToken == "type") return "type";
+		return false;
+	}
+	function cIsReservedIdentifier(token) {
+		if (!token || token.length < 2) return false;
+		if (token[0] != "_") return false;
+		return token[1] == "_" || token[1] !== token[1].toLowerCase();
+	}
+	function cpp14Literal(stream) {
+		stream.eatWhile(/[\w\.']/);
+		return "number";
+	}
+	function cpp11StringHook(stream, state) {
+		stream.backUp(1);
+		if (stream.match(/^(?:R|u8R|uR|UR|LR)/)) {
+			var match = stream.match(/^"([^\s\\()]{0,16})\(/);
+			if (!match) return false;
+			state.cpp11RawStringDelim = match[1];
+			state.tokenize = tokenRawString;
+			return tokenRawString(stream, state);
+		}
+		if (stream.match(/^(?:u8|u|U|L)/)) {
+			if (stream.match(/^["']/, false)) return "string";
+			return false;
+		}
+		stream.next();
+		return false;
+	}
+	function cppLooksLikeConstructor(word) {
+		var lastTwo = /(\w+)::~?(\w+)$/.exec(word);
+		return lastTwo && lastTwo[1] == lastTwo[2];
+	}
+	function tokenAtString(stream, state) {
+		var next;
+		while ((next = stream.next()) != null) if (next == "\"" && !stream.eat("\"")) {
+			state.tokenize = null;
+			break;
+		}
+		return "string";
+	}
+	function tokenRawString(stream, state) {
+		var delim = state.cpp11RawStringDelim.replace(/[^\w\s]/g, "\\$&");
+		if (stream.match(new RegExp(".*?\\)" + delim + "\""))) state.tokenize = null;
+		else stream.skipToEnd();
+		return "string";
+	}
+	clike({
+		name: "c",
+		keywords: words(cKeywords),
+		types: cTypes,
+		blockKeywords: words(cBlockKeywords),
+		defKeywords: words(cDefKeywords),
+		typeFirstDefinitions: true,
+		atoms: words("NULL true false"),
+		isReservedIdentifier: cIsReservedIdentifier,
+		hooks: {
+			"#": cppHook,
+			"*": pointerHook
+		}
+	});
+	clike({
+		name: "cpp",
+		keywords: words(cKeywords + " " + cppKeywords),
+		types: cTypes,
+		blockKeywords: words(cBlockKeywords + " class try catch"),
+		defKeywords: words(cDefKeywords + " class namespace"),
+		typeFirstDefinitions: true,
+		atoms: words("true false NULL nullptr"),
+		dontIndentStatements: /^template$/,
+		isIdentifierChar: /[\w\$_~\xa1-\uffff]/,
+		isReservedIdentifier: cIsReservedIdentifier,
+		hooks: {
+			"#": cppHook,
+			"*": pointerHook,
+			"u": cpp11StringHook,
+			"U": cpp11StringHook,
+			"L": cpp11StringHook,
+			"R": cpp11StringHook,
+			"0": cpp14Literal,
+			"1": cpp14Literal,
+			"2": cpp14Literal,
+			"3": cpp14Literal,
+			"4": cpp14Literal,
+			"5": cpp14Literal,
+			"6": cpp14Literal,
+			"7": cpp14Literal,
+			"8": cpp14Literal,
+			"9": cpp14Literal,
+			token: function(stream, state, style) {
+				if (style == "variable" && stream.peek() == "(" && (state.prevToken == ";" || state.prevToken == null || state.prevToken == "}") && cppLooksLikeConstructor(stream.current())) return "def";
+			}
+		},
+		namespaceSeparator: "::"
+	});
+	clike({
+		name: "java",
+		keywords: words("abstract assert break case catch class const continue default do else enum extends final finally for goto if implements import instanceof interface native new package private protected public return static strictfp super switch synchronized this throw throws transient try volatile while @interface"),
+		types: words("var byte short int long float double boolean char void Boolean Byte Character Double Float Integer Long Number Object Short String StringBuffer StringBuilder Void"),
+		blockKeywords: words("catch class do else finally for if switch try while"),
+		defKeywords: words("class interface enum @interface"),
+		typeFirstDefinitions: true,
+		atoms: words("true false null"),
+		number: /^(?:0x[a-f\d_]+|0b[01_]+|(?:[\d_]+\.?\d*|\.\d+)(?:e[-+]?[\d_]+)?)(u|ll?|l|f)?/i,
+		hooks: {
+			"@": function(stream) {
+				if (stream.match("interface", false)) return false;
+				stream.eatWhile(/[\w\$_]/);
+				return "meta";
+			},
+			"\"": function(stream, state) {
+				if (!stream.match(/""$/)) return false;
+				state.tokenize = tokenTripleString;
+				return state.tokenize(stream, state);
+			}
+		}
+	});
+	const csharp = clike({
+		name: "csharp",
+		keywords: words("abstract as async await base break case catch checked class const continue default delegate do else enum event explicit extern finally fixed for foreach goto if implicit in init interface internal is lock namespace new operator out override params private protected public readonly record ref required return sealed sizeof stackalloc static struct switch this throw try typeof unchecked unsafe using virtual void volatile while add alias ascending descending dynamic from get global group into join let orderby partial remove select set value var yield"),
+		types: words("Action Boolean Byte Char DateTime DateTimeOffset Decimal Double Func Guid Int16 Int32 Int64 Object SByte Single String Task TimeSpan UInt16 UInt32 UInt64 bool byte char decimal double short int long object sbyte float string ushort uint ulong"),
+		blockKeywords: words("catch class do else finally for foreach if struct switch try while"),
+		defKeywords: words("class interface namespace record struct var"),
+		typeFirstDefinitions: true,
+		atoms: words("true false null"),
+		hooks: { "@": function(stream, state) {
+			if (stream.eat("\"")) {
+				state.tokenize = tokenAtString;
+				return tokenAtString(stream, state);
+			}
+			stream.eatWhile(/[\w\$_]/);
+			return "meta";
+		} }
+	});
+	function tokenTripleString(stream, state) {
+		var escaped = false;
+		while (!stream.eol()) {
+			if (!escaped && stream.match("\"\"\"")) {
+				state.tokenize = null;
+				break;
+			}
+			escaped = stream.next() == "\\" && !escaped;
+		}
+		return "string";
+	}
+	function tokenNestedComment(depth) {
+		return function(stream, state) {
+			var ch;
+			while (ch = stream.next()) if (ch == "*" && stream.eat("/")) {
+				if (depth == 1) {
+					state.tokenize = null;
+					break;
+				} else {
+					state.tokenize = tokenNestedComment(depth - 1);
+					return state.tokenize(stream, state);
+				}
+			} else if (ch == "/" && stream.eat("*")) {
+				state.tokenize = tokenNestedComment(depth + 1);
+				return state.tokenize(stream, state);
+			}
+			return "comment";
+		};
+	}
+	clike({
+		name: "scala",
+		keywords: words("abstract case catch class def do else extends final finally for forSome if implicit import lazy match new null object override package private protected return sealed super this throw trait try type val var while with yield _ assert assume require print println printf readLine readBoolean readByte readShort readChar readInt readLong readFloat readDouble"),
+		types: words("AnyVal App Application Array BufferedIterator BigDecimal BigInt Char Console Either Enumeration Equiv Error Exception Fractional Function IndexedSeq Int Integral Iterable Iterator List Map Numeric Nil NotNull Option Ordered Ordering PartialFunction PartialOrdering Product Proxy Range Responder Seq Serializable Set Specializable Stream StringBuilder StringContext Symbol Throwable Traversable TraversableOnce Tuple Unit Vector Boolean Byte Character CharSequence Class ClassLoader Cloneable Comparable Compiler Double Exception Float Integer Long Math Number Object Package Pair Process Runtime Runnable SecurityManager Short StackTraceElement StrictMath String StringBuffer System Thread ThreadGroup ThreadLocal Throwable Triple Void"),
+		multiLineStrings: true,
+		blockKeywords: words("catch class enum do else finally for forSome if match switch try while"),
+		defKeywords: words("class enum def object package trait type val var"),
+		atoms: words("true false null"),
+		indentStatements: false,
+		indentSwitch: false,
+		isOperatorChar: /[+\-*&%=<>!?|\/#:@]/,
+		hooks: {
+			"@": function(stream) {
+				stream.eatWhile(/[\w\$_]/);
+				return "meta";
+			},
+			"\"": function(stream, state) {
+				if (!stream.match("\"\"")) return false;
+				state.tokenize = tokenTripleString;
+				return state.tokenize(stream, state);
+			},
+			"'": function(stream) {
+				if (stream.match(/^(\\[^'\s]+|[^\\'])'/)) return "character";
+				stream.eatWhile(/[\w\$_\xa1-\uffff]/);
+				return "atom";
+			},
+			"=": function(stream, state) {
+				var cx = state.context;
+				if (cx.type == "}" && cx.align && stream.eat(">")) {
+					state.context = new Context$1(cx.indented, cx.column, cx.type, cx.info, null, cx.prev);
+					return "operator";
+				} else return false;
+			},
+			"/": function(stream, state) {
+				if (!stream.eat("*")) return false;
+				state.tokenize = tokenNestedComment(1);
+				return state.tokenize(stream, state);
+			}
+		},
+		languageData: { closeBrackets: { brackets: [
+			"(",
+			"[",
+			"{",
+			"'",
+			"\"",
+			"\"\"\""
+		] } }
+	});
+	function tokenKotlinString(tripleString) {
+		return function(stream, state) {
+			var escaped = false, next, end = false;
+			while (!stream.eol()) {
+				if (!tripleString && !escaped && stream.match("\"")) {
+					end = true;
+					break;
+				}
+				if (tripleString && stream.match("\"\"\"")) {
+					end = true;
+					break;
+				}
+				next = stream.next();
+				if (!escaped && next == "$" && stream.match("{")) stream.skipTo("}");
+				escaped = !escaped && next == "\\" && !tripleString;
+			}
+			if (end || !tripleString) state.tokenize = null;
+			return "string";
+		};
+	}
+	const kotlin = clike({
+		name: "kotlin",
+		keywords: words("package as typealias class interface this super val operator var fun for is in This throw return annotation break continue object if else while do try when !in !is as? file import where by get set abstract enum open inner override private public internal protected catch finally out final vararg reified dynamic companion constructor init sealed field property receiver param sparam lateinit data inline noinline tailrec external annotation crossinline const operator infix suspend actual expect setparam"),
+		types: words("Boolean Byte Character CharSequence Class ClassLoader Cloneable Comparable Compiler Double Exception Float Integer Long Math Number Object Package Pair Process Runtime Runnable SecurityManager Short StackTraceElement StrictMath String StringBuffer System Thread ThreadGroup ThreadLocal Throwable Triple Void Annotation Any BooleanArray ByteArray Char CharArray DeprecationLevel DoubleArray Enum FloatArray Function Int IntArray Lazy LazyThreadSafetyMode LongArray Nothing ShortArray Unit"),
+		intendSwitch: false,
+		indentStatements: false,
+		multiLineStrings: true,
+		number: /^(?:0x[a-f\d_]+|0b[01_]+|(?:[\d_]+(\.\d+)?|\.\d+)(?:e[-+]?[\d_]+)?)(ul?|l|f)?/i,
+		blockKeywords: words("catch class do else finally for if where try while enum"),
+		defKeywords: words("class val var object interface fun"),
+		atoms: words("true false null this"),
+		hooks: {
+			"@": function(stream) {
+				stream.eatWhile(/[\w\$_]/);
+				return "meta";
+			},
+			"*": function(_stream, state) {
+				return state.prevToken == "." ? "variable" : "operator";
+			},
+			"\"": function(stream, state) {
+				state.tokenize = tokenKotlinString(stream.match("\"\""));
+				return state.tokenize(stream, state);
+			},
+			"/": function(stream, state) {
+				if (!stream.eat("*")) return false;
+				state.tokenize = tokenNestedComment(1);
+				return state.tokenize(stream, state);
+			},
+			indent: function(state, ctx, textAfter, indentUnit) {
+				var firstChar = textAfter && textAfter.charAt(0);
+				if ((state.prevToken == "}" || state.prevToken == ")") && textAfter == "") return state.indented;
+				if (state.prevToken == "operator" && textAfter != "}" && state.context.type != "}" || state.prevToken == "variable" && firstChar == "." || (state.prevToken == "}" || state.prevToken == ")") && firstChar == ".") return indentUnit * 2 + ctx.indented;
+				if (ctx.align && ctx.type == "}") return ctx.indented + (state.context.type == (textAfter || "").charAt(0) ? 0 : indentUnit);
+			}
+		},
+		languageData: { closeBrackets: { brackets: [
+			"(",
+			"[",
+			"{",
+			"'",
+			"\"",
+			"\"\"\""
+		] } }
+	});
+	clike({
+		name: "shader",
+		keywords: words("sampler1D sampler2D sampler3D samplerCube sampler1DShadow sampler2DShadow const attribute uniform varying break continue discard return for while do if else struct in out inout"),
+		types: words("float int bool void vec2 vec3 vec4 ivec2 ivec3 ivec4 bvec2 bvec3 bvec4 mat2 mat3 mat4"),
+		blockKeywords: words("for while do if else struct"),
+		builtin: words("radians degrees sin cos tan asin acos atan pow exp log exp2 sqrt inversesqrt abs sign floor ceil fract mod min max clamp mix step smoothstep length distance dot cross normalize ftransform faceforward reflect refract matrixCompMult lessThan lessThanEqual greaterThan greaterThanEqual equal notEqual any all not texture1D texture1DProj texture1DLod texture1DProjLod texture2D texture2DProj texture2DLod texture2DProjLod texture3D texture3DProj texture3DLod texture3DProjLod textureCube textureCubeLod shadow1D shadow2D shadow1DProj shadow2DProj shadow1DLod shadow2DLod shadow1DProjLod shadow2DProjLod dFdx dFdy fwidth noise1 noise2 noise3 noise4"),
+		atoms: words("true false gl_FragColor gl_SecondaryColor gl_Normal gl_Vertex gl_MultiTexCoord0 gl_MultiTexCoord1 gl_MultiTexCoord2 gl_MultiTexCoord3 gl_MultiTexCoord4 gl_MultiTexCoord5 gl_MultiTexCoord6 gl_MultiTexCoord7 gl_FogCoord gl_PointCoord gl_Position gl_PointSize gl_ClipVertex gl_FrontColor gl_BackColor gl_FrontSecondaryColor gl_BackSecondaryColor gl_TexCoord gl_FogFragCoord gl_FragCoord gl_FrontFacing gl_FragData gl_FragDepth gl_ModelViewMatrix gl_ProjectionMatrix gl_ModelViewProjectionMatrix gl_TextureMatrix gl_NormalMatrix gl_ModelViewMatrixInverse gl_ProjectionMatrixInverse gl_ModelViewProjectionMatrixInverse gl_TextureMatrixTranspose gl_ModelViewMatrixInverseTranspose gl_ProjectionMatrixInverseTranspose gl_ModelViewProjectionMatrixInverseTranspose gl_TextureMatrixInverseTranspose gl_NormalScale gl_DepthRange gl_ClipPlane gl_Point gl_FrontMaterial gl_BackMaterial gl_LightSource gl_LightModel gl_FrontLightModelProduct gl_BackLightModelProduct gl_TextureColor gl_EyePlaneS gl_EyePlaneT gl_EyePlaneR gl_EyePlaneQ gl_FogParameters gl_MaxLights gl_MaxClipPlanes gl_MaxTextureUnits gl_MaxTextureCoords gl_MaxVertexAttribs gl_MaxVertexUniformComponents gl_MaxVaryingFloats gl_MaxVertexTextureImageUnits gl_MaxTextureImageUnits gl_MaxFragmentUniformComponents gl_MaxCombineTextureImageUnits gl_MaxDrawBuffers"),
+		indentSwitch: false,
+		hooks: { "#": cppHook }
+	});
+	clike({
+		name: "nesc",
+		keywords: words(cKeywords + " as atomic async call command component components configuration event generic implementation includes interface module new norace nx_struct nx_union post provides signal task uses abstract extends"),
+		types: cTypes,
+		blockKeywords: words(cBlockKeywords),
+		atoms: words("null true false"),
+		hooks: { "#": cppHook }
+	});
+	clike({
+		name: "objectivec",
+		keywords: words(cKeywords + " " + objCKeywords),
+		types: objCTypes,
+		builtin: words(objCBuiltins),
+		blockKeywords: words(cBlockKeywords + " @synthesize @try @catch @finally @autoreleasepool @synchronized"),
+		defKeywords: words(cDefKeywords + " @interface @implementation @protocol @class"),
+		dontIndentStatements: /^@.*$/,
+		typeFirstDefinitions: true,
+		atoms: words("YES NO NULL Nil nil true false nullptr"),
+		isReservedIdentifier: cIsReservedIdentifier,
+		hooks: {
+			"#": cppHook,
+			"*": pointerHook
+		}
+	});
+	clike({
+		name: "objectivecpp",
+		keywords: words(cKeywords + " " + objCKeywords + " " + cppKeywords),
+		types: objCTypes,
+		builtin: words(objCBuiltins),
+		blockKeywords: words(cBlockKeywords + " @synthesize @try @catch @finally @autoreleasepool @synchronized class try catch"),
+		defKeywords: words(cDefKeywords + " @interface @implementation @protocol @class class namespace"),
+		dontIndentStatements: /^@.*$|^template$/,
+		typeFirstDefinitions: true,
+		atoms: words("YES NO NULL Nil nil true false nullptr"),
+		isReservedIdentifier: cIsReservedIdentifier,
+		hooks: {
+			"#": cppHook,
+			"*": pointerHook,
+			"u": cpp11StringHook,
+			"U": cpp11StringHook,
+			"L": cpp11StringHook,
+			"R": cpp11StringHook,
+			"0": cpp14Literal,
+			"1": cpp14Literal,
+			"2": cpp14Literal,
+			"3": cpp14Literal,
+			"4": cpp14Literal,
+			"5": cpp14Literal,
+			"6": cpp14Literal,
+			"7": cpp14Literal,
+			"8": cpp14Literal,
+			"9": cpp14Literal,
+			token: function(stream, state, style) {
+				if (style == "variable" && stream.peek() == "(" && (state.prevToken == ";" || state.prevToken == null || state.prevToken == "}") && cppLooksLikeConstructor(stream.current())) return "def";
+			}
+		},
+		namespaceSeparator: "::"
+	});
+	clike({
+		name: "squirrel",
+		keywords: words("base break clone continue const default delete enum extends function in class foreach local resume return this throw typeof yield constructor instanceof static"),
+		types: cTypes,
+		blockKeywords: words("case catch class else for foreach if switch try while"),
+		defKeywords: words("function local class"),
+		typeFirstDefinitions: true,
+		atoms: words("true false null"),
+		hooks: { "#": cppHook }
+	});
+	var stringTokenizer = null;
+	function tokenCeylonString(type) {
+		return function(stream, state) {
+			var escaped = false, next, end = false;
+			while (!stream.eol()) {
+				if (!escaped && stream.match("\"") && (type == "single" || stream.match("\"\""))) {
+					end = true;
+					break;
+				}
+				if (!escaped && stream.match("``")) {
+					stringTokenizer = tokenCeylonString(type);
+					end = true;
+					break;
+				}
+				next = stream.next();
+				escaped = type == "single" && !escaped && next == "\\";
+			}
+			if (end) state.tokenize = null;
+			return "string";
+		};
+	}
+	clike({
+		name: "ceylon",
+		keywords: words("abstracts alias assembly assert assign break case catch class continue dynamic else exists extends finally for function given if import in interface is let module new nonempty object of out outer package return satisfies super switch then this throw try value void while"),
+		types: function(word) {
+			var first = word.charAt(0);
+			return first === first.toUpperCase() && first !== first.toLowerCase();
+		},
+		blockKeywords: words("case catch class dynamic else finally for function if interface module new object switch try while"),
+		defKeywords: words("class dynamic function interface module object package value"),
+		builtin: words("abstract actual aliased annotation by default deprecated doc final formal late license native optional sealed see serializable shared suppressWarnings tagged throws variable"),
+		isPunctuationChar: /[\[\]{}\(\),;\:\.`]/,
+		isOperatorChar: /[+\-*&%=<>!?|^~:\/]/,
+		numberStart: /[\d#$]/,
+		number: /^(?:#[\da-fA-F_]+|\$[01_]+|[\d_]+[kMGTPmunpf]?|[\d_]+\.[\d_]+(?:[eE][-+]?\d+|[kMGTPmunpf]|)|)/i,
+		multiLineStrings: true,
+		typeFirstDefinitions: true,
+		atoms: words("true false null larger smaller equal empty finished"),
+		indentSwitch: false,
+		styleDefs: false,
+		hooks: {
+			"@": function(stream) {
+				stream.eatWhile(/[\w\$_]/);
+				return "meta";
+			},
+			"\"": function(stream, state) {
+				state.tokenize = tokenCeylonString(stream.match("\"\"") ? "triple" : "single");
+				return state.tokenize(stream, state);
+			},
+			"`": function(stream, state) {
+				if (!stringTokenizer || !stream.match("`")) return false;
+				state.tokenize = stringTokenizer;
+				stringTokenizer = null;
+				return state.tokenize(stream, state);
+			},
+			"'": function(stream) {
+				if (stream.match(/^(\\[^'\s]+|[^\\'])'/)) return "string.special";
+				stream.eatWhile(/[\w\$_\xa1-\uffff]/);
+				return "atom";
+			},
+			token: function(_stream, state, style) {
+				if ((style == "variable" || style == "type") && state.prevToken == ".") return "variableName.special";
+			}
+		},
+		languageData: { closeBrackets: { brackets: [
+			"(",
+			"[",
+			"{",
+			"'",
+			"\"",
+			"\"\"\""
+		] } }
+	});
+	function pushInterpolationStack(state) {
+		(state.interpolationStack || (state.interpolationStack = [])).push(state.tokenize);
+	}
+	function popInterpolationStack(state) {
+		return (state.interpolationStack || (state.interpolationStack = [])).pop();
+	}
+	function sizeInterpolationStack(state) {
+		return state.interpolationStack ? state.interpolationStack.length : 0;
+	}
+	function tokenDartString(quote, stream, state, raw) {
+		var tripleQuoted = false;
+		if (stream.eat(quote)) {
+			if (stream.eat(quote)) tripleQuoted = true;
+			else return "string";
+		}
+		function tokenStringHelper(stream, state) {
+			var escaped = false;
+			while (!stream.eol()) {
+				if (!raw && !escaped && stream.peek() == "$") {
+					pushInterpolationStack(state);
+					state.tokenize = tokenInterpolation;
+					return "string";
+				}
+				var next = stream.next();
+				if (next == quote && !escaped && (!tripleQuoted || stream.match(quote + quote))) {
+					state.tokenize = null;
+					break;
+				}
+				escaped = !raw && !escaped && next == "\\";
+			}
+			return "string";
+		}
+		state.tokenize = tokenStringHelper;
+		return tokenStringHelper(stream, state);
+	}
+	function tokenInterpolation(stream, state) {
+		stream.eat("$");
+		if (stream.eat("{")) state.tokenize = null;
+		else state.tokenize = tokenInterpolationIdentifier;
+		return null;
+	}
+	function tokenInterpolationIdentifier(stream, state) {
+		stream.eatWhile(/[\w_]/);
+		state.tokenize = popInterpolationStack(state);
+		return "variable";
+	}
+	clike({
+		name: "dart",
+		keywords: words("this super static final const abstract class extends external factory implements mixin get native set typedef with enum throw rethrow assert break case continue default in return new deferred async await covariant try catch finally do else for if switch while import library export part of show hide is as extension on yield late required sealed base interface when inline"),
+		blockKeywords: words("try catch finally do else for if switch while"),
+		builtin: words("void bool num int double dynamic var String Null Never"),
+		atoms: words("true false null"),
+		number: /^(?:0x[a-f\d_]+|(?:[\d_]+\.?[\d_]*|\.[\d_]+)(?:e[-+]?[\d_]+)?)/i,
+		hooks: {
+			"@": function(stream) {
+				stream.eatWhile(/[\w\$_\.]/);
+				return "meta";
+			},
+			"'": function(stream, state) {
+				return tokenDartString("'", stream, state, false);
+			},
+			"\"": function(stream, state) {
+				return tokenDartString("\"", stream, state, false);
+			},
+			"r": function(stream, state) {
+				var peek = stream.peek();
+				if (peek == "'" || peek == "\"") return tokenDartString(stream.next(), stream, state, true);
+				return false;
+			},
+			"}": function(_stream, state) {
+				if (sizeInterpolationStack(state) > 0) {
+					state.tokenize = popInterpolationStack(state);
+					return null;
+				}
+				return false;
+			},
+			"/": function(stream, state) {
+				if (!stream.eat("*")) return false;
+				state.tokenize = tokenNestedComment(1);
+				return state.tokenize(stream, state);
+			},
+			token: function(stream, _, style) {
+				if (style == "variable") {
+					if (RegExp("^[_$]*[A-Z][a-zA-Z0-9_$]*$", "g").test(stream.current())) return "type";
+				}
+			}
+		}
+	});
+	//#endregion
+	//#region node_modules/.pnpm/@codemirror+legacy-modes@6.5.3/node_modules/@codemirror/legacy-modes/mode/swift.js
+	function wordSet(words) {
+		var set = {};
+		for (var i = 0; i < words.length; i++) set[words[i]] = true;
+		return set;
+	}
+	var keywords = wordSet([
+		"_",
+		"var",
+		"let",
+		"actor",
+		"class",
+		"enum",
+		"extension",
+		"import",
+		"protocol",
+		"struct",
+		"func",
+		"typealias",
+		"associatedtype",
+		"open",
+		"public",
+		"internal",
+		"fileprivate",
+		"private",
+		"deinit",
+		"init",
+		"new",
+		"override",
+		"self",
+		"subscript",
+		"super",
+		"convenience",
+		"dynamic",
+		"final",
+		"indirect",
+		"lazy",
+		"required",
+		"static",
+		"unowned",
+		"unowned(safe)",
+		"unowned(unsafe)",
+		"weak",
+		"as",
+		"is",
+		"break",
+		"case",
+		"continue",
+		"default",
+		"else",
+		"fallthrough",
+		"for",
+		"guard",
+		"if",
+		"in",
+		"repeat",
+		"switch",
+		"where",
+		"while",
+		"defer",
+		"return",
+		"inout",
+		"mutating",
+		"nonmutating",
+		"isolated",
+		"nonisolated",
+		"catch",
+		"do",
+		"rethrows",
+		"throw",
+		"throws",
+		"async",
+		"await",
+		"try",
+		"didSet",
+		"get",
+		"set",
+		"willSet",
+		"assignment",
+		"associativity",
+		"infix",
+		"left",
+		"none",
+		"operator",
+		"postfix",
+		"precedence",
+		"precedencegroup",
+		"prefix",
+		"right",
+		"Any",
+		"AnyObject",
+		"Type",
+		"dynamicType",
+		"Self",
+		"Protocol",
+		"__COLUMN__",
+		"__FILE__",
+		"__FUNCTION__",
+		"__LINE__"
+	]);
+	var definingKeywords = wordSet([
+		"var",
+		"let",
+		"actor",
+		"class",
+		"enum",
+		"extension",
+		"import",
+		"protocol",
+		"struct",
+		"func",
+		"typealias",
+		"associatedtype",
+		"for"
+	]);
+	var atoms = wordSet([
+		"true",
+		"false",
+		"nil",
+		"self",
+		"super",
+		"_"
+	]);
+	var types = wordSet([
+		"Array",
+		"Bool",
+		"Character",
+		"Dictionary",
+		"Double",
+		"Float",
+		"Int",
+		"Int8",
+		"Int16",
+		"Int32",
+		"Int64",
+		"Never",
+		"Optional",
+		"Set",
+		"String",
+		"UInt8",
+		"UInt16",
+		"UInt32",
+		"UInt64",
+		"Void"
+	]);
+	var operators = "+-/*%=|&<>~^?!";
+	var punc = ":;,.(){}[]";
+	var binary = /^\-?0b[01][01_]*/;
+	var octal = /^\-?0o[0-7][0-7_]*/;
+	var hexadecimal = /^\-?0x[\dA-Fa-f][\dA-Fa-f_]*(?:(?:\.[\dA-Fa-f][\dA-Fa-f_]*)?[Pp]\-?\d[\d_]*)?/;
+	var decimal = /^\-?\d[\d_]*(?:\.\d[\d_]*)?(?:[Ee]\-?\d[\d_]*)?/;
+	var identifier = /^\$\d+|(`?)[_A-Za-z][_A-Za-z$0-9]*\1/;
+	var property = /^\.(?:\$\d+|(`?)[_A-Za-z][_A-Za-z$0-9]*\1)/;
+	var instruction = /^\#[A-Za-z]+/;
+	var attribute = /^@(?:\$\d+|(`?)[_A-Za-z][_A-Za-z$0-9]*\1)/;
+	function tokenBase(stream, state, prev) {
+		if (stream.sol()) state.indented = stream.indentation();
+		if (stream.eatSpace()) return null;
+		var ch = stream.peek();
+		if (ch == "/") {
+			if (stream.match("//")) {
+				stream.skipToEnd();
+				return "comment";
+			}
+			if (stream.match("/*")) {
+				state.tokenize.push(tokenComment);
+				return tokenComment(stream, state);
+			}
+		}
+		if (stream.match(instruction)) return "builtin";
+		if (stream.match(attribute)) return "attribute";
+		if (stream.match(binary)) return "number";
+		if (stream.match(octal)) return "number";
+		if (stream.match(hexadecimal)) return "number";
+		if (stream.match(decimal)) return "number";
+		if (stream.match(property)) return "property";
+		if (operators.indexOf(ch) > -1) {
+			stream.next();
+			return "operator";
+		}
+		if (punc.indexOf(ch) > -1) {
+			stream.next();
+			stream.match("..");
+			return "punctuation";
+		}
+		var stringMatch;
+		if (stringMatch = stream.match(/("""|"|')/)) {
+			var tokenize = tokenString.bind(null, stringMatch[0]);
+			state.tokenize.push(tokenize);
+			return tokenize(stream, state);
+		}
+		if (stream.match(identifier)) {
+			var ident = stream.current();
+			if (types.hasOwnProperty(ident)) return "type";
+			if (atoms.hasOwnProperty(ident)) return "atom";
+			if (keywords.hasOwnProperty(ident)) {
+				if (definingKeywords.hasOwnProperty(ident)) state.prev = "define";
+				return "keyword";
+			}
+			if (prev == "define") return "def";
+			return "variable";
+		}
+		stream.next();
+		return null;
+	}
+	function tokenUntilClosingParen() {
+		var depth = 0;
+		return function(stream, state, prev) {
+			var inner = tokenBase(stream, state, prev);
+			if (inner == "punctuation") {
+				if (stream.current() == "(") ++depth;
+				else if (stream.current() == ")") {
+					if (depth == 0) {
+						stream.backUp(1);
+						state.tokenize.pop();
+						return state.tokenize[state.tokenize.length - 1](stream, state);
+					} else --depth;
+				}
+			}
+			return inner;
+		};
+	}
+	function tokenString(openQuote, stream, state) {
+		var singleLine = openQuote.length == 1;
+		var ch, escaped = false;
+		while (ch = stream.peek()) if (escaped) {
+			stream.next();
+			if (ch == "(") {
+				state.tokenize.push(tokenUntilClosingParen());
+				return "string";
+			}
+			escaped = false;
+		} else if (stream.match(openQuote)) {
+			state.tokenize.pop();
+			return "string";
+		} else {
+			stream.next();
+			escaped = ch == "\\";
+		}
+		if (singleLine) state.tokenize.pop();
+		return "string";
+	}
+	function tokenComment(stream, state) {
+		var ch;
+		while (ch = stream.next()) if (ch === "/" && stream.eat("*")) state.tokenize.push(tokenComment);
+		else if (ch === "*" && stream.eat("/")) {
+			state.tokenize.pop();
+			break;
+		}
+		return "comment";
+	}
+	function Context(prev, align, indented) {
+		this.prev = prev;
+		this.align = align;
+		this.indented = indented;
+	}
+	function pushContext(state, stream) {
+		var align = stream.match(/^\s*($|\/[\/\*]|[)}\]])/, false) ? null : stream.column() + 1;
+		state.context = new Context(state.context, align, state.indented);
+	}
+	function popContext(state) {
+		if (state.context) {
+			state.indented = state.context.indented;
+			state.context = state.context.prev;
+		}
+	}
+	const swift = {
+		name: "swift",
+		startState: function() {
+			return {
+				prev: null,
+				context: null,
+				indented: 0,
+				tokenize: []
+			};
+		},
+		token: function(stream, state) {
+			var prev = state.prev;
+			state.prev = null;
+			var style = (state.tokenize[state.tokenize.length - 1] || tokenBase)(stream, state, prev);
+			if (!style || style == "comment") state.prev = prev;
+			else if (!state.prev) state.prev = style;
+			if (style == "punctuation") {
+				var bracket = /[\(\[\{]|([\]\)\}])/.exec(stream.current());
+				if (bracket) (bracket[1] ? popContext : pushContext)(state, stream);
+			}
+			return style;
+		},
+		indent: function(state, textAfter, iCx) {
+			var cx = state.context;
+			if (!cx) return 0;
+			var closing = /^[\]\}\)]/.test(textAfter);
+			if (cx.align != null) return cx.align - (closing ? 1 : 0);
+			return cx.indented + (closing ? 0 : iCx.unit);
+		},
+		languageData: {
+			indentOnInput: /^\s*[\)\}\]]$/,
+			commentTokens: {
+				line: "//",
+				block: {
+					open: "/*",
+					close: "*/"
+				}
+			},
+			closeBrackets: { brackets: [
+				"(",
+				"[",
+				"{",
+				"'",
+				"\"",
+				"`"
+			] }
+		}
+	};
+	//#endregion
 	//#region src/client/lang.ts
 	/**
 	* Syntax highlighting for the file editor: extension → CodeMirror language
@@ -31290,6 +32357,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			case "yml": return "yaml";
 			case "sql": return "sql";
 			case "java": return "java";
+			case "cs": return "csharp";
+			case "kt":
+			case "kts": return "kotlin";
+			case "swift": return "swift";
 			case "c":
 			case "h": return "c";
 			case "cc":
@@ -31330,9 +32401,12 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		xml: () => xml(),
 		yaml: () => yaml(),
 		sql: () => sql(),
-		java: () => java(),
-		c: () => cpp(),
-		cpp: () => cpp(),
+		java: () => java$1(),
+		csharp: () => StreamLanguage.define(csharp),
+		kotlin: () => StreamLanguage.define(kotlin),
+		swift: () => StreamLanguage.define(swift),
+		c: () => cpp$1(),
+		cpp: () => cpp$1(),
 		rust: () => rust(),
 		go: () => go(),
 		php: () => php(),
@@ -31642,6 +32716,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		editor: "编辑器",
 		newTab: "新建标签页",
 		openExplorer: "资源管理器",
+		brokenSymlink: "失效的软链接",
 		openGit: "Git 面板",
 		newTerminal: "新终端",
 		terminalLimit: "终端数量已达上限 (3)",
@@ -31653,6 +32728,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		terminalError: "终端连接失败",
 		terminalConnectFailed: "终端多次连接失败",
 		terminalRetry: "重试",
+		terminalDepsFailed: "终端依赖 node-pty 加载失败",
+		terminalDepsHint: "在 DSH 所在环境的终端或 cmd 中执行以下命令修复，然后点重试（node-pty 与 DSH 核心保持同一版本）：",
+		terminalDepsProfile: "（检测到 profile：{profile}）",
 		preview: "预览",
 		edit: "编辑",
 		refresh: "刷新",
@@ -31851,8 +32929,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		openPlugin: "跳转",
 		copyInstall: "复制安装命令",
 		pluginOfficeDesc: "为 better-sidebar 编辑器提供 Office 三件套预览（.docx / .xlsx / .pptx），把重型 Office 渲染库拆出主包、按需安装",
+		pluginGitRemotesDesc: "better-sidebar Git 远程 Tab：看分支/上游/ahead-behind，fetch（可 prune）、ff-only pull、确认后才 push。不替换内置 Git 的暂存/提交，也不提供 force-push 或模型自动推送",
 		pluginSentinelDesc: "条件驱动的 agent 唤醒系统：文件/进程/端口/HTTP/命令/webhook 传感器，条件达成自动唤醒休眠会话；注册「哨兵」Tab 展示服务器全局监控表",
-		pluginSidebarQaDesc: "基于 better-sidebar 的划选提问tab分页: 对话划选 → 右侧面板提问 → 同工作区独立追问会话（❓追问·主题）：快速无思考模型压缩主对话上下文后与引文一起注入，不打断主对话；追问可嵌套、可继续、可归档"
+		pluginSidebarQaDesc: "基于 better-sidebar 的划选提问tab分页: 对话划选 → 右侧面板提问 → 同工作区独立追问会话（❓追问·主题）：快速无思考模型压缩主对话上下文后与引文一起注入，不打断主对话；追问可嵌套、可继续、可归档",
+		pluginVideoPreviewDesc: "在 better-sidebar 编辑器内联预览视频文件（.mp4/.webm/.mov/.mkv/.avi 等），自带支持 HTTP Range（206）的 /video 宿主路由，可拖动进度条、不受 20MB mediaLimit 限制"
 	};
 	/** The en dictionary (key-set-equal to zh, enforced by the type annotation). */
 	const en = {
@@ -31862,6 +32942,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		editor: "Editor",
 		newTab: "New tab",
 		openExplorer: "Explorer",
+		brokenSymlink: "Broken symlink",
 		openGit: "Git panel",
 		newTerminal: "New terminal",
 		terminalLimit: "Terminal limit reached (3)",
@@ -31873,6 +32954,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		terminalError: "Terminal connection failed",
 		terminalConnectFailed: "Terminal failed to connect repeatedly",
 		terminalRetry: "Retry",
+		terminalDepsFailed: "Terminal dependency node-pty failed to load",
+		terminalDepsHint: "Run the command below in a terminal or cmd on the DSH machine to repair it, then retry (node-pty stays in sync with the DSH core version):",
+		terminalDepsProfile: " (detected profile: {profile})",
 		preview: "Preview",
 		edit: "Edit",
 		refresh: "Refresh",
@@ -32071,8 +33155,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		openPlugin: "Open",
 		copyInstall: "Copy install command",
 		pluginOfficeDesc: "Office-suite preview (.docx / .xlsx / .pptx) for the better-sidebar editor, keeping the heavy Office render libraries out of the core bundle",
+		pluginGitRemotesDesc: "Git Remotes tab: branch/upstream/ahead-behind, fetch (optional prune), ff-only pull, and push only after an in-tab confirm. Does not replace the built-in Git stage/commit tab, and does not offer force-push or a model auto-push tool",
 		pluginSentinelDesc: "Condition-driven agent wakeup: file/process/port/http/command/webhook sensors wake dormant sessions when conditions fire; registers a \"Sentinel\" tab with the server-wide watch table",
-		pluginSidebarQaDesc: "Select-and-ask: Select conversation text → ask in the right-side panel → a dedicated follow-up session (❓追问) in the same workspace; a fast no-thinking model compresses the main context and injects it with the quote, without interrupting the main conversation. Follow-ups nest, continue, and archive"
+		pluginSidebarQaDesc: "Select-and-ask: Select conversation text → ask in the right-side panel → a dedicated follow-up session (❓追问) in the same workspace; a fast no-thinking model compresses the main context and injects it with the quote, without interrupting the main conversation. Follow-ups nest, continue, and archive",
+		pluginVideoPreviewDesc: "Inline video preview (.mp4/.webm/.mov/.mkv/.avi etc.) for the better-sidebar editor, backed by a dedicated /video host route with HTTP Range (206) support — scrubbing works and files are not capped by the 20MB mediaLimit"
 	};
 	/**
 	* The active locale id ('zh' | 'en'): the DSH locale service's snapshot when
@@ -32088,8 +33174,8 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		return text;
 	}
 	//#endregion
-	//#region \0dsh-css:/Users/menghuan/Code/DSH-better-sidebar/src/client/sidebar.module.css.mjs
-	const css = ".W-zNGW_toggleCluster{z-index:55;flex-direction:row;gap:4px;display:flex;position:fixed;top:3px;right:10px}.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:72px}.W-zNGW_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.W-zNGW_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_toggleButton:disabled{opacity:.4;cursor:default}.W-zNGW_panel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-left:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;top:0;bottom:0;right:0}.W-zNGW_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.W-zNGW_panel[data-dragging]{transition:none}.W-zNGW_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.W-zNGW_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_panelBody{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_bottomPanel{z-index:50;background:var(--dsw-specific-sidebar-fill);border-top:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;bottom:0}.W-zNGW_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.W-zNGW_bottomPanel[data-dragging]{transition:none}.W-zNGW_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.W-zNGW_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.W-zNGW_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_bottomPanel .W-zNGW_tabBar{padding-right:40px}body[data-dsh-title-bar-compat] .W-zNGW_toggleCluster{top:calc(var(--dsh-title-bar-strip,40px) + 3px)}body[data-dsh-title-bar-compat] .W-zNGW_panel{padding-top:var(--dsh-title-bar-strip,40px)}.W-zNGW_cornerHandle{z-index:52;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:fixed}.W-zNGW_cornerHandle:hover,.W-zNGW_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_iconButton:disabled{opacity:.4;cursor:default}.W-zNGW_workbench,.W-zNGW_split{flex:1;min-width:0;min-height:0;display:flex}.W-zNGW_splitRow{flex-direction:row}.W-zNGW_splitCol{flex-direction:column}.W-zNGW_splitChild{display:flex;position:relative;overflow:hidden}.W-zNGW_divider{z-index:3;touch-action:none;flex:none;position:relative}.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.W-zNGW_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.W-zNGW_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.W-zNGW_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.W-zNGW_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.W-zNGW_divider:hover:after,.W-zNGW_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.W-zNGW_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.W-zNGW_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.W-zNGW_dropLeft{width:25%;top:0;bottom:0;left:0}.W-zNGW_dropRight{width:25%;top:0;bottom:0;right:0}.W-zNGW_dropUp{height:25%;top:0;left:0;right:0}.W-zNGW_dropDown{height:25%;bottom:0;left:0;right:0}.W-zNGW_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.W-zNGW_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.W-zNGW_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_paneTabHidden{display:none}.W-zNGW_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.W-zNGW_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.W-zNGW_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.W-zNGW_paneCard:disabled{opacity:.45;cursor:default}.W-zNGW_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.W-zNGW_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.W-zNGW_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.W-zNGW_tabList::-webkit-scrollbar{display:none}.W-zNGW_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.W-zNGW_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_tabBadge{min-width:16px;height:15px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary);border-radius:8px;flex:none;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.W-zNGW_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.W-zNGW_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.W-zNGW_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow-y:auto}.W-zNGW_explorerRow{width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.W-zNGW_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_explorerDir{font:var(--dsw-font-s-strong-14)}.W-zNGW_explorerHidden{opacity:.45}.W-zNGW_explorerName{text-overflow:ellipsis;overflow:hidden}.W-zNGW_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.W-zNGW_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_explorerRow:hover .W-zNGW_explorerRef,.W-zNGW_explorerRow:focus-within .W-zNGW_explorerRef{display:inline-flex}.W-zNGW_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes W-zNGW_dsh-row-in{0%{opacity:0}}.W-zNGW_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_editor{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.W-zNGW_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.W-zNGW_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorStatusError{color:var(--dsw-alias-state-error-primary)}.W-zNGW_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.W-zNGW_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.W-zNGW_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.W-zNGW_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.W-zNGW_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.W-zNGW_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.W-zNGW_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.W-zNGW_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.W-zNGW_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.W-zNGW_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.W-zNGW_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.W-zNGW_sandboxStatusOff .W-zNGW_sandboxDot{background:var(--dsw-alias-state-error-primary)}.W-zNGW_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.W-zNGW_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.W-zNGW_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browser{flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.W-zNGW_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.W-zNGW_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.W-zNGW_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.W-zNGW_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.W-zNGW_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.W-zNGW_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.W-zNGW_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.W-zNGW_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.W-zNGW_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.W-zNGW_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.W-zNGW_editorCmHidden{display:none}.W-zNGW_editorCm .cm-editor{height:100%}.W-zNGW_editorCm .cm-editor.cm-focused{outline:none}.W-zNGW_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.W-zNGW_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.W-zNGW_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.W-zNGW_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.W-zNGW_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.W-zNGW_editorImage{object-fit:contain;max-width:100%;max-height:100%}.W-zNGW_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.W-zNGW_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.W-zNGW_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.W-zNGW_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.W-zNGW_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.W-zNGW_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.W-zNGW_editorPdfFrameBlocked{pointer-events:none}.W-zNGW_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.W-zNGW_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .W-zNGW_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .W-zNGW_editorPdfDragShield{pointer-events:auto!important}.W-zNGW_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.W-zNGW_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.W-zNGW_terminal .xterm{height:100%}.W-zNGW_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.W-zNGW_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.W-zNGW_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.W-zNGW_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.W-zNGW_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_tabBoundaryError{min-height:0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;flex:1;align-items:flex-start;gap:8px;padding:12px 16px;display:flex;overflow:auto}.W-zNGW_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.W-zNGW_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.W-zNGW_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.W-zNGW_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.W-zNGW_gitLink:hover:not(:disabled){text-decoration:underline}.W-zNGW_gitLink:disabled{opacity:.4;cursor:default}.W-zNGW_gitRow{min-height:34px;animation:W-zNGW_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.W-zNGW_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.W-zNGW_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.W-zNGW_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.W-zNGW_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.W-zNGW_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.W-zNGW_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.W-zNGW_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.W-zNGW_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.W-zNGW_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.W-zNGW_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.W-zNGW_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.W-zNGW_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.W-zNGW_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.W-zNGW_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.W-zNGW_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.W-zNGW_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.W-zNGW_gitDiffCode{flex:1;min-width:0;overflow:visible}.W-zNGW_gitDiffCtx{color:var(--dsw-alias-label-primary)}.W-zNGW_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.W-zNGW_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.W-zNGW_gitDiffMeta{padding-left:2px}.W-zNGW_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.W-zNGW_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.W-zNGW_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.W-zNGW_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.W-zNGW_gitCommitInput{flex:1;min-width:0}.W-zNGW_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.W-zNGW_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.W-zNGW_gitCommitButton:disabled{opacity:.45;cursor:default}.W-zNGW_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.W-zNGW_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.W-zNGW_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.W-zNGW_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.W-zNGW_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.W-zNGW_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.W-zNGW_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.W-zNGW_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.W-zNGW_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.W-zNGW_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_gitLogMore:disabled{opacity:.5;cursor:default}.W-zNGW_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.W-zNGW_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.W-zNGW_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.W-zNGW_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.W-zNGW_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.W-zNGW_toggleButton:focus-visible,.W-zNGW_bottomClose:focus-visible,.W-zNGW_iconButton:focus-visible,.W-zNGW_tab:focus-visible,.W-zNGW_tabClose:focus-visible,.W-zNGW_tabBarPlus:focus-visible,.W-zNGW_paneCard:focus-visible,.W-zNGW_explorerRow:focus-visible,.W-zNGW_explorerRef:focus-visible,.W-zNGW_gitRowMain:focus-visible,.W-zNGW_gitLink:focus-visible,.W-zNGW_gitCommitButton:focus-visible,.W-zNGW_gitLogRow:focus-visible,.W-zNGW_gitLogMore:focus-visible,.W-zNGW_gitDiffExpand:focus-visible,.W-zNGW_terminalRetry:focus-visible,.W-zNGW_editorModeButton:focus-visible,.W-zNGW_editorDownloadLink:focus-visible,.W-zNGW_editorPptxButton:focus-visible,.W-zNGW_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.W-zNGW_panel,.W-zNGW_panelHidden,.W-zNGW_bottomPanel,.W-zNGW_bottomPanelHidden,.W-zNGW_toggleCluster,.W-zNGW_toggleButton,.W-zNGW_tab,.W-zNGW_tabBarPlus,.W-zNGW_paneCard,.W-zNGW_explorerRow,.W-zNGW_gitRow,.W-zNGW_divider,.W-zNGW_dividerRow:after,.W-zNGW_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.W-zNGW_panel:not(.W-zNGW_panelHidden) .W-zNGW_tabBar{padding-right:40px}.W-zNGW_tab{min-width:48px;max-width:128px}}";
+	//#region \0dsh-css:/home/runner/work/DSH-better-sidebar/DSH-better-sidebar/src/client/sidebar.module.css.mjs
+	const css = ".nArs4W_toggleCluster{z-index:45;flex-direction:row;gap:4px;display:flex;position:fixed;top:3px;right:10px}.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:72px}.nArs4W_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.nArs4W_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_toggleButton:disabled{opacity:.4;cursor:default}.nArs4W_panel{z-index:40;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;top:0;bottom:0;right:0}.nArs4W_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.nArs4W_panel[data-dragging]{transition:none}.nArs4W_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.nArs4W_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_panelBody{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_bottomPanel{z-index:40;background:var(--dsw-alias-bg-layer-1);border-top:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;bottom:0}.nArs4W_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.nArs4W_bottomPanel[data-dragging]{transition:none}.nArs4W_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.nArs4W_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.nArs4W_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_bottomPanel .nArs4W_tabBar{padding-right:40px}body[data-dsh-title-bar-compat] .nArs4W_toggleCluster{top:calc(var(--dsh-title-bar-strip,40px) + 3px)}body[data-dsh-title-bar-compat] .nArs4W_panel{padding-top:var(--dsh-title-bar-strip,40px)}.nArs4W_cornerHandle{left:-6px;bottom:calc(var(--dsh-sidebar-height,0px) + 6px);z-index:2;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:absolute}.nArs4W_cornerHandle:hover,.nArs4W_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_iconButton:disabled{opacity:.4;cursor:default}.nArs4W_workbench,.nArs4W_split{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_splitRow{flex-direction:row}.nArs4W_splitCol{flex-direction:column}.nArs4W_splitChild{display:flex;position:relative;overflow:hidden}.nArs4W_divider{z-index:3;touch-action:none;flex:none;position:relative}.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.nArs4W_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.nArs4W_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.nArs4W_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.nArs4W_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.nArs4W_divider:hover:after,.nArs4W_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.nArs4W_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.nArs4W_dropLeft{width:25%;top:0;bottom:0;left:0}.nArs4W_dropRight{width:25%;top:0;bottom:0;right:0}.nArs4W_dropUp{height:25%;top:0;left:0;right:0}.nArs4W_dropDown{height:25%;bottom:0;left:0;right:0}.nArs4W_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.nArs4W_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.nArs4W_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_paneTabHidden{display:none}.nArs4W_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.nArs4W_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.nArs4W_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.nArs4W_paneCard:disabled{opacity:.45;cursor:default}.nArs4W_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.nArs4W_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.nArs4W_tabList::-webkit-scrollbar{display:none}.nArs4W_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.nArs4W_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.nArs4W_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_tabBadge{min-width:16px;height:15px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary);border-radius:8px;flex:none;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.nArs4W_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.nArs4W_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow-y:auto}.nArs4W_explorerRow{width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.nArs4W_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_explorerDir{font:var(--dsw-font-s-strong-14)}.nArs4W_explorerHidden{opacity:.45}.nArs4W_explorerSymlink{color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerBroken .nArs4W_explorerName{color:var(--dsw-alias-state-error-primary)}.nArs4W_explorerName{text-overflow:ellipsis;overflow:hidden}.nArs4W_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.nArs4W_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorerRow:hover .nArs4W_explorerRef,.nArs4W_explorerRow:focus-within .nArs4W_explorerRef{display:inline-flex}.nArs4W_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes nArs4W_dsh-row-in{0%{opacity:0}}.nArs4W_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_editor{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.nArs4W_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.nArs4W_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorStatusError{color:var(--dsw-alias-state-error-primary)}.nArs4W_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.nArs4W_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.nArs4W_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.nArs4W_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.nArs4W_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.nArs4W_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.nArs4W_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.nArs4W_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.nArs4W_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.nArs4W_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.nArs4W_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.nArs4W_sandboxStatusOff .nArs4W_sandboxDot{background:var(--dsw-alias-state-error-primary)}.nArs4W_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.nArs4W_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browser{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.nArs4W_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.nArs4W_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.nArs4W_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.nArs4W_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.nArs4W_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.nArs4W_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.nArs4W_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.nArs4W_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.nArs4W_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.nArs4W_editorCmHidden{display:none}.nArs4W_editorCm .cm-editor{height:100%}.nArs4W_editorCm .cm-editor.cm-focused{outline:none}.nArs4W_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.nArs4W_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.nArs4W_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.nArs4W_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.nArs4W_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.nArs4W_editorImage{object-fit:contain;max-width:100%;max-height:100%}.nArs4W_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.nArs4W_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.nArs4W_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.nArs4W_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.nArs4W_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_editorPdfFrameBlocked{pointer-events:none}.nArs4W_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.nArs4W_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .nArs4W_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .nArs4W_editorPdfDragShield{pointer-events:auto!important}.nArs4W_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.nArs4W_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.nArs4W_terminal .xterm{height:100%}.nArs4W_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.nArs4W_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.nArs4W_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.nArs4W_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.nArs4W_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_terminalDepsBanner{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-direction:column;flex:none;gap:6px;padding:10px;display:flex}.nArs4W_terminalDepsTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-state-warn-primary)}.nArs4W_terminalDepsHint{opacity:.9}.nArs4W_terminalDepsCommandRow{align-items:flex-start;gap:8px;display:flex}.nArs4W_terminalRepairCommand{white-space:pre-wrap;word-break:break-all;user-select:text;min-width:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:4px;flex:1;max-height:160px;margin:0;padding:6px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto}.nArs4W_terminalDepsNote{opacity:.85}.nArs4W_terminalDepsActions{align-items:center;gap:8px;display:flex}.nArs4W_tabBoundaryError{min-height:0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;flex:1;align-items:flex-start;gap:8px;padding:12px 16px;display:flex;overflow:auto}.nArs4W_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.nArs4W_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.nArs4W_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.nArs4W_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.nArs4W_gitLink:hover:not(:disabled){text-decoration:underline}.nArs4W_gitLink:disabled{opacity:.4;cursor:default}.nArs4W_gitRow{min-height:34px;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.nArs4W_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.nArs4W_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.nArs4W_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.nArs4W_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.nArs4W_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.nArs4W_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.nArs4W_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.nArs4W_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.nArs4W_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.nArs4W_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.nArs4W_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.nArs4W_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.nArs4W_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.nArs4W_gitDiffCode{flex:1;min-width:0;overflow:visible}.nArs4W_gitDiffCtx{color:var(--dsw-alias-label-primary)}.nArs4W_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.nArs4W_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.nArs4W_gitDiffMeta{padding-left:2px}.nArs4W_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.nArs4W_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.nArs4W_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.nArs4W_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.nArs4W_gitCommitInput{flex:1;min-width:0}.nArs4W_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.nArs4W_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.nArs4W_gitCommitButton:disabled{opacity:.45;cursor:default}.nArs4W_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.nArs4W_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.nArs4W_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.nArs4W_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.nArs4W_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.nArs4W_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_gitLogMore:disabled{opacity:.5;cursor:default}.nArs4W_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.nArs4W_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.nArs4W_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_toggleButton:focus-visible,.nArs4W_bottomClose:focus-visible,.nArs4W_iconButton:focus-visible,.nArs4W_tab:focus-visible,.nArs4W_tabClose:focus-visible,.nArs4W_tabBarPlus:focus-visible,.nArs4W_paneCard:focus-visible,.nArs4W_explorerRow:focus-visible,.nArs4W_explorerRef:focus-visible,.nArs4W_gitRowMain:focus-visible,.nArs4W_gitLink:focus-visible,.nArs4W_gitCommitButton:focus-visible,.nArs4W_gitLogRow:focus-visible,.nArs4W_gitLogMore:focus-visible,.nArs4W_gitDiffExpand:focus-visible,.nArs4W_terminalRetry:focus-visible,.nArs4W_editorModeButton:focus-visible,.nArs4W_editorDownloadLink:focus-visible,.nArs4W_editorPptxButton:focus-visible,.nArs4W_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.nArs4W_panel,.nArs4W_panelHidden,.nArs4W_bottomPanel,.nArs4W_bottomPanelHidden,.nArs4W_toggleCluster,.nArs4W_toggleButton,.nArs4W_tab,.nArs4W_tabBarPlus,.nArs4W_paneCard,.nArs4W_explorerRow,.nArs4W_gitRow,.nArs4W_divider,.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:40px}.nArs4W_tab{min-width:48px;max-width:128px}}";
 	const tagId = "dsh-better-sidebar/sidebar.module.css";
 	if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 		const tag = document.createElement("style");
@@ -32099,170 +33185,179 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		document.head.appendChild(tag);
 	}
 	var sidebar_module_css_default = {
-		"tabBar": "W-zNGW_tabBar",
-		"editorPdf": "W-zNGW_editorPdf",
-		"gitRow": "W-zNGW_gitRow",
-		"gitRowMain": "W-zNGW_gitRowMain",
-		"explorerError": "W-zNGW_explorerError",
-		"dropDown": "W-zNGW_dropDown",
-		"dropCenter": "W-zNGW_dropCenter",
-		"terminalBannerUrl": "W-zNGW_terminalBannerUrl",
-		"sandboxStatusText": "W-zNGW_sandboxStatusText",
-		"gitDiffCtx": "W-zNGW_gitDiffCtx",
-		"gitDiffHunkHeader": "W-zNGW_gitDiffHunkHeader",
-		"editorTitle": "W-zNGW_editorTitle",
-		"dropRight": "W-zNGW_dropRight",
-		"editorImageWrap": "W-zNGW_editorImageWrap",
-		"browserMessage": "W-zNGW_browserMessage",
-		"git": "W-zNGW_git",
-		"gitSection": "W-zNGW_gitSection",
-		"gitDiffMeta": "W-zNGW_gitDiffMeta",
-		"gitDiffMetaText": "W-zNGW_gitDiffMetaText",
-		"editorMd": "W-zNGW_editorMd",
-		"panelResizeActive": "W-zNGW_panelResizeActive",
-		"gitConfirmDesc": "W-zNGW_gitConfirmDesc",
-		"producedChip": "W-zNGW_producedChip",
-		"editorModeToggle": "W-zNGW_editorModeToggle",
-		"gitRowSelected": "W-zNGW_gitRowSelected",
-		"gitDiffTabTitle": "W-zNGW_gitDiffTabTitle",
-		"editorCmHidden": "W-zNGW_editorCmHidden",
-		"gitHeader": "W-zNGW_gitHeader",
-		"gitSectionHeader": "W-zNGW_gitSectionHeader",
-		"gitError": "W-zNGW_gitError",
-		"explorerRow": "W-zNGW_explorerRow",
-		"browser": "W-zNGW_browser",
-		"dropUp": "W-zNGW_dropUp",
-		"sandboxAction": "W-zNGW_sandboxAction",
-		"editorPlaceholder": "W-zNGW_editorPlaceholder",
-		"terminal": "W-zNGW_terminal",
-		"gitCommit": "W-zNGW_gitCommit",
-		"gitLogLine1": "W-zNGW_gitLogLine1",
-		"browserFrame": "W-zNGW_browserFrame",
-		"explorerBody": "W-zNGW_explorerBody",
-		"dividerRow": "W-zNGW_dividerRow",
-		"sandboxStatusOn": "W-zNGW_sandboxStatusOn",
-		"editorPdfDragShieldActive": "W-zNGW_editorPdfDragShieldActive",
-		"gitCommitButton": "W-zNGW_gitCommitButton",
-		"divider": "W-zNGW_divider",
-		"panel": "W-zNGW_panel",
-		"gitCommitInput": "W-zNGW_gitCommitInput",
-		"terminalBanner": "W-zNGW_terminalBanner",
-		"editorPptxButton": "W-zNGW_editorPptxButton",
-		"bottomClose": "W-zNGW_bottomClose",
-		"gitDiffTab": "W-zNGW_gitDiffTab",
-		"gitPlaceholder": "W-zNGW_gitPlaceholder",
-		"dropLeft": "W-zNGW_dropLeft",
-		"browserBlockedButton": "W-zNGW_browserBlockedButton",
-		"tabBoundaryError": "W-zNGW_tabBoundaryError",
-		"splitRow": "W-zNGW_splitRow",
-		"cornerHandle": "W-zNGW_cornerHandle",
-		"bottomResizeActive": "W-zNGW_bottomResizeActive",
-		"dirtyDot": "W-zNGW_dirtyDot",
-		"terminalRetry": "W-zNGW_terminalRetry",
-		"panelBody": "W-zNGW_panelBody",
-		"dividerCol": "W-zNGW_dividerCol",
-		"sandboxStatusOff": "W-zNGW_sandboxStatusOff",
-		"bottomPanel": "W-zNGW_bottomPanel",
-		"panelResize": "W-zNGW_panelResize",
-		"browserStart": "W-zNGW_browserStart",
-		"tabBarPlus": "W-zNGW_tabBarPlus",
-		"browserBlocked": "W-zNGW_browserBlocked",
-		"paneCard": "W-zNGW_paneCard",
-		"editorPdfFrameBlocked": "W-zNGW_editorPdfFrameBlocked",
-		"gitLogSubject": "W-zNGW_gitLogSubject",
-		"editorDocxZoomRange": "W-zNGW_editorDocxZoomRange",
-		"gitLink": "W-zNGW_gitLink",
-		"editorStatus": "W-zNGW_editorStatus",
-		"explorer": "W-zNGW_explorer",
-		"tabBarDrop": "W-zNGW_tabBarDrop",
-		"sandboxStatus": "W-zNGW_sandboxStatus",
-		"panelHidden": "W-zNGW_panelHidden",
-		"tabList": "W-zNGW_tabList",
-		"editorBanner": "W-zNGW_editorBanner",
-		"gitDiffAdd": "W-zNGW_gitDiffAdd",
-		"split": "W-zNGW_split",
-		"editorError": "W-zNGW_editorError",
-		"toggleCluster": "W-zNGW_toggleCluster",
-		"splitCol": "W-zNGW_splitCol",
-		"editorHtml": "W-zNGW_editorHtml",
-		"editorPdfStage": "W-zNGW_editorPdfStage",
-		"gitLogLine2": "W-zNGW_gitLogLine2",
-		"editorCm": "W-zNGW_editorCm",
-		"gitDiffFileOld": "W-zNGW_gitDiffFileOld",
-		"bottomResize": "W-zNGW_bottomResize",
-		"splitChild": "W-zNGW_splitChild",
-		"gitDiffExpand": "W-zNGW_gitDiffExpand",
-		"browserBlockedActions": "W-zNGW_browserBlockedActions",
-		"editorPdfFrame": "W-zNGW_editorPdfFrame",
-		"browserBar": "W-zNGW_browserBar",
-		"sandboxDot": "W-zNGW_sandboxDot",
-		"selectionPopup": "W-zNGW_selectionPopup",
-		"gitDiffLine": "W-zNGW_gitDiffLine",
-		"paneContent": "W-zNGW_paneContent",
-		"explorerEmpty": "W-zNGW_explorerEmpty",
-		"explorerHeader": "W-zNGW_explorerHeader",
-		"paneDrop": "W-zNGW_paneDrop",
-		"gitDiffHunkSection": "W-zNGW_gitDiffHunkSection",
-		"gitLogRef": "W-zNGW_gitLogRef",
-		"gitName": "W-zNGW_gitName",
-		"paneTab": "W-zNGW_paneTab",
-		"pane": "W-zNGW_pane",
-		"workbench": "W-zNGW_workbench",
-		"gitLogHash": "W-zNGW_gitLogHash",
-		"editorImage": "W-zNGW_editorImage",
-		"gitDiffFileTag": "W-zNGW_gitDiffFileTag",
-		"dividerActive": "W-zNGW_dividerActive",
-		"tabTitle": "W-zNGW_tabTitle",
-		"tabClose": "W-zNGW_tabClose",
-		"bottomPanelHidden": "W-zNGW_bottomPanelHidden",
-		"terminalWrap": "W-zNGW_terminalWrap",
-		"paneEmptyCards": "W-zNGW_paneEmptyCards",
-		"explorerCopied": "W-zNGW_explorerCopied",
-		"gitLogMore": "W-zNGW_gitLogMore",
-		"orphanedType": "W-zNGW_orphanedType",
-		"tabBadge": "W-zNGW_tabBadge",
-		"gitEmpty": "W-zNGW_gitEmpty",
-		"gitDiffCode": "W-zNGW_gitDiffCode",
-		"explorerName": "W-zNGW_explorerName",
-		"toggleButton": "W-zNGW_toggleButton",
-		"tab": "W-zNGW_tab",
-		"iconButton": "W-zNGW_iconButton",
-		"editorPdfToolbar": "W-zNGW_editorPdfToolbar",
-		"paneTabHidden": "W-zNGW_paneTabHidden",
-		"editorHeader": "W-zNGW_editorHeader",
-		"browserBlockedTitle": "W-zNGW_browserBlockedTitle",
-		"editor": "W-zNGW_editor",
-		"browserBlockedDesc": "W-zNGW_browserBlockedDesc",
-		"editorModeButton": "W-zNGW_editorModeButton",
-		"editorModeActive": "W-zNGW_editorModeActive",
-		"boundaryError": "W-zNGW_boundaryError",
-		"gitBranchSelect": "W-zNGW_gitBranchSelect",
-		"explorerRoot": "W-zNGW_explorerRoot",
-		"gitDiffFile": "W-zNGW_gitDiffFile",
-		"gitDiffHunk": "W-zNGW_gitDiffHunk",
-		"gitDiff": "W-zNGW_gitDiff",
-		"editorPdfDragShield": "W-zNGW_editorPdfDragShield",
-		"gitLogMeta": "W-zNGW_gitLogMeta",
-		"editorBinary": "W-zNGW_editorBinary",
-		"producedLabel": "W-zNGW_producedLabel",
-		"producedRow": "W-zNGW_producedRow",
-		"explorerHidden": "W-zNGW_explorerHidden",
-		"explorerRef": "W-zNGW_explorerRef",
-		"editorBinaryNotice": "W-zNGW_editorBinaryNotice",
-		"browserInput": "W-zNGW_browserInput",
-		"gitDiffDel": "W-zNGW_gitDiffDel",
-		"producedMore": "W-zNGW_producedMore",
-		"gitDiffNum": "W-zNGW_gitDiffNum",
-		"explorerDir": "W-zNGW_explorerDir",
-		"gitLogRow": "W-zNGW_gitLogRow",
-		"editorDownloadLink": "W-zNGW_editorDownloadLink",
-		"dsh-row-in": "W-zNGW_dsh-row-in",
-		"gitDiffTabHeader": "W-zNGW_gitDiffTabHeader",
-		"dropOverlay": "W-zNGW_dropOverlay",
-		"gitDiffFilePath": "W-zNGW_gitDiffFilePath",
-		"editorStatusError": "W-zNGW_editorStatusError",
-		"tabActive": "W-zNGW_tabActive",
-		"gitBadge": "W-zNGW_gitBadge"
+		"sandboxStatus": "nArs4W_sandboxStatus",
+		"bottomResizeActive": "nArs4W_bottomResizeActive",
+		"paneTab": "nArs4W_paneTab",
+		"editorCmHidden": "nArs4W_editorCmHidden",
+		"tabBar": "nArs4W_tabBar",
+		"bottomResize": "nArs4W_bottomResize",
+		"dsh-row-in": "nArs4W_dsh-row-in",
+		"paneCard": "nArs4W_paneCard",
+		"editorBinaryNotice": "nArs4W_editorBinaryNotice",
+		"cornerHandle": "nArs4W_cornerHandle",
+		"split": "nArs4W_split",
+		"tabList": "nArs4W_tabList",
+		"tab": "nArs4W_tab",
+		"gitDiffFile": "nArs4W_gitDiffFile",
+		"splitChild": "nArs4W_splitChild",
+		"explorerRow": "nArs4W_explorerRow",
+		"gitDiffLine": "nArs4W_gitDiffLine",
+		"iconButton": "nArs4W_iconButton",
+		"browserBlockedTitle": "nArs4W_browserBlockedTitle",
+		"editorPlaceholder": "nArs4W_editorPlaceholder",
+		"tabBadge": "nArs4W_tabBadge",
+		"gitDiffFilePath": "nArs4W_gitDiffFilePath",
+		"gitDiffExpand": "nArs4W_gitDiffExpand",
+		"gitLogSubject": "nArs4W_gitLogSubject",
+		"editorHeader": "nArs4W_editorHeader",
+		"editorBanner": "nArs4W_editorBanner",
+		"editorDocxZoomRange": "nArs4W_editorDocxZoomRange",
+		"gitDiffTabHeader": "nArs4W_gitDiffTabHeader",
+		"paneTabHidden": "nArs4W_paneTabHidden",
+		"browserBlockedButton": "nArs4W_browserBlockedButton",
+		"browserBlockedDesc": "nArs4W_browserBlockedDesc",
+		"boundaryError": "nArs4W_boundaryError",
+		"gitDiffTab": "nArs4W_gitDiffTab",
+		"browserMessage": "nArs4W_browserMessage",
+		"git": "nArs4W_git",
+		"gitBranchSelect": "nArs4W_gitBranchSelect",
+		"explorerRoot": "nArs4W_explorerRoot",
+		"panelResizeActive": "nArs4W_panelResizeActive",
+		"workbench": "nArs4W_workbench",
+		"editorPptxButton": "nArs4W_editorPptxButton",
+		"explorerName": "nArs4W_explorerName",
+		"producedMore": "nArs4W_producedMore",
+		"explorerHeader": "nArs4W_explorerHeader",
+		"explorerCopied": "nArs4W_explorerCopied",
+		"dividerCol": "nArs4W_dividerCol",
+		"gitSectionHeader": "nArs4W_gitSectionHeader",
+		"gitDiffHunk": "nArs4W_gitDiffHunk",
+		"panelBody": "nArs4W_panelBody",
+		"editor": "nArs4W_editor",
+		"tabBoundaryError": "nArs4W_tabBoundaryError",
+		"sandboxAction": "nArs4W_sandboxAction",
+		"splitRow": "nArs4W_splitRow",
+		"dividerActive": "nArs4W_dividerActive",
+		"gitRowSelected": "nArs4W_gitRowSelected",
+		"paneDrop": "nArs4W_paneDrop",
+		"panelHidden": "nArs4W_panelHidden",
+		"bottomPanel": "nArs4W_bottomPanel",
+		"gitDiffHunkHeader": "nArs4W_gitDiffHunkHeader",
+		"terminal": "nArs4W_terminal",
+		"terminalRetry": "nArs4W_terminalRetry",
+		"editorImage": "nArs4W_editorImage",
+		"dropUp": "nArs4W_dropUp",
+		"editorPdfToolbar": "nArs4W_editorPdfToolbar",
+		"gitRow": "nArs4W_gitRow",
+		"tabBarDrop": "nArs4W_tabBarDrop",
+		"paneEmptyCards": "nArs4W_paneEmptyCards",
+		"gitRowMain": "nArs4W_gitRowMain",
+		"gitPlaceholder": "nArs4W_gitPlaceholder",
+		"browserStart": "nArs4W_browserStart",
+		"gitDiffTabTitle": "nArs4W_gitDiffTabTitle",
+		"editorPdfDragShield": "nArs4W_editorPdfDragShield",
+		"gitLogMeta": "nArs4W_gitLogMeta",
+		"explorerHidden": "nArs4W_explorerHidden",
+		"editorImageWrap": "nArs4W_editorImageWrap",
+		"gitLogLine2": "nArs4W_gitLogLine2",
+		"tabActive": "nArs4W_tabActive",
+		"explorerBody": "nArs4W_explorerBody",
+		"tabBarPlus": "nArs4W_tabBarPlus",
+		"editorModeButton": "nArs4W_editorModeButton",
+		"editorPdfDragShieldActive": "nArs4W_editorPdfDragShieldActive",
+		"toggleButton": "nArs4W_toggleButton",
+		"gitEmpty": "nArs4W_gitEmpty",
+		"gitDiffFileTag": "nArs4W_gitDiffFileTag",
+		"terminalRepairCommand": "nArs4W_terminalRepairCommand",
+		"editorStatus": "nArs4W_editorStatus",
+		"producedLabel": "nArs4W_producedLabel",
+		"sandboxStatusOn": "nArs4W_sandboxStatusOn",
+		"sandboxDot": "nArs4W_sandboxDot",
+		"browserBlockedActions": "nArs4W_browserBlockedActions",
+		"editorModeToggle": "nArs4W_editorModeToggle",
+		"gitDiff": "nArs4W_gitDiff",
+		"gitName": "nArs4W_gitName",
+		"gitLogHash": "nArs4W_gitLogHash",
+		"dropRight": "nArs4W_dropRight",
+		"orphanedType": "nArs4W_orphanedType",
+		"browserBar": "nArs4W_browserBar",
+		"gitLogRow": "nArs4W_gitLogRow",
+		"terminalBannerUrl": "nArs4W_terminalBannerUrl",
+		"tabClose": "nArs4W_tabClose",
+		"gitError": "nArs4W_gitError",
+		"gitLogLine1": "nArs4W_gitLogLine1",
+		"terminalWrap": "nArs4W_terminalWrap",
+		"gitCommitButton": "nArs4W_gitCommitButton",
+		"gitCommitInput": "nArs4W_gitCommitInput",
+		"producedChip": "nArs4W_producedChip",
+		"gitDiffMeta": "nArs4W_gitDiffMeta",
+		"explorer": "nArs4W_explorer",
+		"gitDiffHunkSection": "nArs4W_gitDiffHunkSection",
+		"explorerBroken": "nArs4W_explorerBroken",
+		"terminalDepsCommandRow": "nArs4W_terminalDepsCommandRow",
+		"dropOverlay": "nArs4W_dropOverlay",
+		"toggleCluster": "nArs4W_toggleCluster",
+		"dropLeft": "nArs4W_dropLeft",
+		"editorBinary": "nArs4W_editorBinary",
+		"dividerRow": "nArs4W_dividerRow",
+		"editorDownloadLink": "nArs4W_editorDownloadLink",
+		"dropDown": "nArs4W_dropDown",
+		"terminalDepsTitle": "nArs4W_terminalDepsTitle",
+		"splitCol": "nArs4W_splitCol",
+		"gitHeader": "nArs4W_gitHeader",
+		"divider": "nArs4W_divider",
+		"explorerRef": "nArs4W_explorerRef",
+		"gitCommit": "nArs4W_gitCommit",
+		"gitLogMore": "nArs4W_gitLogMore",
+		"browser": "nArs4W_browser",
+		"bottomPanelHidden": "nArs4W_bottomPanelHidden",
+		"gitDiffAdd": "nArs4W_gitDiffAdd",
+		"editorPdf": "nArs4W_editorPdf",
+		"terminalDepsActions": "nArs4W_terminalDepsActions",
+		"dropCenter": "nArs4W_dropCenter",
+		"gitDiffNum": "nArs4W_gitDiffNum",
+		"editorStatusError": "nArs4W_editorStatusError",
+		"gitBadge": "nArs4W_gitBadge",
+		"gitLogRef": "nArs4W_gitLogRef",
+		"dirtyDot": "nArs4W_dirtyDot",
+		"explorerEmpty": "nArs4W_explorerEmpty",
+		"panelResize": "nArs4W_panelResize",
+		"editorPdfFrameBlocked": "nArs4W_editorPdfFrameBlocked",
+		"browserInput": "nArs4W_browserInput",
+		"terminalDepsNote": "nArs4W_terminalDepsNote",
+		"gitDiffDel": "nArs4W_gitDiffDel",
+		"editorTitle": "nArs4W_editorTitle",
+		"editorPdfFrame": "nArs4W_editorPdfFrame",
+		"pane": "nArs4W_pane",
+		"terminalBanner": "nArs4W_terminalBanner",
+		"tabTitle": "nArs4W_tabTitle",
+		"editorPdfStage": "nArs4W_editorPdfStage",
+		"editorHtml": "nArs4W_editorHtml",
+		"gitSection": "nArs4W_gitSection",
+		"terminalDepsBanner": "nArs4W_terminalDepsBanner",
+		"gitDiffCtx": "nArs4W_gitDiffCtx",
+		"browserBlocked": "nArs4W_browserBlocked",
+		"gitDiffCode": "nArs4W_gitDiffCode",
+		"sandboxStatusOff": "nArs4W_sandboxStatusOff",
+		"explorerError": "nArs4W_explorerError",
+		"bottomClose": "nArs4W_bottomClose",
+		"gitLink": "nArs4W_gitLink",
+		"editorModeActive": "nArs4W_editorModeActive",
+		"gitDiffFileOld": "nArs4W_gitDiffFileOld",
+		"editorError": "nArs4W_editorError",
+		"producedRow": "nArs4W_producedRow",
+		"selectionPopup": "nArs4W_selectionPopup",
+		"editorCm": "nArs4W_editorCm",
+		"browserFrame": "nArs4W_browserFrame",
+		"gitDiffMetaText": "nArs4W_gitDiffMetaText",
+		"explorerDir": "nArs4W_explorerDir",
+		"panel": "nArs4W_panel",
+		"explorerSymlink": "nArs4W_explorerSymlink",
+		"paneContent": "nArs4W_paneContent",
+		"terminalDepsHint": "nArs4W_terminalDepsHint",
+		"gitConfirmDesc": "nArs4W_gitConfirmDesc",
+		"editorMd": "nArs4W_editorMd",
+		"sandboxStatusText": "nArs4W_sandboxStatusText"
 	};
 	//#endregion
 	//#region src/client/SandboxStatusBar.tsx
@@ -32343,12 +33438,6 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}
 	//#endregion
 	//#region src/client/paths.ts
-	/**
-	* Path projection helpers shared by the explorer rows: a path relative to
-	* the session cwd (for the @-reference button and "copy relative path").
-	* The fs-tree joins with '/' even on Windows, so both separators normalize
-	* to '/' before comparison.
-	*/
 	/**
 	* The path relative to the session's working directory.
 	* @param cwd - the explorer root (absolute).
@@ -32503,7 +33592,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 							...defaultKeymap,
 							...historyKeymap
 						]),
-						...viewerId === "code" ? [EditorView.updateListener.of((update) => {
+						...viewerId === "code" || viewerId === "markdown" ? [EditorView.updateListener.of((update) => {
 							if (update.geometryChanged || update.viewportChanged) {
 								hidePopup();
 								return;

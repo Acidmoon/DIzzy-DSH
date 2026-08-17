@@ -16,6 +16,7 @@ export declare const zh: {
     editor: string;
     newTab: string;
     openExplorer: string;
+    brokenSymlink: string;
     openGit: string;
     newTerminal: string;
     terminalLimit: string;
@@ -27,6 +28,9 @@ export declare const zh: {
     terminalError: string;
     terminalConnectFailed: string;
     terminalRetry: string;
+    terminalDepsFailed: string;
+    terminalDepsHint: string;
+    terminalDepsProfile: string;
     preview: string;
     edit: string;
     refresh: string;
@@ -225,8 +229,10 @@ export declare const zh: {
     openPlugin: string;
     copyInstall: string;
     pluginOfficeDesc: string;
+    pluginGitRemotesDesc: string;
     pluginSentinelDesc: string;
     pluginSidebarQaDesc: string;
+    pluginVideoPreviewDesc: string;
 };
 /** The en dictionary (key-set-equal to zh, enforced by the type annotation). */
 export declare const en: Record<keyof typeof zh, string>;

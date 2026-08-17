@@ -20,10 +20,10 @@
 
 | 插件 | 能力 | 怎么用 | 状态 |
 |---|---|---|---|
-|  **视觉识别** `dsh-vision-toolkit` | 看图问答 / 描述 / OCR / 元素定位 / 检测 / 像素对比 / 长截图 OCR / UI 还原 | `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff` 四个核心工具**随会话常驻**;其余工具加载 vision-tools skill 后可用 | ✅ 稳定(v0.1.7) |
-|  **生成式 UI** `dsh-genui` | 模型的回答中直接渲染可交互组件:数据卡片、图表、表格、表单、试卷判分、mermaid 流程图、3D 场景 | 模型回答时自动输出 `dsh-ui` 围栏;`render_ui` 工具可把界面渲染到工具行 | ✅ 稳定(v0.8.5) |
-|  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.1) |
-|  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.12.2) |
+|  **视觉识别** `dsh-vision-toolkit` | 看图问答 / 描述 / OCR / 元素定位 / 检测 / 像素对比 / 长截图 OCR / UI 还原 | `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff` 四个核心工具**随会话常驻**;其余工具加载 vision-tools skill 后可用 | ✅ 稳定(v0.1.24) |
+|  **生成式 UI** `dsh-genui` | 模型的回答中直接渲染可交互组件:数据卡片、图表、表格、表单、试卷判分、mermaid 流程图、3D 场景 | 模型回答时自动输出 `dsh-ui` 围栏;`render_ui` 工具可把界面渲染到工具行 | ✅ 稳定(v0.8.6) |
+|  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.2) |
+|  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.12.3) |
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
 |  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.6.2) |
 
@@ -37,7 +37,7 @@
 
 | 预设 | 能力 | 怎么用 | 状态 |
 |---|---|---|---|
-|  **Anchored Standard** `dsh-anchored-standard` | 两阶段工具目录引导:首个模型请求只暴露官方 Minimal 的真实工具对(`bash` + `str_replace_editor`),并对齐 Minimal 的系统提示词条件;会话记录首次工具调用或助手回复后,晋升到小型 resident 目录,重型 Standard 工具按需解锁;阶段由持久会话事件推导,resume/刷新不丢状态 | 运行 `scripts/install-anchored-standard.ps1` 装到 `~/.dsh/.agent-presets/`,重启后新会话预设选择「Anchored Standard (experimental)」 | ✅ 稳定(v0.1.0 @ `db4527a`) |
+|  **Anchored Standard** `dsh-anchored-standard` | 两阶段工具目录引导:首个模型请求只暴露官方 Minimal 的真实工具对(`bash` + `str_replace_editor`),并对齐 Minimal 的系统提示词条件;会话记录首次工具调用或助手回复后,晋升到小型 resident 目录,重型 Standard 工具按需解锁;阶段由持久会话事件推导,resume/刷新不丢状态 | 运行 `scripts/install-anchored-standard.ps1` 装到 `~/.dsh/.agent-presets/`,重启后新会话预设选择「Anchored Standard (experimental)」 | ✅ 稳定(v0.1.0 @ `25f21ae`) |
 
 ## 收录的第三方插件
 
@@ -50,10 +50,10 @@ registry。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/T
 
 | 插件 | 作者 | 项目 | 地址 | 版本 | 收录方式 |
 |---|---|---|---|---|---|
-| dsh-vision-toolkit | [Anionex](https://github.com/Anionex) | dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | 0.1.7 | 仓库快照(包名 `@anionex/dsh-vision-toolkit`) |
-| dsh-genui | [omdsh-dev](https://github.com/omdsh-dev) | dsh-genui | https://github.com/omdsh-dev/dsh-genui | 0.8.5 | 仓库快照 |
-| dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.1 | 仓库快照 |
-| dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.12.2 | npm registry |
+| dsh-vision-toolkit | [Anionex](https://github.com/Anionex) | dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | 0.1.24 | 仓库快照(包名 `@anionex/dsh-vision-toolkit`) |
+| dsh-genui | [omdsh-dev](https://github.com/omdsh-dev) | dsh-genui | https://github.com/omdsh-dev/dsh-genui | 0.8.6 | 仓库快照 |
+| dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.2 | 仓库快照 |
+| dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.12.3 | npm registry |
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 | dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
 | dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.6.2 | 仓库快照(插件包子目录) |

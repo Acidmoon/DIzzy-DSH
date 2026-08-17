@@ -6,14 +6,14 @@
     "dizzy-dsh-usage-card": "file:./plugins/usage-card",
     "dizzy-dsh-agent-instructions": "file:./plugins/agent-instructions",
     "dizzy-dsh-kimi-webbridge": "file:./plugins/kimi-webbridge",
-    "dsh-better-sidebar": "0.12.2",
+    "dsh-better-sidebar": "0.12.3",
     "@anionex/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit",
     "@omdsh-dev/dsh-genui": "file:./third-party/dsh-genui",
     "dsh-notification": "file:./third-party/dsh-notification",
     "dsh-subscription-auth": "file:./third-party/dsh-subscription-auth",
     "dsh-gui-customization": "file:./third-party/dsh-gui-customization"
   },
-  "version": "0.3.2",
+  "version": "0.3.3",
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
   "description": "Dizzy-DSH 插件合集仓库:git clone 后 dsh plugin add 即装,无需 npm 发布。",
   "type": "module",
@@ -28,3 +28,4 @@
     }
   }
 }
+

@@ -1,4 +1,5 @@
-import * as nodePty from 'node-pty';
+import type { IPty } from 'node-pty';
+import { type NodePtyModule } from './pty-deps.ts';
 /**
  * Restore the executable bit pnpm strips from node-pty's prebuilt
  * spawn-helper (the macOS helper that forks and sets up the pty). Without it
@@ -18,7 +19,7 @@ export interface SidebarPty {
      *  the page-load hydrate race can attach the real cwd after the first
      *  connect, and a shell in the wrong directory must not linger). */
     cwd: string;
-    pty: nodePty.IPty;
+    pty: IPty;
     /** Output accumulated since spawn (bounded; head dropped when over the limit). */
     transcript: string;
     /** Whether the top-level process exited (transcript stays replayable). */
@@ -32,9 +33,13 @@ export interface SidebarPty {
 export declare class PtyManager {
     private readonly shell;
     private readonly maxPerSession;
+    /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
+    private readonly nodePty;
     private readonly sessions;
     private readonly pendingCloses;
-    constructor(shell: string, maxPerSession: number);
+    constructor(shell: string, maxPerSession: number, 
+    /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
+    nodePty?: NodePtyModule);
     /** All live terminal keys of one session. */
     keysOf(sessionId: string): string[];
     /**
@@ -73,15 +78,40 @@ export declare class PtyManager {
     disposeAll(): void;
 }
 /**
- * The interactive shell for this platform, resolved like a terminal
- * emulator: an explicit `$SHELL` on the dsh process wins (deployment
- * override), then the account's login shell from passwd, then `/bin/bash`.
- * The passwd step matters because service managers and container inits
- * often start dsh without `SHELL`, and the tab should still open the
- * user's login shell (e.g. zsh) instead of silently degrading to bash.
- * Windows short-circuits to `powershell.exe` before any resolution.
+ * Inputs for {@link defaultShell} resolution. Every field is optional and
+ * defaults to the live process, which keeps the no-argument call sites
+ * working while tests (and exotic embedders) can pin the platform, the
+ * environment, and the existence probe independently — the Windows chain
+ * never executes on the ubuntu CI runners, so it is only testable through
+ * these injection points.
  */
-export declare function defaultShell(): string;
+export interface ShellResolutionOptions {
+    /** Platform override (defaults to `process.platform`). */
+    platform?: NodeJS.Platform;
+    /** Environment override; the resolver only reads SHELL, DSH_SIDEBAR_SHELL, PATH, ProgramW6432, ProgramFiles, LOCALAPPDATA. */
+    env?: NodeJS.ProcessEnv;
+    /** Explicitly configured shell (the `shell` config field); wins over every automatic source. Empty means unset. */
+    explicit?: string;
+    /** File-existence probe override (defaults to `existsSync`). */
+    exists?: (path: string) => boolean;
+}
+/**
+ * The interactive shell for this platform, resolved like a terminal
+ * emulator: an explicitly configured shell (the `shell` config field) wins,
+ * then `$SHELL` on POSIX (deployment override), then the account's login
+ * shell from passwd, then `/bin/bash`. The passwd step matters because
+ * service managers and container inits often start dsh without `SHELL`, and
+ * the tab should still open the user's login shell (e.g. zsh) instead of
+ * silently degrading to bash.
+ *
+ * Windows previously short-circuited to `powershell.exe` (the inbox 5.1)
+ * before any resolution, so PowerShell 7 users always got a legacy shell
+ * without `??`/`?.`/ternary and with poor ANSI/UTF-8 defaults. The Windows
+ * chain is now: explicit shell → `DSH_SIDEBAR_SHELL` env override → first
+ * `pwsh.exe` found on PATH or in a known install directory → the 5.1
+ * fallback (machines without PowerShell 7 keep working).
+ */
+export declare function defaultShell(options?: ShellResolutionOptions): string;
 /**
  * Spawn arguments that make the shell behave like a terminal-emulator tab:
  * POSIX shells start as login shells (`-l`) so they read the profile files

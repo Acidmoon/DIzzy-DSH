@@ -34,8 +34,11 @@ function sha256(bytes) {
 export function isolatedPythonEnvironment(home) {
     return {
         HOME: home,
-        USERPROFILE: home,
-        LOCALAPPDATA: home,
+        // Windows Store Python's `ensurepip` exits 101 when USERPROFILE /
+        // LOCALAPPDATA point at a fake home (DSH's isolated cache). User-site
+        // isolation still holds via PYTHONNOUSERSITE; keep the real Windows
+        // profile so Store Python can create a venv.
+        ...(process.platform === 'win32' ? {} : { USERPROFILE: home, LOCALAPPDATA: home }),
         PYTHONHOME: undefined,
         PYTHONPATH: undefined,
         VIRTUAL_ENV: undefined,

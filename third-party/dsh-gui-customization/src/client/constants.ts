@@ -104,10 +104,29 @@ export const PALETTES: Record<string, Palette> = {
       'warn': '#D9920B',
     },
   },
+  sunset: {
+    label: '暖阳橙',
+    brandDark: '#E08E6D',
+    light: {
+      'bg-base': '#FAF9F5',
+      'label-primary': '#1F1E1D',
+      'layer-1': '#FFFFFF',
+      'brand-primary': '#D97757',
+      'layer-2': '#F5F1EA',
+      'border-l1': 'rgba(217,119,87,0.22)',
+      'sidebar': '#F4F0E8',
+      'label-secondary': '#6E6A63',
+      'overlay': '#FFFFFF',
+      'border-l2': 'rgba(217,119,87,0.45)',
+      'error': '#C25450',
+      'success': '#3D8C5A',
+      'warn': '#B7791F',
+    },
+  },
 }
 
-export const PRESET_ORDER = ['default', 'nous', 'indigo', 'emerald']
-export const PRESET_LABELS: Record<string, string> = { default: '系统默认', nous: 'Nous 蓝', indigo: '靛紫', emerald: '翡翠绿' }
+export const PRESET_ORDER = ['default', 'nous', 'indigo', 'emerald', 'sunset']
+export const PRESET_LABELS: Record<string, string> = { default: '系统默认', nous: 'Nous 蓝', indigo: '靛紫', emerald: '翡翠绿', sunset: '暖阳橙' }
 
 // 自定义颜色字段（键 → 显示名）
 export const FIELDS: Array<[string, string]> = [
