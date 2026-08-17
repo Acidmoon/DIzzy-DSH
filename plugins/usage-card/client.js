@@ -140,6 +140,7 @@ window.__ModuleLoader__.load({
         '.dsh-usage-segdot.is-cache{background:var(--dsh-usage-seg-cache)}',
         '.dsh-usage-segdot.is-out{background:var(--dsh-usage-seg-out)}',
         '.dsh-usage-rowvalue{flex:none;width:76px;text-align:right;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}',
+        '.dsh-usage-rowcost{flex:none;width:64px;text-align:right;font-size:11px;line-height:18px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
         '.dsh-usage-empty{padding:20px 0 8px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
         // ── 错误条 + 底部峰谷时钟 ───────────────────────────
         '.dsh-usage-error{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-state-error-primary);font-size:13px}',
@@ -151,6 +152,19 @@ window.__ModuleLoader__.load({
         '.dsh-usage-tip{position:fixed;z-index:50;pointer-events:none;padding:6px 8px;border-radius:8px;max-width:280px;background:var(--dsw-alias-tooltip-bg,rgba(30,32,38,.97));color:var(--dsw-alias-label-primary-inverted,var(--dsw-alias-label-primary-foreground,#f7f8fa));font-size:12px;line-height:16px;box-shadow:0 4px 16px var(--dsw-alias-bg-mask-2);white-space:normal}',
         '.dsh-usage-tip-sub{margin-top:2px;font-size:11px;line-height:15px;opacity:.85}',
         'body[data-ds-dark-theme] .dsh-usage-tip{color:var(--dsw-alias-label-primary,#f9fafb)}',
+        // ── 设置页「用量统计」段 ─────────────────────────────
+        '.dsh-usage-settings{display:flex;flex-direction:column;gap:14px;padding:4px 2px;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family,ui-sans-serif,system-ui,sans-serif)}',
+        '.dsh-usage-settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}',
+        '.dsh-usage-settings-cell{box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}',
+        '.dsh-usage-settings-label{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
+        '.dsh-usage-settings-value{margin-top:4px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}',
+        '.dsh-usage-settings-src{font-size:12px;font-weight:400;line-height:16px;color:var(--dsw-alias-label-secondary);word-break:break-all}',
+        '.dsh-usage-settings-guide{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
+        '.dsh-usage-settings-yaml{margin:0;padding:12px 14px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-size:12px;line-height:18px;white-space:pre;overflow-x:auto;color:var(--dsw-alias-label-secondary)}',
+        '.dsh-usage-settings-actions{display:flex;gap:8px;flex-wrap:wrap}',
+        '.dsh-usage-settings-btn{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-state-business-primary);font:inherit;font-size:13px;cursor:pointer;transition:filter var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
+        '.dsh-usage-settings-btn:hover{filter:brightness(1.08)}',
+        '.dsh-usage-settings-err{padding:10px 12px;border-radius:8px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent);color:var(--dsw-alias-state-error-primary);font-size:12px}',
       ].join('')
       document.head.append(style)
 
@@ -176,6 +190,19 @@ window.__ModuleLoader__.load({
         if (n >= 1e8) return (n / 1e8).toFixed(2) + '亿'
         if (n >= 1e4) return (n / 1e4).toFixed(1) + '万'
         return String(n)
+      }
+      // 金额格式化:按 Host cost.currency 前缀,两位小数,去无意义的 .00
+      function fmtCost(value, currency) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+        const rounded = Math.round(value * 100) / 100
+        const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+        return (currency === undefined || currency === '' ? '' : currency) + text
+      }
+      // 价格来源提示文本(Host 每模型 price.source:local/openrouter/none)
+      function priceSourceLabel(source) {
+        if (source === 'local') return '价格来自本地配置(dizzy-usage-card.prices)'
+        if (source === 'openrouter') return '价格来自 OpenRouter 聚合目录'
+        return '该模型无价格,按 0 计'
       }
       // 北京时间(Asia/Shanghai)的 时/分/秒
       const bjFmt = new Intl.DateTimeFormat('en-GB', {
@@ -582,6 +609,11 @@ window.__ModuleLoader__.load({
         }
         const todayStr = dayStr(new Date())
         const total = viewData === null ? null : viewData.total ?? 0
+        // 金额:Host 聚合价 + 用户本地价;旧 Host 无 cost 字段时金额全部隐藏
+        const costInfo = viewData !== null && viewData.cost !== null && typeof viewData.cost === 'object'
+          ? viewData.cost
+          : null
+        const currency = costInfo !== null && typeof costInfo.currency === 'string' ? costInfo.currency : '$'
 
         const showTip = (event, title, sub) => {
           const rect = event.currentTarget.getBoundingClientRect()
@@ -712,6 +744,17 @@ window.__ModuleLoader__.load({
           ? '—'
           : Number(peakDay.slice(5, 7)) + '月' + Number(peakDay.slice(8, 10)) + '日'
         const stats = React.createElement('div', { key: 'stats', className: 'dsh-usage-stats' }, [
+          React.createElement('div', { key: 'cost', className: 'dsh-usage-stat' }, [
+            React.createElement('div', { key: 'l', className: 'dsh-usage-stat-label' }, '本月花费'),
+            React.createElement('div', { key: 'v', className: 'dsh-usage-stat-value' },
+              statValue(costInfo === null
+                ? '—'
+                : fmtCost(costInfo.total ?? 0, currency))),
+            React.createElement('div', { key: 's', className: 'dsh-usage-stat-sub' },
+              costInfo === null
+                ? '价格表待重启(Host 半区需重新加载)'
+                : '按 OpenRouter 聚合价 / 本地覆盖价估算'),
+          ]),
           React.createElement('div', { key: 'total', className: 'dsh-usage-stat' }, [
             React.createElement('div', { key: 'l', className: 'dsh-usage-stat-label' }, '本月合计'),
             React.createElement('div', { key: 'v', className: 'dsh-usage-stat-value' },
@@ -865,8 +908,11 @@ window.__ModuleLoader__.load({
         let todaySide = null
         if (today !== null && typeof today.date === 'string') {
           const tDate = new Date(today.date + 'T00:00:00')
+          const costPart = typeof today.cost === 'number'
+            ? ' · 约 ' + fmtCost(today.cost, currency)
+            : ''
           todaySide = Number(today.date.slice(5, 7)) + '月' + Number(today.date.slice(8, 10)) + '日 周'
-            + WEEKDAYS[(tDate.getDay() + 6) % 7] + ' · 合计 ' + fmtTokens(todayTotal)
+            + WEEKDAYS[(tDate.getDay() + 6) % 7] + ' · 合计 ' + fmtTokens(todayTotal) + costPart
         }
 
         let todayBody
@@ -896,6 +942,16 @@ window.__ModuleLoader__.load({
               pushSeg('cache', 'is-cache', cacheRead)
               pushSeg('out', 'is-out', output)
               const rowTip = row.key + ' · ' + fmtTokens(row.total) + ' tokens'
+              // 金额:新 Host 每行带 cost 与 price.source;旧 Host 无则隐藏
+              const rowCost = typeof row.cost === 'number'
+                ? React.createElement('div', {
+                    key: 'c',
+                    className: 'dsh-usage-rowcost',
+                    title: row.price !== null && typeof row.price === 'object'
+                      ? priceSourceLabel(row.price.source)
+                      : undefined,
+                  }, fmtCost(row.cost, currency))
+                : null
               return React.createElement('button', {
                 key: row.key,
                 type: 'button',
@@ -918,6 +974,7 @@ window.__ModuleLoader__.load({
                     style: { width: pct + '%' },
                   }, segs)),
                 React.createElement('div', { key: 'v', className: 'dsh-usage-rowvalue' }, fmtTokens(row.total)),
+                rowCost,
               ])
             }))
         }
@@ -994,6 +1051,110 @@ window.__ModuleLoader__.load({
         ])
       }
 
+      // ── 设置页「用量统计」段(settings.section)──────────────────
+      // 展示本月花费概览 + 价格源状态 + 价格配置指引;数据自取 /dizzy/usage。
+      // 无业务注入面,组件仅接收运行时 share(useSettings 等,不依赖)。
+      function UsageSettingsSection() {
+        const [data, setData] = React.useState(null)
+        const [error, setError] = React.useState(null)
+        React.useEffect(() => {
+          let cancelled = false
+          const now = new Date()
+          const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+          fetch('/dizzy/usage?month=' + month)
+            .then((response) => response.json())
+            .then((body) => {
+              if (cancelled) return
+              setData(body)
+              setError(null)
+            })
+            .catch((err) => {
+              if (cancelled) return
+              setError(err instanceof Error ? err.message : String(err))
+            })
+          return () => { cancelled = true }
+        }, [])
+        const priceYaml = [
+          'dizzy-usage-card:',
+          '  # 每百万 token 价格,覆盖 OpenRouter 聚合价(货币与 currency 一致)',
+          '  prices:',
+          "    'deepseek/deepseek-chat': { inputPerM: 2, outputPerM: 8, cachePerM: 0.5 }",
+          "    'grok/grok-3': { inputPerM: 3, outputPerM: 15, cachePerM: 1 }",
+          '  # currency: ¥   # 金额前缀(仅展示,不换算)',
+        ].join('\n')
+        const [copied, setCopied] = React.useState(false)
+        const copyTemplate = () => {
+          navigator.clipboard?.writeText(priceYaml).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+          }).catch(() => {})
+        }
+        const cost = data !== null && data.cost !== null && typeof data.cost === 'object' ? data.cost : null
+        const pricing = data !== null && data.pricing !== null && typeof data.pricing === 'object' ? data.pricing : null
+        const sourceText = pricing === null
+          ? '价格表待 Host 加载'
+          : pricing.source === 'openrouter'
+            ? 'OpenRouter 聚合价 · ' + (pricing.modelCount ?? 0) + ' 个模型' + (pricing.asOf > 0 ? ' · 更新于 ' + new Date(pricing.asOf).toLocaleTimeString() : '')
+            : pricing.source === 'local'
+              ? '仅本地配置价(' + (pricing.localCount ?? 0) + ' 条)'
+              : '暂无价格(' + (typeof pricing.error === 'string' && pricing.error !== '' ? '拉取失败:' + pricing.error : '未配置') + ')'
+        return React.createElement('div', { className: 'dsh-usage-settings' }, [
+          React.createElement('div', { key: 'row', className: 'dsh-usage-settings-row' }, [
+            React.createElement('div', { key: 'cost', className: 'dsh-usage-settings-cell' }, [
+              React.createElement('div', { key: 'l', className: 'dsh-usage-settings-label' }, '本月花费'),
+              React.createElement('div', { key: 'v', className: 'dsh-usage-settings-value' },
+                cost === null ? '—' : fmtCost(cost.total ?? 0, cost.currency ?? '$')),
+            ]),
+            React.createElement('div', { key: 'tokens', className: 'dsh-usage-settings-cell' }, [
+              React.createElement('div', { key: 'l', className: 'dsh-usage-settings-label' }, '本月 tokens'),
+              React.createElement('div', { key: 'v', className: 'dsh-usage-settings-value' },
+                data === null ? '—' : fmtTokens(data.total ?? 0)),
+            ]),
+            React.createElement('div', { key: 'src', className: 'dsh-usage-settings-cell' }, [
+              React.createElement('div', { key: 'l', className: 'dsh-usage-settings-label' }, '价格来源'),
+              React.createElement('div', { key: 'v', className: 'dsh-usage-settings-value dsh-usage-settings-src' }, sourceText),
+            ]),
+          ]),
+          React.createElement('div', { key: 'guide', className: 'dsh-usage-settings-guide' }, [
+            '金额 = tokens ÷ 1M × 单价。价格表自动取 OpenRouter 聚合目录(每 6 小时同步);',
+            '本地覆盖优先,在 settings.yaml 配置:',
+          ]),
+          React.createElement('pre', { key: 'yaml', className: 'dsh-usage-settings-yaml' }, priceYaml),
+          React.createElement('div', { key: 'actions', className: 'dsh-usage-settings-actions' }, [
+            React.createElement('button', {
+              key: 'copy',
+              type: 'button',
+              className: 'dsh-usage-settings-btn',
+              onClick: copyTemplate,
+            }, copied ? '已复制 ✓' : '复制价格模板'),
+            React.createElement('button', {
+              key: 'open',
+              type: 'button',
+              className: 'dsh-usage-settings-btn',
+              onClick: () => {
+                // 设置页 → 会话视图:提示用户切到任意会话的「用量」Tab
+                const el = document.querySelector('[data-ds-app]')
+                if (el !== null) {
+                  const hint = document.createElement('div')
+                  hint.textContent = '「用量」Tab 在会话页右侧(对话/轨迹旁),打开任意会话即可查看完整图表'
+                  Object.assign(hint.style, {
+                    position: 'fixed', left: '50%', bottom: '32px', transform: 'translateX(-50%)',
+                    zIndex: '9999', padding: '10px 16px', borderRadius: '10px',
+                    background: 'var(--dsw-alias-bg-overlay)', border: '1px solid var(--dsw-alias-border-l2)',
+                    color: 'var(--dsw-alias-label-primary)', fontSize: '13px',
+                    boxShadow: '0 8px 24px var(--dsw-alias-bg-mask-2)',
+                  })
+                  document.body.appendChild(hint)
+                  setTimeout(() => hint.remove(), 4000)
+                }
+              },
+            }, '打开用量视图'),
+          ]),
+          error === null ? null : React.createElement('div', { key: 'err', className: 'dsh-usage-settings-err' },
+            '用量数据获取失败:' + error),
+        ])
+      }
+
       // conversation.view 视图环:chat(0)/轨迹(10)右侧的「用量」Tab。
       // 宿主按 entry 投影 Tab 并只渲染激活视图;卸载时宿主回退 chat。
       slots.inject('conversation.view', () => slots.register(
@@ -1005,6 +1166,18 @@ window.__ModuleLoader__.load({
           registrant: 'dizzy-dsh-usage-card',
         },
         () => React.createElement(UsageView)
+      ))
+
+      // 设置页「用量统计」段:金额概览 + 价格源状态 + 配置指引。
+      slots.inject('settings.section', () => slots.register(
+        {
+          name: 'settings.section',
+          id: 'usage-card',
+          order: 60,
+          label: '用量统计',
+          registrant: 'dizzy-dsh-usage-card',
+        },
+        () => React.createElement(UsageSettingsSection)
       ))
 
       return () => {

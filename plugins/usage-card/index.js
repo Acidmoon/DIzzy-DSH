@@ -47,7 +47,23 @@ const Config = Schema.object({
   sessionRoot: Schema.string().default(join(homedir(), '.dsh', 'sessions')),
   /** 增量扫描节流间隔(毫秒),1s ~ 10min。 */
   scanThrottleMs: Schema.number().min(1000).max(600000).default(30000),
+  /** 金额计算的价格表:模型键 → 每百万 token 价格(货币单位见 currency)。
+   *  键格式与日志模型归属一致:provider/model 或裸 model 名;
+   *  本地价格优先于 OpenRouter 聚合价。 */
+  prices: Schema.dict(Schema.object({
+    inputPerM: Schema.number().min(0).default(0),
+    outputPerM: Schema.number().min(0).default(0),
+    cachePerM: Schema.number().min(0).default(0),
+  })).default({}),
+  /** 金额显示货币符号(仅展示,不换算)。 */
+  currency: Schema.string().default('$'),
+  /** OpenRouter 聚合价拉取节流(毫秒),1min ~ 24h;0 = 禁用聚合价。 */
+  priceSyncMs: Schema.number().min(0).max(86400000).default(6 * 3600 * 1000),
 })
+
+/** 聚合价格源:OpenRouter 公开 models 目录(免 key,每日更新)。
+ *  响应 data[].id = provider/model, pricing 单位为「美元/token」。 */
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
 
 /** settings.yaml 中本插件的命名空间(规则同官方:/^[a-z][a-z0-9-]*$/)。 */
 const SETTINGS_NS = 'dizzy-usage-card'
@@ -115,6 +131,75 @@ function mergeAgg(target, source) {
 
 function aggTotal(agg) {
   return agg.input + agg.output + agg.cacheRead
+}
+
+// ── 价格解析与金额计算(纯函数,可测)──────────────────────────────
+
+/** 聚合源价格表:modelKey → { inputPerM, outputPerM, cachePerM }(美元/百万 token)。 */
+async function fetchOpenRouterPrices() {
+  const response = await fetch(OPENROUTER_MODELS_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!response.ok) throw new Error(`openrouter ${response.status}`)
+  const body = await response.json()
+  const models = new Map()
+  for (const item of body.data ?? []) {
+    if (typeof item?.id !== 'string' || item.pricing === null || typeof item.pricing !== 'object') continue
+    const p = item.pricing
+    const num = (value) => {
+      const n = Number(value)
+      return Number.isFinite(n) && n >= 0 ? n * 1e6 : undefined // $/token → $/百万 token
+    }
+    const inputPerM = num(p.prompt)
+    const outputPerM = num(p.completion)
+    const cachePerM = num(p.input_cache_read) ?? num(p.prompt)
+    if (inputPerM === undefined && outputPerM === undefined && cachePerM === undefined) continue
+    models.set(item.id, {
+      inputPerM: inputPerM ?? 0,
+      outputPerM: outputPerM ?? 0,
+      cachePerM: cachePerM ?? 0,
+    })
+  }
+  return models
+}
+
+/**
+ * 解析某个模型键的价格:本地 prices → OpenRouter(先精确 id,再按裸 model 名兜底)。
+ * 返回 { inputPerM, outputPerM, cachePerM, source: 'local'|'openrouter'|'none' }。
+ *
+ * 本地匹配同样做裸名兜底:用户键可写 provider/model 或裸 model 名,
+ * 两种写法都能命中日志里的 provider/model(即使 provider 前缀不同,
+ * 如 deepseek-official/deepseek-chat ↔ deepseek/deepseek-chat)。
+ */
+function priceFor(modelKey, localPrices, openRouter) {
+  const bareModel = modelKey.split('/').pop()
+  const local = localPrices[modelKey]
+    ?? localPrices[bareModel]
+    ?? Object.entries(localPrices).find(([key]) => key.split('/').pop() === bareModel)?.[1]
+  if (local !== undefined) {
+    return { ...local, source: 'local' }
+  }
+  const exact = openRouter.get(modelKey)
+  if (exact !== undefined) return { ...exact, source: 'openrouter' }
+  const fallback = [...openRouter.entries()].find(([id]) => id.split('/').pop() === bareModel)?.[1]
+  if (fallback !== undefined) return { ...fallback, source: 'openrouter' }
+  return { inputPerM: 0, outputPerM: 0, cachePerM: 0, source: 'none' }
+}
+
+/** 按价格表计算金额(千分位金额 = tokens / 1e6 × 每百万价格)。 */
+function costOf(tokens, price) {
+  return (
+    (tokens.input / 1e6) * price.inputPerM +
+    (tokens.output / 1e6) * price.outputPerM +
+    (tokens.cacheRead / 1e6) * price.cachePerM
+  )
+}
+
+/** 金额格式化:两位小数,去除无意义的 .00。 */
+function formatCost(value) {
+  const rounded = Math.round(value * 100) / 100
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
 }
 
 function localDayKey(date) {
@@ -294,6 +379,37 @@ export default {
           scanAt = 0
         })
 
+    // ── 价格表:OpenRouter 聚合价(节流拉取,失败静默降级)+ 本地覆盖 ──
+    let openRouterPrices = new Map()
+    let openRouterAt = 0
+    let openRouterError = null
+    async function ensureOpenRouterPrices() {
+      const cfg = current()
+      if (cfg.priceSyncMs <= 0) return
+      if (Date.now() - openRouterAt < cfg.priceSyncMs) return
+      openRouterAt = Date.now()
+      try {
+        openRouterPrices = await fetchOpenRouterPrices()
+        openRouterError = null
+      } catch (error) {
+        openRouterError = error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    // ── 金额汇总:月度/近7天/今日 各处统一从价格表派生,不污染 token 聚合 ──
+    function summarizeCost(agg) {
+      const cfg = current()
+      let total = 0
+      let priced = 0
+      for (const [key, value] of agg.models) {
+        const price = priceFor(key, cfg.prices, openRouterPrices)
+        const cost = costOf(value, price)
+        if (price.source !== 'none') priced += 1
+        total += cost
+      }
+      return { total, priced, modelCount: agg.models.size }
+    }
+
     const stopUsageRoute = ctx.webServer.register({
       kind: 'exact',
       path: '/dizzy/usage',
@@ -311,6 +427,8 @@ export default {
           return
         }
         await refreshUsage()
+        await ensureOpenRouterPrices()
+        const cfg = current()
 
         // 查看月:逐日总量(兼容旧 client)+ 输入/输出/缓存分项(悬浮弹窗)
         const days = {}
@@ -338,19 +456,37 @@ export default {
             output: agg?.output ?? 0,
             cacheRead: agg?.cacheRead ?? 0,
             total: agg === undefined ? 0 : aggTotal(agg),
+            cost: agg === undefined || agg.models.size === 0 ? 0 : summarizeCost(agg).total,
           })
         }
         const todayAgg = dayTotals.get(localDayKey(now))
         const models = {}
+        let todayCost = 0
         if (todayAgg !== undefined) {
           for (const [key, value] of todayAgg.models) {
+            const price = priceFor(key, cfg.prices, openRouterPrices)
+            const cost = costOf(value, price)
+            todayCost += cost
             models[key] = {
               input: value.input,
               output: value.output,
               cacheRead: value.cacheRead,
               total: value.input + value.output + value.cacheRead,
+              cost,
+              price: { source: price.source, inputPerM: price.inputPerM, outputPerM: price.outputPerM, cachePerM: price.cachePerM },
             }
           }
+        }
+
+        // 月度金额:对查看月逐日累计
+        let monthCost = 0
+        let monthPriced = 0
+        for (const [day, agg] of dayTotals) {
+          if (!day.startsWith(`${month}-`)) continue
+          if (aggTotal(agg) <= 0) continue
+          const summary = summarizeCost(agg)
+          monthCost += summary.total
+          monthPriced += summary.priced
         }
 
         res.writeHead(200, {
@@ -364,7 +500,19 @@ export default {
           detail: {
             days: detailDays,
             recent7,
-            today: { date: localDayKey(now), models },
+            today: { date: localDayKey(now), models, cost: todayCost },
+          },
+          cost: {
+            total: monthCost,
+            currency: cfg.currency,
+            priced: monthPriced,
+          },
+          pricing: {
+            source: openRouterError === null && openRouterPrices.size > 0 ? 'openrouter' : (Object.keys(cfg.prices).length > 0 ? 'local' : 'none'),
+            asOf: openRouterAt,
+            modelCount: openRouterPrices.size,
+            localCount: Object.keys(cfg.prices).length,
+            error: openRouterError,
           },
           scannedAt: scanAt,
           errors: scanErrors,
