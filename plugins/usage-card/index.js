@@ -41,6 +41,13 @@ import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import Schema from 'schemastery'
 
+/** 价格条目 schema(Config 与 POST /dizzy/usage-prices 共用同一校验)。 */
+const PriceEntry = Schema.object({
+  inputPerM: Schema.number().min(0).default(0),
+  outputPerM: Schema.number().min(0).default(0),
+  cachePerM: Schema.number().min(0).default(0),
+})
+
 /** 可调配置(loader 挂载时校验;settings 命名空间复用同一 schema)。 */
 const Config = Schema.object({
   /** 会话日志根目录(DSH_HOME 非默认时在此覆盖)。 */
@@ -50,11 +57,7 @@ const Config = Schema.object({
   /** 金额计算的价格表:模型键 → 每百万 token 价格(货币单位见 currency)。
    *  键格式与日志模型归属一致:provider/model 或裸 model 名;
    *  本地价格优先于官方价,官方价优先于 OpenRouter 聚合价。 */
-  prices: Schema.dict(Schema.object({
-    inputPerM: Schema.number().min(0).default(0),
-    outputPerM: Schema.number().min(0).default(0),
-    cachePerM: Schema.number().min(0).default(0),
-  })).default({}),
+  prices: Schema.dict(PriceEntry).default({}),
   /** 金额显示货币符号(仅展示,不换算)。 */
   currency: Schema.string().default('¥'),
   /** USD→CNY 汇率:仅用于把 OpenRouter 美元价换算成 currency 计价。 */
@@ -593,9 +596,126 @@ export default {
       },
     })
 
+    // ── 价格管理路由:设置页读取完整价目表 / 写回本地覆盖价 ──
+    // GET  /dizzy/usage-prices → 完整价目表(官方 + OpenRouter + 本地覆盖)
+    // POST /dizzy/usage-prices → { prices } 写回 settings.yaml(scope.update
+    //   保留注释,watch 自动触发缓存重置 → 下一次 /dizzy/usage 实时按新价计算)
+    const stopPricesRoute = ctx.webServer.register({
+      kind: 'exact',
+      path: '/dizzy/usage-prices',
+      handler: async (req, res) => {
+        if (!isSameOriginRequest(req)) {
+          res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ error: 'forbidden: cross-site request' }))
+          return
+        }
+        const method = req.method ?? 'GET'
+        if (method === 'GET') {
+          await ensureOpenRouterPrices()
+          const cfg = current()
+          // 目录 = 官方表 + OpenRouter 目录 + 本地覆盖(本地标记 source local)
+          const catalog = []
+          const seen = new Set()
+          for (const [id, price] of OFFICIAL_PRICES) {
+            catalog.push({ key: id, name: id, source: 'official', ...price })
+            seen.add(id)
+          }
+          for (const [id, price] of openRouterPrices) {
+            if (seen.has(id)) continue
+            seen.add(id)
+            catalog.push({
+              key: id,
+              name: id,
+              source: 'openrouter',
+              inputPerM: price.inputPerM * cfg.fxRate,
+              outputPerM: price.outputPerM * cfg.fxRate,
+              cachePerM: price.cachePerM * cfg.fxRate,
+            })
+          }
+          for (const [key, price] of Object.entries(cfg.prices)) {
+            const bare = key.split('/').pop()
+            if (seen.has(bare)) {
+              const existing = catalog.find((item) => item.key === bare || item.key.split('/').pop() === bare)
+              if (existing !== undefined) {
+                existing.source = 'local'
+                existing.inputPerM = price.inputPerM
+                existing.outputPerM = price.outputPerM
+                existing.cachePerM = price.cachePerM
+              }
+              continue
+            }
+            catalog.push({ key, name: key, source: 'local', ...price })
+            seen.add(bare)
+          }
+          catalog.sort((a, b) => a.name.localeCompare(b.name))
+          res.writeHead(200, {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+          })
+          res.end(JSON.stringify({
+            currency: cfg.currency,
+            fxRate: cfg.fxRate,
+            prices: catalog,
+          }))
+          return
+        }
+        if (method === 'POST') {
+          if (scope === undefined) {
+            res.writeHead(409, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'settings 服务不可用,无法保存价格' }))
+            return
+          }
+          let body
+          try {
+            const chunks = []
+            for await (const chunk of req) chunks.push(chunk)
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+          } catch {
+            res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'invalid JSON body' }))
+            return
+          }
+          const prices = body?.prices
+          if (prices === null || typeof prices !== 'object' || Array.isArray(prices)) {
+            res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'prices must be an object' }))
+            return
+          }
+          // 用 PriceEntry 校验用户写入的每个条目(拒绝负数/非数字),再整体写入
+          const clean = {}
+          for (const [key, value] of Object.entries(prices)) {
+            const entry = PriceEntry({ ...value })
+            clean[key] = {
+              inputPerM: entry.inputPerM,
+              outputPerM: entry.outputPerM,
+              cachePerM: entry.cachePerM,
+            }
+          }
+          try {
+            await scope.update({ prices: clean })
+          } catch (error) {
+            res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({
+              error: '写入 settings.yaml 失败:' + (error instanceof Error ? error.message : String(error)),
+            }))
+            return
+          }
+          res.writeHead(200, {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+          })
+          res.end(JSON.stringify({ ok: true, saved: Object.keys(clean).length }))
+          return
+        }
+        res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ error: 'method not allowed' }))
+      },
+    })
+
     return () => {
       stopWatch()
       stopUsageRoute()
+      stopPricesRoute()
     }
   },
 }

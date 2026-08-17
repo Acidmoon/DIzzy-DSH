@@ -212,39 +212,36 @@ daemon 无法连接且自动启动失败 → 让用户手动运行
 DeepSeek 官方模型按 [官网价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)
 自动计价(含峰谷两档,按每条消息的实际时间计费);其他模型取
 [OpenRouter](https://openrouter.ai/models) 聚合价(美元 × `fxRate` 换算);
-想按自己的实际扣费价格算,可选在 `settings.yaml` 覆盖。
+价格不对时可在设置页直接调整,实时生效。
 
 **配置步骤**:
 
 1. 零配置:用量 Tab 统计卡第一张即「本月花费」。价格优先级:
    **本地配置 > DeepSeek 官网价(峰谷) > OpenRouter 聚合价(6 小时同步)**;
-2. 可选:设置页 → 用量统计 段,点「复制价格模板」,把 YAML 粘贴进
-   `settings.yaml` 的 `dizzy-usage-card` 段:
+2. 价格不对/想按实际扣费算:**设置页 → 用量统计 → 搜索模型 → 点进详情**,
+   直接改输入/输出/缓存单价,点「保存」即实时生效(写回 settings.yaml,
+   无需重启);「还原为默认」删除该模型的本地覆盖;
+3. 高级参数(货币符号 / 汇率 / 同步间隔)仍可手写 `settings.yaml` 的
+   `dizzy-usage-card` 段(设置页保存时保留这些字段):
 
 ```yaml
 dizzy-usage-card:
-  # 每百万 token 价格(人民币),覆盖官方价与 OpenRouter 聚合价
-  prices:
-    'deepseek-v4-flash': { inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05 }
-    'grok/grok-3': { inputPerM: 3, outputPerM: 15, cachePerM: 1 }
   # currency: ¥   # 金额前缀(仅展示,不换算);默认 ¥
   # fxRate: 6.8   # USD→CNY,仅用于 OpenRouter 美元价换算
   # priceSyncMs: 0   # 0 = 禁用 OpenRouter 聚合价,只用官方价 + 本地价
 ```
 
-   键可写 `provider/model` 或裸 `model` 名,自动匹配日志里的模型归属
-   (如 `deepseek-official/deepseek-v4-flash` ↔ `deepseek-v4-flash`);
-3. 重启 dsh web 后生效(Host 半区重新加载)。
-
 **验证**:用量 Tab 统计卡出现「本月花费」(¥);今日明细每行右侧有金额列,悬浮显示
 价格来源(本地配置 / DeepSeek 官网含峰谷 / OpenRouter / 无价格按 0 计);
-设置页出现「用量统计」段。
+设置页「用量统计」段有搜索框与模型列表,点击可编辑价格,保存后金额立即变化。
 
 **排查**:
 
 - 统计卡金额为 `—`:Host 未重载,重启 dsh web;
 - 金额明显偏低:该模型在官网/OpenRouter 都无对应条目且无本地价(无价格按 0 计),
-  在设置页复制模板补本地价;
+  在设置页搜索该模型补本地价;
+- 改价后金额没变:确认「已保存 ✓」提示出现;仍不行则看 Host 日志是否有
+  settings 写入错误;
 - 想完全离线:设置 `priceSyncMs: 0`。
 
 ### 1. 视觉识别 dsh-vision-toolkit

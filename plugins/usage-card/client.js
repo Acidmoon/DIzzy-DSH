@@ -165,6 +165,30 @@ window.__ModuleLoader__.load({
         '.dsh-usage-settings-btn{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-state-business-primary);font:inherit;font-size:13px;cursor:pointer;transition:filter var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
         '.dsh-usage-settings-btn:hover{filter:brightness(1.08)}',
         '.dsh-usage-settings-err{padding:10px 12px;border-radius:8px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent);color:var(--dsw-alias-state-error-primary);font-size:12px}',
+        // ── 设置页:搜索框 + 模型列表 + 详情弹层 ─────────────
+        '.dsh-usage-settings-search{display:flex;align-items:center;gap:8px}',
+        '.dsh-usage-settings-q{flex:1;min-width:0;box-sizing:border-box;height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none;transition:border-color var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
+        '.dsh-usage-settings-q:focus{border-color:var(--dsw-alias-state-business-primary)}',
+        '.dsh-usage-settings-listhead{display:flex;align-items:center;justify-content:space-between;padding:0 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
+        '.dsh-usage-settings-list{display:flex;flex-direction:column;gap:2px;max-height:340px;overflow-y:auto;padding:2px}',
+        '.dsh-usage-settings-rowbtn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;text-align:left;transition:background var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
+        '.dsh-usage-settings-rowbtn:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+        '.dsh-usage-settings-listname{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.dsh-usage-settings-listsrc{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
+        '.dsh-usage-settings-empty{padding:14px 4px;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}',
+        '.dsh-usage-settings-modal{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-mask-2,rgba(10,12,18,.5));padding:24px}',
+        '.dsh-usage-settings-modalbox{box-sizing:border-box;width:100%;max-width:400px;max-height:85vh;overflow-y:auto;padding:18px 20px;border-radius:14px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay);box-shadow:0 16px 48px var(--dsw-alias-bg-mask-2);display:flex;flex-direction:column;gap:12px}',
+        '.dsh-usage-settings-modalhead{display:flex;align-items:center;gap:10px}',
+        '.dsh-usage-settings-modaltitle{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.dsh-usage-settings-modalsrc{flex:none;font-size:11px;padding:2px 8px;border-radius:99px;background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-state-business-primary)}',
+        '.dsh-usage-settings-close{min-width:28px;min-height:28px;padding:0;border-radius:7px;flex:none}',
+        '.dsh-usage-settings-field{display:flex;align-items:center;gap:10px}',
+        '.dsh-usage-settings-fieldname{flex:none;width:120px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
+        '.dsh-usage-settings-input{box-sizing:border-box;flex:1;min-width:0;height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;outline:none;transition:border-color var(--ds-transition-duration-fast,0.1s) var(--ds-ease-in-out,ease)}',
+        '.dsh-usage-settings-input:focus{border-color:var(--dsw-alias-state-business-primary)}',
+        '.dsh-usage-settings-btn-primary{background:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-label-primary-inverted,var(--dsw-alias-label-primary-foreground,#fff))}',
+        '.dsh-usage-settings-btn:disabled{opacity:.55;cursor:not-allowed}',
+        '.dsh-usage-settings-msg{font-size:12px;line-height:16px;color:var(--dsw-alias-state-success-primary,var(--dsw-alias-state-business-primary))}',
       ].join('')
       document.head.append(style)
 
@@ -1049,51 +1073,185 @@ window.__ModuleLoader__.load({
       }
 
       // ── 设置页「用量统计」段(settings.section)──────────────────
-      // 展示本月花费概览 + 价格源状态 + 价格配置指引;数据自取 /dizzy/usage。
-      // 无业务注入面,组件仅接收运行时 share(useSettings 等,不依赖)。
+      // 花费概览 + 模型价格管理:搜索框 → 模型列表 → 点击弹详情编辑。
+      // 数据自取 GET /dizzy/usage + GET /dizzy/usage-prices;改价经
+      // POST /dizzy/usage-prices 写回 settings.yaml(Host scope.update,
+      // 保留注释),watch 触发重算 → 下一次请求实时按新价计算。
       function UsageSettingsSection() {
         const [data, setData] = React.useState(null)
+        const [catalog, setCatalog] = React.useState(null)
         const [error, setError] = React.useState(null)
+        const [query, setQuery] = React.useState('')
+        const [selected, setSelected] = React.useState(null) // 详情编辑的模型
+        const [draft, setDraft] = React.useState(null)       // 编辑草稿
+        const [saving, setSaving] = React.useState(false)
+        const [saveMsg, setSaveMsg] = React.useState(null)
+        const reload = () => {
+          const now = new Date()
+          const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+          fetch('/dizzy/usage?month=' + month)
+            .then((response) => response.json())
+            .then((body) => { setData(body); setError(null) })
+            .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+          fetch('/dizzy/usage-prices')
+            .then((response) => response.json())
+            .then((body) => { setCatalog(body); setError(null) })
+            .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+        }
         React.useEffect(() => {
           let cancelled = false
           const now = new Date()
           const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
           fetch('/dizzy/usage?month=' + month)
             .then((response) => response.json())
-            .then((body) => {
-              if (cancelled) return
-              setData(body)
-              setError(null)
-            })
-            .catch((err) => {
-              if (cancelled) return
-              setError(err instanceof Error ? err.message : String(err))
-            })
+            .then((body) => { if (!cancelled) { setData(body); setError(null) } })
+            .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) })
+          fetch('/dizzy/usage-prices')
+            .then((response) => response.json())
+            .then((body) => { if (!cancelled) setCatalog(body) })
+            .catch(() => {})
           return () => { cancelled = true }
         }, [])
-        const priceYaml = [
-          'dizzy-usage-card:',
-          '  # 每百万 token 价格(人民币),覆盖官方价与 OpenRouter 聚合价',
-          '  prices:',
-          "    'deepseek-v4-flash': { inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05 }",
-          "    'grok/grok-3': { inputPerM: 3, outputPerM: 15, cachePerM: 1 }",
-          '  # currency: ¥   # 金额前缀(仅展示,不换算)',
-          '  # fxRate: 6.8   # USD→CNY,仅用于 OpenRouter 美元价换算',
-          '  # priceSyncMs: 0   # 0 = 禁用 OpenRouter 聚合价,只用官方价 + 本地价',
-        ].join('\n')
-        const [copied, setCopied] = React.useState(false)
-        const copyTemplate = () => {
-          navigator.clipboard?.writeText(priceYaml).then(() => {
-            setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
-          }).catch(() => {})
-        }
         const cost = data !== null && data.cost !== null && typeof data.cost === 'object' ? data.cost : null
         const pricing = data !== null && data.pricing !== null && typeof data.pricing === 'object' ? data.pricing : null
         const sourceText = pricing === null
           ? '价格表待 Host 加载'
           : '官方价(DeepSeek 官网,含峰谷) → 本地价 → OpenRouter 聚合价(每 6 小时同步)' + (pricing.asOf > 0 ? ' · ' + new Date(pricing.asOf).toLocaleTimeString() : '')
               + (typeof pricing.error === 'string' && pricing.error !== '' ? ' · 聚合拉取失败:' + pricing.error : '')
+        // 搜索过滤:模型名 / provider 子串匹配
+        const q = query.trim().toLowerCase()
+        const list = catalog === null ? [] : catalog.prices
+        const filtered = q === '' ? list : list.filter((item) => item.name.toLowerCase().includes(q))
+        // 打开详情:草稿 = 当前价格(本地/官方/聚合),本地覆盖时仍可改回
+        const openDetail = (item) => {
+          setSelected(item)
+          setDraft({
+            key: item.name,
+            inputPerM: String(item.inputPerM ?? 0),
+            outputPerM: String(item.outputPerM ?? 0),
+            cachePerM: String(item.cachePerM ?? 0),
+            source: item.source,
+          })
+          setSaveMsg(null)
+        }
+        const savePrice = () => {
+          const inputPerM = Number(draft.inputPerM)
+          const outputPerM = Number(draft.outputPerM)
+          const cachePerM = Number(draft.cachePerM)
+          if (![inputPerM, outputPerM, cachePerM].every((n) => Number.isFinite(n) && n >= 0)) {
+            setSaveMsg('请输入非负数字')
+            return
+          }
+          setSaving(true)
+          const patch = { ...(catalog === null ? {} : catalog.prices.reduce((acc, item) => {
+            if (item.source === 'local') acc[item.name] = { inputPerM: item.inputPerM, outputPerM: item.outputPerM, cachePerM: item.cachePerM }
+            return acc
+          }, {})) }
+          patch[draft.key] = { inputPerM, outputPerM, cachePerM }
+          fetch('/dizzy/usage-prices', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prices: patch }),
+          })
+            .then((response) => response.json())
+            .then((body) => {
+              setSaving(false)
+              if (body.ok === true) {
+                setSaveMsg('已保存 ✓ 金额将实时按新价格计算')
+                setSelected(null)
+                setDraft(null)
+                reload()
+              } else {
+                setSaveMsg('保存失败:' + (body.error ?? '未知错误'))
+              }
+            })
+            .catch((err) => {
+              setSaving(false)
+              setSaveMsg('保存失败:' + (err instanceof Error ? err.message : String(err)))
+            })
+        }
+        const resetPrice = () => {
+          // 删除本地覆盖:从本地表移除该键 → 回落到官方/聚合价
+          const patch = { ...(catalog === null ? {} : catalog.prices.reduce((acc, item) => {
+            if (item.source === 'local' && item.name !== draft.key) acc[item.name] = { inputPerM: item.inputPerM, outputPerM: item.outputPerM, cachePerM: item.cachePerM }
+            return acc
+          }, {})) }
+          setSaving(true)
+          fetch('/dizzy/usage-prices', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prices: patch }),
+          })
+            .then((response) => response.json())
+            .then((body) => {
+              setSaving(false)
+              if (body.ok === true) {
+                setSaveMsg('已还原为默认价格 ✓')
+                setSelected(null)
+                setDraft(null)
+                reload()
+              } else {
+                setSaveMsg('还原失败:' + (body.error ?? '未知错误'))
+              }
+            })
+            .catch((err) => {
+              setSaving(false)
+              setSaveMsg('还原失败:' + (err instanceof Error ? err.message : String(err)))
+            })
+        }
+        // 详情弹层:三个价格输入 + 保存/还原
+        const detailModal = selected === null || draft === null
+          ? null
+          : React.createElement('div', { key: 'modal', className: 'dsh-usage-settings-modal' }, [
+              React.createElement('div', { key: 'box', className: 'dsh-usage-settings-modalbox' }, [
+                React.createElement('div', { key: 'head', className: 'dsh-usage-settings-modalhead' }, [
+                  React.createElement('span', { key: 't', className: 'dsh-usage-settings-modaltitle' }, selected.name),
+                  React.createElement('span', { key: 'src', className: 'dsh-usage-settings-modalsrc' },
+                    draft.source === 'local' ? '本地覆盖' : draft.source === 'official' ? 'DeepSeek 官网价(峰谷)' : draft.source === 'openrouter' ? 'OpenRouter 聚合价' : '无价格'),
+                  React.createElement('button', {
+                    key: 'x', type: 'button', className: 'dsh-usage-settings-btn dsh-usage-settings-close',
+                    'aria-label': '关闭', onClick: () => { setSelected(null); setDraft(null) },
+                  }, '✕'),
+                ]),
+                React.createElement('div', { key: 'hint', className: 'dsh-usage-settings-guide' },
+                  '单位:每百万 token 价格(人民币)。保存后实时生效,无需重启。'),
+                React.createElement('label', { key: 'l1', className: 'dsh-usage-settings-field' }, [
+                  React.createElement('span', { key: 'n', className: 'dsh-usage-settings-fieldname' }, '输入(未命中缓存)'),
+                  React.createElement('input', {
+                    key: 'i', type: 'number', min: '0', step: '0.01',
+                    className: 'dsh-usage-settings-input', value: draft.inputPerM,
+                    onChange: (event) => setDraft({ ...draft, inputPerM: event.target.value }),
+                  }),
+                ]),
+                React.createElement('label', { key: 'l2', className: 'dsh-usage-settings-field' }, [
+                  React.createElement('span', { key: 'n', className: 'dsh-usage-settings-fieldname' }, '输出'),
+                  React.createElement('input', {
+                    key: 'i', type: 'number', min: '0', step: '0.01',
+                    className: 'dsh-usage-settings-input', value: draft.outputPerM,
+                    onChange: (event) => setDraft({ ...draft, outputPerM: event.target.value }),
+                  }),
+                ]),
+                React.createElement('label', { key: 'l3', className: 'dsh-usage-settings-field' }, [
+                  React.createElement('span', { key: 'n', className: 'dsh-usage-settings-fieldname' }, '缓存命中'),
+                  React.createElement('input', {
+                    key: 'i', type: 'number', min: '0', step: '0.01',
+                    className: 'dsh-usage-settings-input', value: draft.cachePerM,
+                    onChange: (event) => setDraft({ ...draft, cachePerM: event.target.value }),
+                  }),
+                ]),
+                saveMsg === null ? null : React.createElement('div', { key: 'msg', className: 'dsh-usage-settings-msg' }, saveMsg),
+                React.createElement('div', { key: 'actions', className: 'dsh-usage-settings-actions' }, [
+                  React.createElement('button', {
+                    key: 'save', type: 'button', className: 'dsh-usage-settings-btn dsh-usage-settings-btn-primary',
+                    disabled: saving, onClick: savePrice,
+                  }, saving ? '保存中…' : '保存'),
+                  React.createElement('button', {
+                    key: 'reset', type: 'button', className: 'dsh-usage-settings-btn',
+                    disabled: saving, onClick: resetPrice,
+                  }, '还原为默认'),
+                ]),
+              ]),
+            ])
         return React.createElement('div', { className: 'dsh-usage-settings' }, [
           React.createElement('div', { key: 'row', className: 'dsh-usage-settings-row' }, [
             React.createElement('div', { key: 'cost', className: 'dsh-usage-settings-cell' }, [
@@ -1111,44 +1269,38 @@ window.__ModuleLoader__.load({
               React.createElement('div', { key: 'v', className: 'dsh-usage-settings-value dsh-usage-settings-src' }, sourceText),
             ]),
           ]),
-          React.createElement('div', { key: 'guide', className: 'dsh-usage-settings-guide' }, [
-            '金额 = tokens ÷ 1M × 单价。DeepSeek 官方模型按官网人民币价自动计价(含峰谷两档:',
-            '北京时间 9-12 / 14-18 高峰价为空闲 2 倍),按每条消息的实际时间分别计费;',
-            '其他模型取 OpenRouter 聚合价(美元 × fxRate 换算人民币);本地覆盖优先:',
+          React.createElement('div', { key: 'search', className: 'dsh-usage-settings-search' }, [
+            React.createElement('input', {
+              key: 'q', type: 'search', placeholder: '搜索模型(如 deepseek-v4-flash / grok)…',
+              className: 'dsh-usage-settings-input dsh-usage-settings-q', value: query,
+              onChange: (event) => setQuery(event.target.value),
+            }),
           ]),
-          React.createElement('pre', { key: 'yaml', className: 'dsh-usage-settings-yaml' }, priceYaml),
-          React.createElement('div', { key: 'actions', className: 'dsh-usage-settings-actions' }, [
-            React.createElement('button', {
-              key: 'copy',
-              type: 'button',
-              className: 'dsh-usage-settings-btn',
-              onClick: copyTemplate,
-            }, copied ? '已复制 ✓' : '复制价格模板'),
-            React.createElement('button', {
-              key: 'open',
-              type: 'button',
-              className: 'dsh-usage-settings-btn',
-              onClick: () => {
-                // 设置页 → 会话视图:提示用户切到任意会话的「用量」Tab
-                const el = document.querySelector('[data-ds-app]')
-                if (el !== null) {
-                  const hint = document.createElement('div')
-                  hint.textContent = '「用量」Tab 在会话页右侧(对话/轨迹旁),打开任意会话即可查看完整图表'
-                  Object.assign(hint.style, {
-                    position: 'fixed', left: '50%', bottom: '32px', transform: 'translateX(-50%)',
-                    zIndex: '9999', padding: '10px 16px', borderRadius: '10px',
-                    background: 'var(--dsw-alias-bg-overlay)', border: '1px solid var(--dsw-alias-border-l2)',
-                    color: 'var(--dsw-alias-label-primary)', fontSize: '13px',
-                    boxShadow: '0 8px 24px var(--dsw-alias-bg-mask-2)',
-                  })
-                  document.body.appendChild(hint)
-                  setTimeout(() => hint.remove(), 4000)
-                }
-              },
-            }, '打开用量视图'),
+          React.createElement('div', { key: 'listhead', className: 'dsh-usage-settings-listhead' }, [
+            React.createElement('span', { key: 'm', className: 'dsh-usage-settings-listcol' }, '模型'),
+            React.createElement('span', { key: 's', className: 'dsh-usage-settings-listcol' }, '价格来源'),
+          ]),
+          React.createElement('div', { key: 'list', className: 'dsh-usage-settings-list' },
+            catalog === null
+              ? React.createElement('div', { key: 'load', className: 'dsh-usage-settings-empty' }, '正在加载价格目录…')
+              : filtered.length === 0
+                ? React.createElement('div', { key: 'none', className: 'dsh-usage-settings-empty' }, '没有匹配的模型')
+                : filtered.map((item) => React.createElement('button', {
+                    key: item.name,
+                    type: 'button',
+                    className: 'dsh-usage-settings-rowbtn',
+                    onClick: () => openDetail(item),
+                  }, [
+                    React.createElement('span', { key: 'n', className: 'dsh-usage-settings-listname' }, item.name),
+                    React.createElement('span', { key: 's', className: 'dsh-usage-settings-listsrc' },
+                      item.source === 'local' ? '本地覆盖' : item.source === 'official' ? '官网价' : '聚合价'),
+                  ]))),
+          React.createElement('div', { key: 'note', className: 'dsh-usage-settings-guide' }, [
+            '点击模型可调整价格;金额 = tokens ÷ 1M × 单价,按每条消息的时间自动区分高峰/空闲(DeepSeek 官方价)。',
           ]),
           error === null ? null : React.createElement('div', { key: 'err', className: 'dsh-usage-settings-err' },
             '用量数据获取失败:' + error),
+          detailModal,
         ])
       }
 
