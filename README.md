@@ -12,7 +12,7 @@
 | 插件 | 能力 | 怎么用 | 状态 |
 |---|---|---|---|
 |  **余额/额度** `dizzy-dsh-balance` | 输入栏同一徽章:DeepSeek 显示人民币余额,Grok 显示 SuperGrok 周额度剩余%。Grok 凭证读订阅插件 `GROK_SUBSCRIPTION_TOKEN` | 切到对应模型即显示;问「余额」/`balance_check` 或「Grok 额度」/`grok_quota_check` | ✅ 稳定 |
-|  **本月用量** `dizzy-dsh-usage-card` | 本地会话日志聚合 token 用量 + **金额估算**(OpenRouter 聚合价,本地 settings 可覆盖):月度热力图 / 近 7 天趋势 / 今日分模型堆叠条(输入未命中 / 命中缓存 / 输出) / 峰谷时段 / 本月花费统计卡 | 对话区右侧「用量」Tab(对话、轨迹并列);曲线按横坐标吸附最近一天;悬浮弹窗看分项并跟随鼠标;支持月份切换 + 60s 自动刷新;设置页「用量统计」段看花费概览与价格配置 | ✅ 稳定 |
+|  **本月用量** `dizzy-dsh-usage-card` | 本地会话日志聚合 token 用量 + **人民币金额**:DeepSeek 官方价(含峰谷,官网自动取)+ OpenRouter 聚合价兜底 + 本地可覆盖:月度热力图 / 近 7 天趋势 / 今日分模型堆叠条(输入未命中 / 命中缓存 / 输出) / 峰谷时段 / 本月花费统计卡 | 对话区右侧「用量」Tab(对话、轨迹并列);曲线按横坐标吸附最近一天;悬浮弹窗看分项并跟随鼠标;支持月份切换 + 60s 自动刷新;设置页「用量统计」段看花费概览与价格配置 | ✅ 稳定 |
 |  **Agent 规则注入** `dizzy-dsh-agent-instructions` | 向每个会话注入 Agent 规则:用户哨兵规则(第一性原理 / 对抗式审查 / 子代理优先 / 喵字开头)+ 开发规范(不重复造轮子 / 核心约定 / 防御性模式 / 类型安全) | 装完即全局生效,所有会话、所有工作区;编辑规则文本**下一轮对话即生效**,无需重启 | ✅ 稳定 |
 |  **浏览器控制** `dizzy-dsh-kimi-webbridge` | 通过 Kimi WebBridge(daemon + 浏览器扩展)控制你的**真实浏览器**:打开网页、读取页面、点击、填表、截图、抓包、存 PDF —— 带登录态的会话直接可用 | 渐进式披露:模型先调用 `kimi_browser_activate` 引导工具,随后获得全套 `kimi_browser_*` 工具(导航/快照/点击/输入/截图/标签管理) | ✅ 稳定 |
 
@@ -208,38 +208,42 @@ daemon 无法连接且自动启动失败 → 让用户手动运行
 
 ### 0.65 用量统计与金额 dizzy-dsh-usage-card(自有)
 
-**需用户提供**:无。金额估算开箱即用(OpenRouter 聚合价,免 key);想按自己的
-实际扣费价格算,可选在 `settings.yaml` 覆盖。
+**需用户提供**:无。金额按**人民币**计价,开箱即用:
+DeepSeek 官方模型按 [官网价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)
+自动计价(含峰谷两档,按每条消息的实际时间计费);其他模型取
+[OpenRouter](https://openrouter.ai/models) 聚合价(美元 × `fxRate` 换算);
+想按自己的实际扣费价格算,可选在 `settings.yaml` 覆盖。
 
 **配置步骤**:
 
-1. 零配置:用量 Tab 统计卡第一张即「本月花费」,价格自动取
-   [OpenRouter](https://openrouter.ai/models) 公开 models 目录(每 6 小时同步,
-   失败静默降级为仅本地价);
+1. 零配置:用量 Tab 统计卡第一张即「本月花费」。价格优先级:
+   **本地配置 > DeepSeek 官网价(峰谷) > OpenRouter 聚合价(6 小时同步)**;
 2. 可选:设置页 → 用量统计 段,点「复制价格模板」,把 YAML 粘贴进
    `settings.yaml` 的 `dizzy-usage-card` 段:
 
 ```yaml
 dizzy-usage-card:
-  # 每百万 token 价格,覆盖 OpenRouter 聚合价(货币与 currency 一致)
+  # 每百万 token 价格(人民币),覆盖官方价与 OpenRouter 聚合价
   prices:
-    'deepseek/deepseek-chat': { inputPerM: 2, outputPerM: 8, cachePerM: 0.5 }
+    'deepseek-v4-flash': { inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05 }
     'grok/grok-3': { inputPerM: 3, outputPerM: 15, cachePerM: 1 }
-  # currency: ¥   # 金额前缀(仅展示,不换算);默认 $
-  # priceSyncMs: 0  # 0 = 禁用 OpenRouter 聚合价,只用本地价
+  # currency: ¥   # 金额前缀(仅展示,不换算);默认 ¥
+  # fxRate: 6.8   # USD→CNY,仅用于 OpenRouter 美元价换算
+  # priceSyncMs: 0   # 0 = 禁用 OpenRouter 聚合价,只用官方价 + 本地价
 ```
 
    键可写 `provider/model` 或裸 `model` 名,自动匹配日志里的模型归属
-   (如 `deepseek-official/deepseek-chat` ↔ `deepseek/deepseek-chat`);
+   (如 `deepseek-official/deepseek-v4-flash` ↔ `deepseek-v4-flash`);
 3. 重启 dsh web 后生效(Host 半区重新加载)。
 
-**验证**:用量 Tab 统计卡出现「本月花费」;今日明细每行右侧有金额列,悬浮显示
-价格来源(本地配置 / OpenRouter / 无价格按 0 计);设置页出现「用量统计」段。
+**验证**:用量 Tab 统计卡出现「本月花费」(¥);今日明细每行右侧有金额列,悬浮显示
+价格来源(本地配置 / DeepSeek 官网含峰谷 / OpenRouter / 无价格按 0 计);
+设置页出现「用量统计」段。
 
 **排查**:
 
 - 统计卡金额为 `—`:Host 未重载,重启 dsh web;
-- 金额明显偏低:该模型在 OpenRouter 无对应条目且无本地价(无价格按 0 计),
+- 金额明显偏低:该模型在官网/OpenRouter 都无对应条目且无本地价(无价格按 0 计),
   在设置页复制模板补本地价;
 - 想完全离线:设置 `priceSyncMs: 0`。
 

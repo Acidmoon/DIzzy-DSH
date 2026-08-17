@@ -49,14 +49,16 @@ const Config = Schema.object({
   scanThrottleMs: Schema.number().min(1000).max(600000).default(30000),
   /** 金额计算的价格表:模型键 → 每百万 token 价格(货币单位见 currency)。
    *  键格式与日志模型归属一致:provider/model 或裸 model 名;
-   *  本地价格优先于 OpenRouter 聚合价。 */
+   *  本地价格优先于官方价,官方价优先于 OpenRouter 聚合价。 */
   prices: Schema.dict(Schema.object({
     inputPerM: Schema.number().min(0).default(0),
     outputPerM: Schema.number().min(0).default(0),
     cachePerM: Schema.number().min(0).default(0),
   })).default({}),
   /** 金额显示货币符号(仅展示,不换算)。 */
-  currency: Schema.string().default('$'),
+  currency: Schema.string().default('¥'),
+  /** USD→CNY 汇率:仅用于把 OpenRouter 美元价换算成 currency 计价。 */
+  fxRate: Schema.number().min(0.01).max(100).default(6.8),
   /** OpenRouter 聚合价拉取节流(毫秒),1min ~ 24h;0 = 禁用聚合价。 */
   priceSyncMs: Schema.number().min(0).max(86400000).default(6 * 3600 * 1000),
 })
@@ -64,6 +66,31 @@ const Config = Schema.object({
 /** 聚合价格源:OpenRouter 公开 models 目录(免 key,每日更新)。
  *  响应 data[].id = provider/model, pricing 单位为「美元/token」。 */
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
+
+/**
+ * 官方价格表(人民币/百万 token):DeepSeek 官网现行定价,含峰谷两档。
+ * 高峰时段 = 北京时间 9:00-12:00 / 14:00-18:00,价格为空闲的 2 倍。
+ * 来源:https://api-docs.deepseek.com/zh-cn/quick_start/pricing(2026-08-17 核对)。
+ * 键为裸模型名,自动匹配日志里的 deepseek-official/deepseek-v4-* 等归属。
+ */
+const OFFICIAL_PRICES = {
+  'deepseek-v4-flash': {
+    inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05,
+    peak: { inputPerM: 3.0, outputPerM: 9.0, cachePerM: 0.10 },
+  },
+  'deepseek-v4-pro': {
+    inputPerM: 4.5, outputPerM: 13.5, cachePerM: 0.15,
+    peak: { inputPerM: 9.0, outputPerM: 27.0, cachePerM: 0.30 },
+  },
+}
+
+/** 北京时间(Asia/Shanghai)是否为高峰时段(9-12 / 14-18,含端点)。 */
+function isPeakHour(date) {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai', hour12: false, hour: '2-digit',
+  }).format(date))
+  return (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+}
 
 /** settings.yaml 中本插件的命名空间(规则同官方:/^[a-z][a-z0-9-]*$/)。 */
 const SETTINGS_NS = 'dizzy-usage-card'
@@ -91,12 +118,14 @@ function isSameOriginRequest(req) {
 
 // ── 纯函数(无状态,模块级)──────────────────────────────────────────────
 
-// DayAgg = { input, output, cacheRead, models: Map<modelKey, {input, output, cacheRead}> }
+// DayAgg = { input, output, cacheRead, models: Map<modelKey, ModelUsage> }
+// ModelUsage = { input, output, cacheRead, peakInput, peakOutput, peakCacheRead }
+// (peak* = 高峰时段部分,用于峰谷计价;其余为空闲时段)
 function emptyAgg() {
   return { input: 0, output: 0, cacheRead: 0, models: new Map() }
 }
 
-function addUsage(agg, modelKey, usage) {
+function addUsage(agg, modelKey, usage, isPeak) {
   const input = usage.inputTokens ?? 0
   const output = usage.outputTokens ?? 0
   const cacheRead = usage.cacheReadTokens ?? 0
@@ -105,12 +134,17 @@ function addUsage(agg, modelKey, usage) {
   agg.cacheRead += cacheRead
   let m = agg.models.get(modelKey)
   if (m === undefined) {
-    m = { input: 0, output: 0, cacheRead: 0 }
+    m = { input: 0, output: 0, cacheRead: 0, peakInput: 0, peakOutput: 0, peakCacheRead: 0 }
     agg.models.set(modelKey, m)
   }
   m.input += input
   m.output += output
   m.cacheRead += cacheRead
+  if (isPeak) {
+    m.peakInput += input
+    m.peakOutput += output
+    m.peakCacheRead += cacheRead
+  }
 }
 
 function mergeAgg(target, source) {
@@ -120,12 +154,15 @@ function mergeAgg(target, source) {
   for (const [key, value] of source.models) {
     let m = target.models.get(key)
     if (m === undefined) {
-      m = { input: 0, output: 0, cacheRead: 0 }
+      m = { input: 0, output: 0, cacheRead: 0, peakInput: 0, peakOutput: 0, peakCacheRead: 0 }
       target.models.set(key, m)
     }
     m.input += value.input
     m.output += value.output
     m.cacheRead += value.cacheRead
+    m.peakInput += value.peakInput
+    m.peakOutput += value.peakOutput
+    m.peakCacheRead += value.peakCacheRead
   }
 }
 
@@ -165,14 +202,16 @@ async function fetchOpenRouterPrices() {
 }
 
 /**
- * 解析某个模型键的价格:本地 prices → OpenRouter(先精确 id,再按裸 model 名兜底)。
- * 返回 { inputPerM, outputPerM, cachePerM, source: 'local'|'openrouter'|'none' }。
+ * 解析某个模型键的价格:本地 prices → 官方价表 → OpenRouter(先精确 id,
+ * 再按裸 model 名兜底)。返回
+ * { inputPerM, outputPerM, cachePerM, peak?, source: 'local'|'official'|'openrouter'|'none' }。
  *
- * 本地匹配同样做裸名兜底:用户键可写 provider/model 或裸 model 名,
- * 两种写法都能命中日志里的 provider/model(即使 provider 前缀不同,
+ * 本地与官方均按裸名兜底:用户键可写 provider/model 或裸 model 名,两种写法
+ * 都能命中日志里的 provider/model(即使 provider 前缀不同,
  * 如 deepseek-official/deepseek-chat ↔ deepseek/deepseek-chat)。
+ * OpenRouter 价为美元,按 fxRate 换算成 currency 计价。
  */
-function priceFor(modelKey, localPrices, openRouter) {
+function priceFor(modelKey, localPrices, openRouter, fxRate) {
   const bareModel = modelKey.split('/').pop()
   const local = localPrices[modelKey]
     ?? localPrices[bareModel]
@@ -180,15 +219,40 @@ function priceFor(modelKey, localPrices, openRouter) {
   if (local !== undefined) {
     return { ...local, source: 'local' }
   }
+  const official = OFFICIAL_PRICES[bareModel]
+  if (official !== undefined) {
+    return { ...official, source: 'official' }
+  }
+  const rate = fxRate ?? 1
+  const scale = (entry) => entry === undefined ? undefined : {
+    inputPerM: entry.inputPerM * rate,
+    outputPerM: entry.outputPerM * rate,
+    cachePerM: entry.cachePerM * rate,
+  }
   const exact = openRouter.get(modelKey)
-  if (exact !== undefined) return { ...exact, source: 'openrouter' }
+  if (exact !== undefined) return { ...scale(exact), source: 'openrouter' }
   const fallback = [...openRouter.entries()].find(([id]) => id.split('/').pop() === bareModel)?.[1]
-  if (fallback !== undefined) return { ...fallback, source: 'openrouter' }
+  if (fallback !== undefined) return { ...scale(fallback), source: 'openrouter' }
   return { inputPerM: 0, outputPerM: 0, cachePerM: 0, source: 'none' }
 }
 
-/** 按价格表计算金额(千分位金额 = tokens / 1e6 × 每百万价格)。 */
+/**
+ * 按价格表计算金额(tokens / 1e6 × 每百万价格)。
+ * 价格带 peak 两档时,按 tokens 的 peak* 分项分段计价(官方峰谷价);
+ * 单档价格(本地/OpenRouter)忽略 peak 拆分。
+ */
 function costOf(tokens, price) {
+  const peak = price.peak
+  if (peak !== undefined) {
+    const offInput = tokens.input - tokens.peakInput
+    const offOutput = tokens.output - tokens.peakOutput
+    const offCache = tokens.cacheRead - tokens.peakCacheRead
+    return (
+      (offInput / 1e6) * price.inputPerM + (tokens.peakInput / 1e6) * peak.inputPerM +
+      (offOutput / 1e6) * price.outputPerM + (tokens.peakOutput / 1e6) * peak.outputPerM +
+      (offCache / 1e6) * price.cachePerM + (tokens.peakCacheRead / 1e6) * peak.cachePerM
+    )
+  }
   return (
     (tokens.input / 1e6) * price.inputPerM +
     (tokens.output / 1e6) * price.outputPerM +
@@ -278,7 +342,7 @@ function parseSessionText(text) {
       agg = emptyAgg()
       days.set(key, agg)
     }
-    addUsage(agg, modelKeyOf(event.data), usage)
+    addUsage(agg, modelKeyOf(event.data), usage, isPeakHour(new Date(event.time)))
   }
   return days
 }
@@ -402,7 +466,7 @@ export default {
       let total = 0
       let priced = 0
       for (const [key, value] of agg.models) {
-        const price = priceFor(key, cfg.prices, openRouterPrices)
+        const price = priceFor(key, cfg.prices, openRouterPrices, cfg.fxRate)
         const cost = costOf(value, price)
         if (price.source !== 'none') priced += 1
         total += cost
@@ -464,16 +528,25 @@ export default {
         let todayCost = 0
         if (todayAgg !== undefined) {
           for (const [key, value] of todayAgg.models) {
-            const price = priceFor(key, cfg.prices, openRouterPrices)
+            const price = priceFor(key, cfg.prices, openRouterPrices, cfg.fxRate)
             const cost = costOf(value, price)
             todayCost += cost
             models[key] = {
               input: value.input,
               output: value.output,
               cacheRead: value.cacheRead,
+              peakInput: value.peakInput,
+              peakOutput: value.peakOutput,
+              peakCacheRead: value.peakCacheRead,
               total: value.input + value.output + value.cacheRead,
               cost,
-              price: { source: price.source, inputPerM: price.inputPerM, outputPerM: price.outputPerM, cachePerM: price.cachePerM },
+              price: {
+                source: price.source,
+                inputPerM: price.inputPerM,
+                outputPerM: price.outputPerM,
+                cachePerM: price.cachePerM,
+                peak: price.peak ?? null,
+              },
             }
           }
         }

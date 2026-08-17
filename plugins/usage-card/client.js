@@ -198,9 +198,10 @@ window.__ModuleLoader__.load({
         const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
         return (currency === undefined || currency === '' ? '' : currency) + text
       }
-      // 价格来源提示文本(Host 每模型 price.source:local/openrouter/none)
+      // 价格来源提示文本(Host 每模型 price.source:local/official/openrouter/none)
       function priceSourceLabel(source) {
         if (source === 'local') return '价格来自本地配置(dizzy-usage-card.prices)'
+        if (source === 'official') return '价格来自 DeepSeek 官网(含峰谷两档)'
         if (source === 'openrouter') return '价格来自 OpenRouter 聚合目录'
         return '该模型无价格,按 0 计'
       }
@@ -613,7 +614,7 @@ window.__ModuleLoader__.load({
         const costInfo = viewData !== null && viewData.cost !== null && typeof viewData.cost === 'object'
           ? viewData.cost
           : null
-        const currency = costInfo !== null && typeof costInfo.currency === 'string' ? costInfo.currency : '$'
+        const currency = costInfo !== null && typeof costInfo.currency === 'string' ? costInfo.currency : '¥'
 
         const showTip = (event, title, sub) => {
           const rect = event.currentTarget.getBoundingClientRect()
@@ -750,10 +751,6 @@ window.__ModuleLoader__.load({
               statValue(costInfo === null
                 ? '—'
                 : fmtCost(costInfo.total ?? 0, currency))),
-            React.createElement('div', { key: 's', className: 'dsh-usage-stat-sub' },
-              costInfo === null
-                ? '价格表待重启(Host 半区需重新加载)'
-                : '按 OpenRouter 聚合价 / 本地覆盖价估算'),
           ]),
           React.createElement('div', { key: 'total', className: 'dsh-usage-stat' }, [
             React.createElement('div', { key: 'l', className: 'dsh-usage-stat-label' }, '本月合计'),
@@ -1076,11 +1073,13 @@ window.__ModuleLoader__.load({
         }, [])
         const priceYaml = [
           'dizzy-usage-card:',
-          '  # 每百万 token 价格,覆盖 OpenRouter 聚合价(货币与 currency 一致)',
+          '  # 每百万 token 价格(人民币),覆盖官方价与 OpenRouter 聚合价',
           '  prices:',
-          "    'deepseek/deepseek-chat': { inputPerM: 2, outputPerM: 8, cachePerM: 0.5 }",
+          "    'deepseek-v4-flash': { inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05 }",
           "    'grok/grok-3': { inputPerM: 3, outputPerM: 15, cachePerM: 1 }",
           '  # currency: ¥   # 金额前缀(仅展示,不换算)',
+          '  # fxRate: 6.8   # USD→CNY,仅用于 OpenRouter 美元价换算',
+          '  # priceSyncMs: 0   # 0 = 禁用 OpenRouter 聚合价,只用官方价 + 本地价',
         ].join('\n')
         const [copied, setCopied] = React.useState(false)
         const copyTemplate = () => {
@@ -1093,17 +1092,14 @@ window.__ModuleLoader__.load({
         const pricing = data !== null && data.pricing !== null && typeof data.pricing === 'object' ? data.pricing : null
         const sourceText = pricing === null
           ? '价格表待 Host 加载'
-          : pricing.source === 'openrouter'
-            ? 'OpenRouter 聚合价 · ' + (pricing.modelCount ?? 0) + ' 个模型' + (pricing.asOf > 0 ? ' · 更新于 ' + new Date(pricing.asOf).toLocaleTimeString() : '')
-            : pricing.source === 'local'
-              ? '仅本地配置价(' + (pricing.localCount ?? 0) + ' 条)'
-              : '暂无价格(' + (typeof pricing.error === 'string' && pricing.error !== '' ? '拉取失败:' + pricing.error : '未配置') + ')'
+          : '官方价(DeepSeek 官网,含峰谷) → 本地价 → OpenRouter 聚合价(每 6 小时同步)' + (pricing.asOf > 0 ? ' · ' + new Date(pricing.asOf).toLocaleTimeString() : '')
+              + (typeof pricing.error === 'string' && pricing.error !== '' ? ' · 聚合拉取失败:' + pricing.error : '')
         return React.createElement('div', { className: 'dsh-usage-settings' }, [
           React.createElement('div', { key: 'row', className: 'dsh-usage-settings-row' }, [
             React.createElement('div', { key: 'cost', className: 'dsh-usage-settings-cell' }, [
               React.createElement('div', { key: 'l', className: 'dsh-usage-settings-label' }, '本月花费'),
               React.createElement('div', { key: 'v', className: 'dsh-usage-settings-value' },
-                cost === null ? '—' : fmtCost(cost.total ?? 0, cost.currency ?? '$')),
+                cost === null ? '—' : fmtCost(cost.total ?? 0, cost.currency ?? '¥')),
             ]),
             React.createElement('div', { key: 'tokens', className: 'dsh-usage-settings-cell' }, [
               React.createElement('div', { key: 'l', className: 'dsh-usage-settings-label' }, '本月 tokens'),
@@ -1116,8 +1112,9 @@ window.__ModuleLoader__.load({
             ]),
           ]),
           React.createElement('div', { key: 'guide', className: 'dsh-usage-settings-guide' }, [
-            '金额 = tokens ÷ 1M × 单价。价格表自动取 OpenRouter 聚合目录(每 6 小时同步);',
-            '本地覆盖优先,在 settings.yaml 配置:',
+            '金额 = tokens ÷ 1M × 单价。DeepSeek 官方模型按官网人民币价自动计价(含峰谷两档:',
+            '北京时间 9-12 / 14-18 高峰价为空闲 2 倍),按每条消息的实际时间分别计费;',
+            '其他模型取 OpenRouter 聚合价(美元 × fxRate 换算人民币);本地覆盖优先:',
           ]),
           React.createElement('pre', { key: 'yaml', className: 'dsh-usage-settings-yaml' }, priceYaml),
           React.createElement('div', { key: 'actions', className: 'dsh-usage-settings-actions' }, [

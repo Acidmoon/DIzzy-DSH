@@ -1,8 +1,8 @@
 {
   "name": "dizzy-dsh-usage-card",
   "private": true,
-  "version": "0.3.0",
-  "description": "本月用量视图:Host 聚合本地会话日志每日 token 用量(按 provider/model 归属)+ 金额估算(OpenRouter 聚合价,settings 可覆盖)+ /dizzy/usage 路由;Client 会话视图「用量」Tab(conversation.view,对话/轨迹右侧;统计卡/月度热力图 + 近 7 天平滑曲线/今日分模型明细/峰谷时钟;悬浮弹窗给出输入/输出/缓存分项)+ 设置页「用量统计」段(settings.section,花费概览/价格来源/配置指引)。",
+  "version": "0.4.0",
+  "description": "本月用量视图:Host 聚合本地会话日志每日 token 用量(按 provider/model 归属)+ 人民币金额(DeepSeek 官网峰谷价 / OpenRouter 聚合价 × fxRate / 本地覆盖)+ /dizzy/usage 路由;Client 会话视图「用量」Tab(conversation.view,对话/轨迹右侧;统计卡/月度热力图 + 近 7 天平滑曲线/今日分模型明细/峰谷时钟;悬浮弹窗给出输入/输出/缓存分项)+ 设置页「用量统计」段(settings.section,花费概览/价格来源/配置指引)。",
   "type": "module",
   "main": "./index.js",
   "dependencies": {
