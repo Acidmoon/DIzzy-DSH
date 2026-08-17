@@ -1,0 +1,3 @@
+name: Prefab Anchored Standard
+description: New sessions are automatically prefilled with the bundled anchored trajectory and ready for the first real task prompt.
+order: 8

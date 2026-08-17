@@ -1,0 +1,10 @@
+{
+  "rolledAt": "2026-08-16T13:33:32.659Z",
+  "templateKind": "project2-benchmark",
+  "unlockedNames": [
+    "web_search",
+    "todo_write"
+  ],
+  "purpose": "Explicit opt-in reproduction template for the Project2 benchmark; not intended for unrelated workspaces.",
+  "research": "https://github.com/0liveiraaa/DeepseekCotexplorations/tree/main/contributions/xiaobright-v4-tool-surface-dose-response/"
+}
