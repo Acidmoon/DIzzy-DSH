@@ -1,0 +1,27 @@
+diff --git a/third-party/dsh-notification/package.json b/third-party/dsh-notification/package.json
+index ab1ea89..5e578dc 100644
+--- a/third-party/dsh-notification/package.json
++++ b/third-party/dsh-notification/package.json
+@@ -49,14 +49,14 @@
+     "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+   },
+   "peerDependencies": {
+-    "@deepseek-ai/cordis": "*",
+-    "@deepseek-ai/dsh-session": "*",
+-    "@deepseek-ai/dsh-session-projection": "*",
+-    "@deepseek-ai/dsh-invariants": "*",
+-    "@deepseek-ai/dsh-client-runtime": "*",
+-    "@deepseek-ai/dsh-client-ui-slots": "*",
+-    "@deepseek-ai/dsh-client-ui-settings": "*",
+-    "@deepseek-ai/dsh-client-locale": "*",
++    "@deepseek-ai/cordis": "^4.0.1",
++    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
++    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+     "react": "^18.2.0"
+   },
+   "peerDependenciesMeta": {

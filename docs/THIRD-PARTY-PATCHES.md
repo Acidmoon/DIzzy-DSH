@@ -88,6 +88,15 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 
 **重放失败时的处理**:上游若已适配新 slot 契约或重构 client 入口,按当前 `slots.register("settings.plugin.item", ...)` 调用形态补齐/删除本补丁后更新登记。
 
+### `patches/dsh-notification-peer-ranges.patch`
+
+**插件**:dsh-notification
+**目标文件**:`third-party/dsh-notification/package.json`
+**目的**:修复合集安装必现的 `ERR_PNPM_NO_MATCHING_VERSION`。该快照的全部 `@deepseek-ai/*` peer 依赖为 `*`,与合集内其它插件(better-sidebar / vision-toolkit / genui)的 `^0.1.0-rc.6` 合并解析时,会被 pnpm 解析为 `>=0.1.0 <0.2.0` 一类区间;而 `@deepseek-ai/dsh-*` 只发布了 `0.1.0-rc.*`,导致 `dsh plugin add file:<仓库>` 找不到版本。把 peer 范围显式收敛为与合集其它插件一致:`cordis@^4.0.1`,其余 DSH 子包 `^0.1.0-rc.6`(匹配当前 `0.1.0-rc.7`)。
+**登记日期**:2026-08-18
+
+**重放失败时的处理**:上游若已收敛 peer 范围,删除本补丁并更新登记;冲突则按当前框架版本重写对应 peer 范围后再提交。
+
 ## 重放工具
 
 ```sh
