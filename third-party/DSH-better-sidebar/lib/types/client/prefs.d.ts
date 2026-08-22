@@ -9,9 +9,9 @@
  * must keep working exactly as composed when the settings surface is missing.
  */
 import type { api } from './api.ts';
-import { clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent, SIDEBAR_PREFS_DEFAULTS, type SidebarPrefs } from '../prefs-shared.ts';
-export { SIDEBAR_PREFS_DEFAULTS, clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent };
-export type { SidebarPrefs };
+import { clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent, SIDEBAR_PREFS_DEFAULTS, TITLE_BAR_SCHEMES, TITLE_BAR_STRIP_DEFAULT, type SidebarPrefs, type TitleBarScheme } from '../prefs-shared.ts';
+export { SIDEBAR_PREFS_DEFAULTS, TITLE_BAR_SCHEMES, TITLE_BAR_STRIP_DEFAULT, clampTerminalFontSize, clampTitleBarStrip, clampWidthPercent, };
+export type { SidebarPrefs, TitleBarScheme };
 /** The settings wire face the preferences need (a subset of the plugin api). */
 export type SidebarSettingsClient = Pick<typeof api, 'settingsGet' | 'settingsUpdate'>;
 /** Validate one raw resolved value into {@link SidebarPrefs}. Used for the
@@ -28,3 +28,14 @@ export declare function parsePrefs(value: unknown): SidebarPrefs;
  * the namespace is absent, or a stored value violates the contract.
  */
 export declare function loadPrefs(settings: SidebarSettingsClient): Promise<SidebarPrefs>;
+/**
+ * Read the external-disable flag from the same settings route: the
+ * dsh-web-ui family's aionui-panel provider choice. True only when the host
+ * resolved `aionui-panel.rightPanel` to 'aionui-panel' — while true the
+ * sidebar must not mount (the two right panels are mutually exclusive). Any
+ * failure (route rejected, aionui absent, malformed response) reads false,
+ * so a missing family never hides the sidebar.
+ * @param settings - the settings wire face (the plugin api by default).
+ * @returns the external-disable flag (false on any failure).
+ */
+export declare function loadExternalDisable(settings: SidebarSettingsClient): Promise<boolean>;

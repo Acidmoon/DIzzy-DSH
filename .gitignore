@@ -6,6 +6,7 @@ node_modules/
 .tmp-gaofeng/
 .dsh-vision-toolkit/
 .playwright-cli/
+tmp/
 
 # 收录的第三方插件内部产物(快照本身入库,产物不入库)
 third-party/**/node_modules/

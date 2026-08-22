@@ -97,3 +97,26 @@ export function repairMermaidSource(code: string): string {
       return text === undefined ? whole : `|"${text}"|`
     })
 }
+
+/** Flowchart edge arrows. The negative lookahead on `-->(?!>)` keeps
+ * sequence-diagram message arrows (`-->>`) from matching. */
+const FLOWCHART_EDGE = /-->(?!>)|==>|-\.->/
+
+/**
+ * Lenient repair for sources that omit the mandatory diagram-type
+ * declaration line — the #1 failure mode of model-generated mermaid (chat
+ * assistants routinely emit `A --> B` without the leading `graph TD`).
+ *
+ * When the first token is not an already-declared `graph`/`flowchart` kind
+ * but the body contains flowchart edge arrows, prepend `graph TD` so the
+ * diagram renders instead of tripping the kind gate. Anything else — an
+ * explicitly declared kind, a sequence/gantt/pie body (no flowchart edges),
+ * or plain text — is returned unchanged: we never guess at the diagram type.
+ */
+export function ensureFlowchartKind(code: string): string {
+  const trimmed = code.trim()
+  const kind = /^([A-Za-z]+)/.exec(trimmed)?.[1] ?? ''
+  if (kind === 'graph' || kind === 'flowchart') return code
+  if (!FLOWCHART_EDGE.test(trimmed)) return code
+  return `graph TD\n${trimmed}`
+}

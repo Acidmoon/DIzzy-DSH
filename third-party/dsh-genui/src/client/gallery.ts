@@ -6,7 +6,7 @@
  */
 import type { GenuiSpec } from './spec.ts'
 
-/** A single spec covering all 38 node types in the vocabulary. */
+/** A single spec covering all 40 node types in the vocabulary. */
 export const gallerySpec: GenuiSpec = {
   title: 'GenUI · 组件画廊',
   gap: 14,
@@ -27,6 +27,8 @@ export const gallerySpec: GenuiSpec = {
       { type: 'link', label: '详情链接' },
     ], wrap: true },
     { type: 'divider' },
+    { type: 'audio', src: '/demo-audio.mp3', alt: '音频播放器演示' },
+    { type: 'video', src: '/demo-video.mp4', alt: '视频播放器演示', poster: '/demo-video.jpg', aspectRatio: '16:9' },
     { type: 'grid', cols: 3, items: [
       { type: 'stat', label: 'CPU', value: '42%', delta: '+3.1%' },
       { type: 'stat', label: '内存', value: '6.8 GB', delta: '-1.2%' },
@@ -34,8 +36,11 @@ export const gallerySpec: GenuiSpec = {
     ] },
     { type: 'progress', label: '训练进度', value: 72, valueLabel: '72%' },
     { type: 'card', title: '性能指标', items: [
+      // 表头可点击排序：数值感知（千分位 / k / 万 / % 都能正确比较），
+      // 数值列自动右对齐。
       { type: 'table', columns: ['指标', 'Q1', 'Q2', 'Q3'], rows: [
         ['延迟', 92, 87, 81], ['吞吐', '1.2k', '1.4k', '1.6k'], ['错误率', '0.3%', '0.2%', '0.1%'],
+        ['营收', '3.5万', '4.1万', '5.2万'], ['注册', '1,234', '2,345', '3,456'],
       ] },
       { type: 'keyvalue', pairs: [
         { key: '版本', value: 'v0.1.0' }, { key: '环境', value: 'production' }, { key: '区域', value: 'cn-east' },

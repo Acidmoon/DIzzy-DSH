@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/src/client/contract/slots'
+import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { GenuiBlock } from './GenuiBlock.tsx'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
 import { repairGenuiSpec } from './guard.ts'

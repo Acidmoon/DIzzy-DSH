@@ -10,7 +10,7 @@ declare const en: {
     readonly externalNotice: "Remote tools send the selected image bytes to the configured external vision API. Local crop, trace, pixel diff, palette, foreground extraction, and HTML rendering do not upload images.";
     readonly provider: "Vision service";
     readonly providerHint: "Choose the API protocol, then provide the service address, model, and API key used by online vision features.";
-    readonly groqTutorial: "Want a free Groq key for Qwen3.6-27B vision? Follow the step-by-step tutorial →";
+    readonly aihubmixTutorial: "Need an AIHubMix key for free Gemini 3.7 Flash vision? Follow the signup guide →";
     readonly baseUrl: "Base URL";
     readonly apiKey: "API key";
     readonly apiKeyPlaceholderMissing: "Paste the API key";
@@ -59,6 +59,10 @@ declare const en: {
     readonly saveBeforeTesting: "Save service changes before testing the connection.";
     readonly advanced: "Advanced settings";
     readonly advancedHint: "Credential name, provider compatibility, output language, resource limits, runtime source, Python, and additional readable directories.";
+    readonly imageInput: "Image input";
+    readonly hiddenVariants: "Transparent variant routing";
+    readonly hiddenVariantsLabel: "Keep the original model names and enable images automatically";
+    readonly hiddenVariantsHint: "Text-only models keep one model-selector entry with the original name while the session runs on the image-capable variant. Pasted images, image history, and the built-in read_image tool keep working; disable to restore the explicit (Vision Toolkit) entries.";
     readonly pluginVersion: "Plugin";
     readonly upstreamVersion: "Upstream";
     readonly activeGeneration: "Runtime generation";
@@ -171,6 +175,7 @@ declare const en: {
     readonly healthConnectionCredentialMissing: "Connection test skipped because the credential is unavailable.";
     readonly healthServiceResponded: "Service responded at {endpoint} (HTTP {status}).";
     readonly healthServiceRejectedCredential: "Service rejected the configured credential (HTTP {status}).";
+    readonly healthServiceForbidden: "Service is reachable, but GET /models is restricted (HTTP {status}). This is often an account or model-list permission limit, not an invalid key; you can ignore this warning when the vision-model test reports success.";
     readonly healthServiceNoModels: "Service is reachable but does not support GET /models (HTTP {status}).";
     readonly healthServiceRateLimited: "Service is reachable, but the connection test was rate-limited (HTTP 429).";
     readonly healthServiceHttpFailed: "Connection test failed with HTTP {status}.";
@@ -237,6 +242,12 @@ interface SettingsValue {
         python?: string;
     };
     allowedDirs?: string[];
+    imageInputVariants?: {
+        enabled?: boolean;
+        providers?: string[];
+        autoSwitch?: boolean;
+        hidden?: boolean;
+    };
 }
 type PluginUpdateUnavailableReason = 'profile-not-found' | 'not-direct-dependency' | 'unsupported-install-source' | 'profile-read-only' | 'pnpm-unavailable' | 'unsupported-platform' | 'restart-unmanaged' | 'restart-address-unavailable';
 interface PluginUpdateCapability {

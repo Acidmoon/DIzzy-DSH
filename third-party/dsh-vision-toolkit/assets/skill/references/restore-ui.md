@@ -10,9 +10,11 @@ structured diagram, read `restore-structure.md`.
 ## Choose the restore mode
 
 - Use **fast restore mode** when the user asks for a quick, rough,
-  approximate, prototype, or first-pass reconstruction, or explicitly values
-  speed over fidelity. Its target is a recognizable screenshot in about three
-  minutes when the project already runs.
+  approximate, prototype, or first-pass reconstruction, explicitly values
+  speed over fidelity, or the reference image itself shows a floating
+  speed-intent control such as "快速还原为 HTML" / "快速生成" / "quick
+  restore" overlay. Its target is a recognizable screenshot in about
+  three minutes when the project already runs.
 - Use the **standard restore workflow** below when the user asks for close,
   precise, pixel-level, or production-ready alignment, or does not opt into a
   faster approximation.
@@ -37,8 +39,9 @@ typography, shadows, decorative details, and icon geometry.
    or questions into the same round instead of waiting for each result before
    starting the next call. Normally one or two rounds are enough.
 4. Do not use `vision_trace`, foreground extraction, repeated color sampling,
-   or iterative `vision_pixel_diff` work in fast mode. Those are fidelity tools and will
-   consume the delivery window.
+   iterative `vision_pixel_diff` work, or hand-written SVG in fast mode. Those
+   are fidelity tools and will consume the delivery window. Icons and decorative
+   marks stay library-based or screenshot-backed; never hand-write SVG code.
 
 ### Build the approximation
 
@@ -47,8 +50,9 @@ typography, shadows, decorative details, and icon geometry.
    when zoomed in.
 2. Reuse the project's existing components and CSS tokens. If its frontend or
    icon library contains a reasonably similar component or icon, use it
-   directly instead of recreating the reference. Prefer an approximate library
-   icon over cropping, tracing, or hand-drawing a new one.
+   directly instead of recreating the reference. Never hand-write SVG in fast
+   mode: use an approximate library icon, or extract the original pixels as a
+   screenshot-backed asset.
 3. Use nearby existing palette tokens or visually similar CSS values. Exact
    sampled hex values, gradients, subtle borders, and shadow opacity are out of
    scope unless one of them defines the whole composition.

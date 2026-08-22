@@ -25,7 +25,7 @@ export declare function assetUrl(file: string): string;
  * file: repeated requests (several mermaid nodes, re-renders) share one
  * script load; a failed load stays failed for the page (the component shows
  * its fallback).
- * @param name - 'mermaid' or 'three'.
+ * @param name - 'mermaid', 'three', or 'echarts'.
  * @returns the registered engine surface.
  */
-export declare function loadGenuiAsset<T>(name: 'mermaid' | 'three'): Promise<T>;
+export declare function loadGenuiAsset<T>(name: 'mermaid' | 'three' | 'echarts'): Promise<T>;

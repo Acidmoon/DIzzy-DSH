@@ -4,10 +4,10 @@
  * 职责:聚合本地会话日志(sessionRoot,默认 ~/.dsh/sessions)的每日 token
  *      用量,提供 GET /dizzy/usage?month=YYYY-MM —— 用量视图的数据源。
  *
- * DeepSeek 官方 API 没有按天用量接口,唯一官方数据源是每次响应的
- * usage 字段 —— DSH 已把它落进会话日志(session.jsonl.zstd 的
- * assistant/message 事件 data.usage),这里直接聚合本地日志。
- * 模型归属取同一事件的 data.message.source(provider/model)。
+ * DeepSeek 官方 API 没有按天用量接口。DSH 0.1.1-rc.2 的 token-meter
+ * 以每步 `assistant/chunk { type: 'usage' }` 为样本,同 turn/step 的
+ * `assistant/message.usage` 覆盖该步;旧日志只有 message.usage 时仍按
+ * 条累计。模型归属取 assistant/message 的 data.message.source。
  *
  * 响应形状(后向兼容:days 保持「日期 → 总 tokens」数值映射,
  * 新增 detail 承载分项/分模型,旧 client 读 days 不受影响):
@@ -129,7 +129,10 @@ function emptyAgg() {
 }
 
 function addUsage(agg, modelKey, usage, isPeak) {
-  const input = usage.inputTokens ?? 0
+  // DSH TokenUsage uses inputTokens; the token-meter projection view
+  // names the same bucket uncachedInputTokens. Accept both so older and
+  // newer logs fold into one input column.
+  const input = usage.inputTokens ?? usage.uncachedInputTokens ?? 0
   const output = usage.outputTokens ?? 0
   const cacheRead = usage.cacheReadTokens ?? 0
   agg.input += input
@@ -324,8 +327,34 @@ async function parseSessionFile(file) {
   return parseSessionText(Buffer.concat(parts).toString('utf8'))
 }
 
+/**
+ * Normalize one usage payload. Empty / missing samples are dropped so they
+ * do not create a day bucket.
+ */
+function usageBuckets(usage) {
+  if (usage === null || typeof usage !== 'object') return null
+  const input = usage.inputTokens ?? usage.uncachedInputTokens ?? 0
+  const output = usage.outputTokens ?? 0
+  const cacheRead = usage.cacheReadTokens ?? 0
+  if (input === 0 && output === 0 && cacheRead === 0) return null
+  return usage
+}
+
+/**
+ * Fold one session log into per-day aggregates.
+ *
+ * DSH 0.1.1-rc.2 token accounting (token-meter) reads per-step
+ * `assistant/chunk { type: 'usage' }` first, then treats
+ * `assistant/message.usage` as the committed-step replacement for the same
+ * turn/step — so a chunk plus an identical final message is not counted
+ * twice, and a failed request that only left a chunk still counts. Older
+ * logs with only `assistant/message.usage` keep working (anon keys when
+ * turn/step are missing).
+ */
 function parseSessionText(text) {
   const days = new Map()
+  const byStep = new Map()
+  let anon = 0
   for (const line of text.split('\n')) {
     if (line === '') continue
     let event
@@ -334,18 +363,48 @@ function parseSessionText(text) {
     } catch {
       continue
     }
-    if (event.type !== 'assistant/message' || event.data === null || event.data === undefined) continue
-    const usage = event.data.usage
-    if (usage === null || usage === undefined) continue
-    const tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + (usage.cacheReadTokens ?? 0)
-    if (tokens <= 0) continue
-    const key = localDayKey(new Date(event.time))
+    const data = event.data
+    if (data === null || data === undefined) continue
+    const turn = data.turn
+    const step = data.step
+    const stepKey = Number.isFinite(turn) && Number.isFinite(step) ? `${turn}/${step}` : `anon:${anon++}`
+
+    if (event.type === 'assistant/chunk' && data.chunk !== null && typeof data.chunk === 'object' && data.chunk.type === 'usage') {
+      const usage = usageBuckets(data.chunk.usage)
+      if (usage === null) continue
+      const prev = byStep.get(stepKey)
+      byStep.set(stepKey, {
+        usage,
+        modelKey: prev?.modelKey ?? 'unknown',
+        time: event.time ?? prev?.time,
+      })
+      continue
+    }
+
+    if (event.type !== 'assistant/message') continue
+    const modelKey = modelKeyOf(data)
+    const usage = usageBuckets(data.usage)
+    const prev = byStep.get(stepKey)
+    if (usage !== null) {
+      byStep.set(stepKey, {
+        usage,
+        modelKey: modelKey === 'unknown' ? (prev?.modelKey ?? 'unknown') : modelKey,
+        time: event.time ?? prev?.time,
+      })
+    } else if (prev !== undefined && modelKey !== 'unknown') {
+      byStep.set(stepKey, { ...prev, modelKey })
+    }
+  }
+
+  for (const rec of byStep.values()) {
+    if (rec.time === undefined) continue
+    const key = localDayKey(new Date(rec.time))
     let agg = days.get(key)
     if (agg === undefined) {
       agg = emptyAgg()
       days.set(key, agg)
     }
-    addUsage(agg, modelKeyOf(event.data), usage, isPeakHour(new Date(event.time)))
+    addUsage(agg, rec.modelKey, rec.usage, isPeakHour(new Date(rec.time)))
   }
   return days
 }
@@ -616,7 +675,7 @@ export default {
           // 目录 = 官方表 + OpenRouter 目录 + 本地覆盖(本地标记 source local)
           const catalog = []
           const seen = new Set()
-          for (const [id, price] of OFFICIAL_PRICES) {
+          for (const [id, price] of Object.entries(OFFICIAL_PRICES)) {
             catalog.push({ key: id, name: id, source: 'official', ...price })
             seen.add(id)
           }

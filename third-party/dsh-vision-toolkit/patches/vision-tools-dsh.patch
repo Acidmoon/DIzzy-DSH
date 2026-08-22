@@ -2,7 +2,7 @@ diff --git a/SKILL.md b/SKILL.md
 index 8f42552..f2ee3f2 100644
 --- a/SKILL.md
 +++ b/SKILL.md
-@@ -1,295 +1,308 @@
+@@ -1,295 +1,309 @@
 ----
 -name: vision-tools
 -description: >-
@@ -16,7 +16,8 @@ index 8f42552..f2ee3f2 100644
 -  image yourself when a description you were given lacks a detail.
 ----
 -
- # vision-tools
+-# vision-tools
++# vision-skills
  
 -Five local CLIs that give a text-only agent eyes. They read one shared
 -vision config (`VISION_API_KEY` / `VISION_BASE_URL` / `VISION_MODEL` /
@@ -29,7 +30,7 @@ index 8f42552..f2ee3f2 100644
 +
 +The visual execution schemas are mounted only for the current Agent after this
 +Skill is loaded. A normal `skill` call activates them for the next model step.
-+If this content arrived through a direct `/vision-tools` invocation and the
++If this content arrived through a direct `/vision-skills` invocation and the
 +visual tools are still absent, call `vision_toolkit_activate` once. Do not call
 +that bootstrap when the visual tools are already present.
  
@@ -439,13 +440,14 @@ index 8f42552..f2ee3f2 100644
 -cp "<the temp path>" work/shot.png
 -glance work/shot.png -q "..."
 -```
-+## Work from a durable path, not a temp path
++## Prefer a durable path; platform temp paths are supported
  
 -Exception: the user asked for the image to stay in a temp folder.
-+If an image lives in a temporary directory, copy it into durable workspace
-+storage before the first visual call and run everything against that copy.
-+The exception is when the user explicitly asked for the image to stay in a
-+temporary folder. All paths must remain in the session workspace or a
++Use workspace storage when the image or a derived artifact must remain
++available later. Temporary inputs are also valid: the DSH adapter authorizes
++the current platform temporary directory automatically. On Windows, a model-
++generated `/tmp/...` path is mapped to `%TEMP%\...`; on POSIX systems, use
++`/tmp/...` directly. Other paths must remain in the session workspace or a
 +configured `allowedDirs` entry.
  
  ## When you have a description instead of the image
@@ -526,7 +528,7 @@ index 8f42552..f2ee3f2 100644
  
  | The job | Read |
  |---|---|
-@@ -299,14 +312,17 @@ sequence, and how to tell you got it right.
+@@ -299,14 +313,17 @@ sequence, and how to tell you got it right.
  | Turn a sketch, diagram, or whiteboard into Mermaid, Graphviz, or another structured representation | `references/restore-structure.md` |
  | Operate a GUI from screenshots — locate, act, verify each step | `references/gui.md` |
  
@@ -801,10 +803,33 @@ index 3261fcf..68025be 100644
     nodes, labels, groups, edges, directions, and edge labels.
  6. Generate the Mermaid, Graphviz, or requested structure from that inventory.
 diff --git a/references/restore-ui.md b/references/restore-ui.md
-index f9ec11a..de97a02 100644
+index f9ec11a..bfc63c0e4eacbd3a5eaf9453ec542d3b5380875a 100644
 --- a/references/restore-ui.md
 +++ b/references/restore-ui.md
-@@ -28,16 +28,16 @@ typography, shadows, decorative details, and icon geometry.
+@@ -10,11 +10,13 @@
+ ## Choose the restore mode
+-
+-- Use **fast restore mode** when the user asks for a quick, rough,
+-  approximate, prototype, or first-pass reconstruction, or explicitly values
+-  speed over fidelity. Its target is a recognizable screenshot in about three
+-  minutes when the project already runs.
+-- Use the **standard restore workflow** below when the user asks for close,
+-  precise, pixel-level, or production-ready alignment, or does not opt into a
+-  faster approximation.
+-
++
++- Use **fast restore mode** when the user asks for a quick, rough,
++  approximate, prototype, or first-pass reconstruction, explicitly values
++  speed over fidelity, or the reference image itself shows a floating
++  speed-intent control such as "快速还原为 HTML" / "快速生成" / "quick
++  restore" overlay. Its target is a recognizable screenshot in about
++  three minutes when the project already runs.
++- Use the **standard restore workflow** below when the user asks for close,
++  precise, pixel-level, or production-ready alignment, or does not opt into a
++  faster approximation.
++
+ ## Fast restore mode: first screenshot in about three minutes
+@@ -28,17 +30,18 @@
  1. Inspect the existing frontend stack, component library, icon set, source
     assets, and design tokens before writing code, but stop searching as soon as
     a usable local primitive is found.
@@ -823,12 +848,27 @@ index f9ec11a..de97a02 100644
     starting the next call. Normally one or two rounds are enough.
 -4. Do not use `trace`, foreground extraction, repeated color sampling, or
 -   iterative `pixel_diff` work in fast mode. Those are fidelity tools and will
+-   consume the delivery window.
 +4. Do not use `vision_trace`, foreground extraction, repeated color sampling,
-+   or iterative `vision_pixel_diff` work in fast mode. Those are fidelity tools and will
-    consume the delivery window.
++   iterative `vision_pixel_diff` work, or hand-written SVG in fast mode. Those
++   are fidelity tools and will consume the delivery window. Icons and decorative
++   marks stay library-based or screenshot-backed; never hand-write SVG code.
  
  ### Build the approximation
-@@ -57,7 +57,7 @@ typography, shadows, decorative details, and icon geometry.
+ 
+@@ -47,8 +50,9 @@
+    when zoomed in.
+ 2. Reuse the project's existing components and CSS tokens. If its frontend or
+    icon library contains a reasonably similar component or icon, use it
+-   directly instead of recreating the reference. Prefer an approximate library
+-   icon over cropping, tracing, or hand-drawing a new one.
++   directly instead of recreating the reference. Never hand-write SVG in fast
++   mode: use an approximate library icon, or extract the original pixels as a
++   screenshot-backed asset.
+ 3. Use nearby existing palette tokens or visually similar CSS values. Exact
+    sampled hex values, gradients, subtle borders, and shadow opacity are out of
+    scope unless one of them defines the whole composition.
+@@ -57,7 +61,7 @@
  
  ### Render once, fix once, deliver
  
@@ -837,7 +877,7 @@ index f9ec11a..de97a02 100644
     existing browser setup.
  2. Inspect the screenshot once. If there is an obvious structural failure such
     as a missing major region, broken wrapping, or a wildly wrong scale, make
-@@ -66,7 +66,7 @@ typography, shadows, decorative details, and icon geometry.
+@@ -66,7 +70,7 @@
     small color, icon, font, shadow, radius, or spacing differences.
  
  A practical time box is roughly 30 seconds for project inspection plus
@@ -846,7 +886,7 @@ index f9ec11a..de97a02 100644
  rendering, one correction, and screenshot delivery. Dependency installation or
  a project that does not already run may extend that target; do not compensate
  by silently switching back to a long precision loop.
-@@ -112,18 +112,19 @@ fonts, icons, images, and design tokens before writing replacements.
+@@ -112,18 +116,19 @@
  ### 2. Establish the coordinate system
  
  Record the reference image dimensions and the target viewport. Screenshots may
@@ -874,7 +914,7 @@ index f9ec11a..de97a02 100644
  
  Treat model boxes as approximate handles. Use them to organize the page, but
  do not mistake their final few pixels for measured boundaries.
-@@ -141,15 +142,11 @@ Use a padded crop only to inspect and center the target. Before foreground
+@@ -141,15 +146,11 @@
  extraction, tighten the final region to the visual's own ink; adjacent text or
  rules inside the region can become foreground components too.
  
@@ -895,7 +935,7 @@ index f9ec11a..de97a02 100644
  ```
  
  Inspect the transparent result before use. Confirm that the whole visual is
-@@ -162,8 +159,8 @@ sheet instead of checking them from filenames alone.
+@@ -162,8 +163,8 @@
  - Follow the project's existing framework and component patterns.
  - Build content, interaction, responsive layout, borders, shadows, and simple
    shapes natively.
@@ -906,7 +946,7 @@ index f9ec11a..de97a02 100644
  - Place extracted assets with explicit logical dimensions. Preserve their
    aspect ratio and avoid baking surrounding whitespace into the asset.
  - Match structure and proportions before tuning small spacing.
-@@ -172,10 +169,10 @@ sheet instead of checking them from filenames alone.
+@@ -172,10 +173,10 @@
  
  For an existing implementation, start here.
  
@@ -919,7 +959,7 @@ index f9ec11a..de97a02 100644
     spot or explain.
  3. Fix material discrepancies: missing or wrong content, incorrect hierarchy,
     broken wrapping, visibly wrong alignment or scale, wrong component state,
-@@ -185,7 +182,7 @@ For an existing implementation, start here.
+@@ -185,7 +186,7 @@
     rasterization, antialiasing, subpixel placement, or another imperceptible
     rendering detail.
  

@@ -1,26 +1,8 @@
-diff --git a/third-party/dsh-vision-toolkit/lib/runtime-install.js b/third-party/dsh-vision-toolkit/lib/runtime-install.js
-index 9c4e56e..9b24940 100644
---- a/third-party/dsh-vision-toolkit/lib/runtime-install.js
-+++ b/third-party/dsh-vision-toolkit/lib/runtime-install.js
-@@ -34,8 +34,11 @@ function sha256(bytes) {
- export function isolatedPythonEnvironment(home) {
-     return {
-         HOME: home,
--        USERPROFILE: home,
--        LOCALAPPDATA: home,
-+        // Windows Store Python's `ensurepip` exits 101 when USERPROFILE /
-+        // LOCALAPPDATA point at a fake home (DSH's isolated cache). User-site
-+        // isolation still holds via PYTHONNOUSERSITE; keep the real Windows
-+        // profile so Store Python can create a venv.
-+        ...(process.platform === 'win32' ? {} : { USERPROFILE: home, LOCALAPPDATA: home }),
-         PYTHONHOME: undefined,
-         PYTHONPATH: undefined,
-         VIRTUAL_ENV: undefined,
 diff --git a/third-party/dsh-vision-toolkit/src/runtime-install.ts b/third-party/dsh-vision-toolkit/src/runtime-install.ts
-index a6acf9d..7e23c2e 100644
+index 1c07231..05777b7 100644
 --- a/third-party/dsh-vision-toolkit/src/runtime-install.ts
 +++ b/third-party/dsh-vision-toolkit/src/runtime-install.ts
-@@ -97,8 +97,11 @@ function sha256(bytes: string | Buffer): string {
+@@ -106,8 +106,11 @@ function sha256(bytes: string | Buffer): string {
  export function isolatedPythonEnvironment(home: string): NodeJS.ProcessEnv {
    return {
      HOME: home,
@@ -34,11 +16,29 @@ index a6acf9d..7e23c2e 100644
      PYTHONHOME: undefined,
      PYTHONPATH: undefined,
      VIRTUAL_ENV: undefined,
+diff --git a/third-party/dsh-vision-toolkit/lib/runtime-install.js b/third-party/dsh-vision-toolkit/lib/runtime-install.js
+index bf46ce8..58a1207 100644
+--- a/third-party/dsh-vision-toolkit/lib/runtime-install.js
++++ b/third-party/dsh-vision-toolkit/lib/runtime-install.js
+@@ -41,8 +41,11 @@ function sha256(bytes) {
+ export function isolatedPythonEnvironment(home) {
+     return {
+         HOME: home,
+-        USERPROFILE: home,
+-        LOCALAPPDATA: home,
++        // Windows Store Python's `ensurepip` exits 101 when USERPROFILE /
++        // LOCALAPPDATA point at a fake home (DSH's isolated cache). User-site
++        // isolation still holds via PYTHONNOUSERSITE; keep the real Windows
++        // profile so Store Python can create a venv.
++        ...(process.platform === 'win32' ? {} : { USERPROFILE: home, LOCALAPPDATA: home }),
+         PYTHONHOME: undefined,
+         PYTHONPATH: undefined,
+         VIRTUAL_ENV: undefined,
 diff --git a/third-party/dsh-vision-toolkit/tests/runtime-install.spec.ts b/third-party/dsh-vision-toolkit/tests/runtime-install.spec.ts
-index 87f0ad1..7503540 100644
+index 70794fb..45ab762 100644
 --- a/third-party/dsh-vision-toolkit/tests/runtime-install.spec.ts
 +++ b/third-party/dsh-vision-toolkit/tests/runtime-install.spec.ts
-@@ -91,7 +91,6 @@ describe('external pinned runtime preparation', () => {
+@@ -105,7 +105,6 @@ describe('external pinned runtime preparation', () => {
      for (const spawn of service.spawns) {
        expect(spawn.env).toMatchObject({
          HOME: prepared.cleanHome,
@@ -46,7 +46,7 @@ index 87f0ad1..7503540 100644
          PYTHONHOME: undefined,
          PYTHONPATH: undefined,
          VIRTUAL_ENV: undefined,
-@@ -100,6 +99,12 @@ describe('external pinned runtime preparation', () => {
+@@ -114,6 +113,12 @@ describe('external pinned runtime preparation', () => {
          PYTHONNOUSERSITE: '1',
          PYTHONUTF8: '1',
        })

@@ -26,7 +26,7 @@ agent-instructions 在工作区存在 AGENTS.md 时自动注入)。
   - `vision_ground` / `vision_detect` —— 定位 / 检测页面元素(返回坐标框);
   - `vision_pixel_diff` —— 对比两张图的差异;
   - `vision_crop` / `vision_trace` / `vision_long_screenshot_ocr` 等 —— 裁剪 /
-    描摹 / 长截图 OCR(加载 vision-tools skill 后可用,未激活时先加载 skill)。
+    描摹 / 长截图 OCR(加载 vision-skills skill 后可用;旧会话的 vision-tools 仍识别)。
 - **禁止降级**:read_image 失败后不能说「无法读图」就完事——先调用 vision 工具;
   工具不可用时,向用户说明需要启用视觉能力,而不是假装图片不可读。
 - 图片来源:工作区内的图片路径、用户提供的路径、截图类工具返回的路径

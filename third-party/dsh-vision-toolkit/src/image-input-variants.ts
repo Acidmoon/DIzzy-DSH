@@ -29,8 +29,15 @@ import type {
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type { ResolvedVisionToolkitConfig } from './config.ts'
+import {
+  createEvidenceCacheKey,
+  EvidenceCache,
+  SessionEvidenceStore,
+} from './evidence-cache.ts'
 import { sessionPasteRoot, type PasteSelectionQuery, type PasteVerdict } from './paste-images.ts'
-import type { VisionToolkitRuntime } from './runtime.ts'
+import type { CapturedEvidenceRuntime, VisionToolkitRuntime } from './runtime.ts'
+
+export { EvidenceCache } from './evidence-cache.ts'
 
 /** Provider-id prefix for the variant routes this plugin registers. */
 export const VARIANT_PROVIDER_PREFIX = 'vision-toolkit-'
@@ -40,6 +47,12 @@ export const VARIANT_SUFFIX = ' (Vision Toolkit)'
 
 /** Promise-cache bound for image descriptions, so a long-lived Web profile cannot hoard evidence text. */
 const EVIDENCE_CACHE_LIMIT = 64
+
+/** Periodic self-heal sweep for image-input variant routes. */
+const VARIANT_SWEEP_INTERVAL_MS = 10_000
+
+/** How long an upstream must stay absent before its wrapper is released. */
+const VARIANT_RELEASE_GRACE_MS = 10_000
 
 /**
  * Media types the Vision Toolkit glance pipeline accepts, by declared media
@@ -183,67 +196,10 @@ function assistantMessageText(message: Message): string {
     .join('\n\n')
 }
 
-function cacheKey(attachmentId: string, prompt: string, sessionId?: string): string {
-  return `${sessionId ?? ''}\u0000${attachmentId}\u0000${prompt}`
-}
-
 function contentHasText(blocks: readonly ContentBlock[], text: string): boolean {
   return blocks.some(block =>
     (block.type === 'text' && block.text === text)
     || (block.type === 'tool-result' && contentHasText(block.content, text)))
-}
-
-/** Bounded promise cache for one attachment's description; failed reads are not retained. */
-export class EvidenceCache {
-  private readonly entries = new Map<string, Promise<ContentBlock>>()
-
-  constructor(private readonly limit: number) {}
-
-  /**
-   * Read one attachment-and-prompt key's entry or compute it. Concurrent readers join the in-flight
-   * computation; a settled failure is evicted so a fixed configuration gets a
-   * fresh chance.
-   * @param key - the attachment identity plus the exact focus prompt.
-   * @param load - computes the description; must resolve `{ ok, block }` and never reject.
-   * @returns the cached or computed block.
-   */
-  read(key: string, load: () => Promise<{ ok: boolean; block: ContentBlock }>): Promise<ContentBlock> {
-    const existing = this.entries.get(key)
-    if (existing !== undefined) {
-      // Refresh recency: Map iteration order is insertion order.
-      this.entries.delete(key)
-      this.entries.set(key, existing)
-      return existing
-    }
-    const pending = load().then(
-      (result) => {
-        // Only evict our own entry: this promise may have been LRU-evicted and
-        // the key re-populated by a newer read meanwhile.
-        if (!result.ok && this.entries.get(key) === pending) {
-          this.entries.delete(key)
-        }
-        return result.block
-      },
-      (error: unknown) => {
-        if (this.entries.get(key) === pending) {
-          this.entries.delete(key)
-        }
-        throw error
-      },
-    )
-    this.entries.set(key, pending)
-    while (this.entries.size > this.limit) {
-      const oldest = this.entries.keys().next().value
-      if (oldest === undefined) break
-      this.entries.delete(oldest)
-    }
-    return pending
-  }
-
-  /** Drop every cached description (runtime reconfiguration invalidates provider-specific reads). */
-  clear(): void {
-    this.entries.clear()
-  }
 }
 
 /**
@@ -373,30 +329,30 @@ function createLimiter(limit: number): <T>(task: () => Promise<T>, signal?: Abor
 
 /**
  * Read one image block into a Vision Toolkit description text block. Never
- * throws: failures degrade to an explanatory block with `ok: false`, so the
- * caller can decide what a failure means (the cache refuses to memoize it).
+ * throws: failures become model-visible explanatory blocks and are cached like
+ * successful descriptions so replayed history stays byte-identical.
  * @param ctx - plugin context; reads the optional `attachments` service.
- * @param runtime - the currently serving Vision Toolkit runtime, if ready.
+ * @param runtime - the immutable runtime snapshot captured for this conversion.
  * @param block - the image block to describe.
  * @param query - the exact focus-hinted prompt sent to the vision model.
  * @param sessionId - the live Session identity, used to keep a model-visible copy.
- * @returns the outcome and its model-facing replacement block.
+ * @returns the model-facing replacement block.
  */
 async function readImageBlock(
   ctx: Context,
-  runtime: () => VisionToolkitRuntime | undefined,
+  runtime: () => CapturedEvidenceRuntime | undefined,
   block: ImageBlock,
   query: string,
   sessionId?: string,
-): Promise<{ ok: boolean; block: ContentBlock }> {
+): Promise<ContentBlock> {
   const attachments = ctx.get('attachments')
   const current = runtime()
   if (attachments === undefined) {
-    return { ok: false, block: { type: 'text', text: `${UNAVAILABLE_PREFIX}the DSH attachment service is not ready] The vision tool is temporarily unavailable; let the user know.` } }
+    return { type: 'text', text: `${UNAVAILABLE_PREFIX}the DSH attachment service is not ready] The vision tool is temporarily unavailable; let the user know.` }
   }
   const extension = MEDIA_EXTENSIONS[block.attachment.mediaType]
   if (extension === undefined) {
-    return { ok: false, block: { type: 'text', text: `${UNAVAILABLE_PREFIX}unsupported image media type ${block.attachment.mediaType}] The vision tool is temporarily unavailable; let the user know.` } }
+    return { type: 'text', text: `${UNAVAILABLE_PREFIX}unsupported image media type ${block.attachment.mediaType}] The vision tool is temporarily unavailable; let the user know.` }
   }
   let temporaryDirectory: string | undefined
   let pathEvidence = ''
@@ -410,10 +366,7 @@ async function readImageBlock(
     // can still use the path with a later visual-tool call if the bridge is
     // temporarily unavailable on this turn.
     if (current === undefined) {
-      return {
-        ok: false,
-        block: { type: 'text', text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${UNAVAILABLE_PREFIX}the Vision Toolkit runtime is not ready] The vision tool is temporarily unavailable; let the user know.` },
-      }
+      return { type: 'text', text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${UNAVAILABLE_PREFIX}the Vision Toolkit runtime is not ready] The vision tool is temporarily unavailable; let the user know.` }
     }
     // A fresh signal on purpose: the cached run must not die with its first
     // caller (their abort used to cancel every concurrent joiner); the runtime
@@ -424,14 +377,11 @@ async function readImageBlock(
     )
     const answer = result.answer.trim()
     if (answer.length === 0) throw new Error('the Vision Toolkit returned an empty description')
-    return { ok: true, block: { type: 'text', text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${DESCRIPTION_PREFIX}${answer}` } }
+    return { type: 'text', text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${DESCRIPTION_PREFIX}${answer}` }
   } catch (error) {
     return {
-      ok: false,
-      block: {
-        type: 'text',
-        text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${UNAVAILABLE_PREFIX}${messageOf(error).slice(0, 300)}] The vision tool is temporarily unavailable; let the user know.`,
-      },
+      type: 'text',
+      text: `${pathEvidence}${pathEvidence === '' ? '' : '\n'}${UNAVAILABLE_PREFIX}${messageOf(error).slice(0, 300)}] The vision tool is temporarily unavailable; let the user know.`,
     }
   } finally {
     if (temporaryDirectory !== undefined) {
@@ -445,21 +395,30 @@ async function readImageBlock(
  * The original messages are returned untouched when nothing carries an image;
  * converted messages are new objects, so the durable request stays immutable.
  * @param ctx - plugin context for the attachments service.
- * @param runtime - the currently serving runtime (lazily read per conversion).
- * @param cache - shared per-adapter description cache.
+ * @param runtime - the immutable runtime snapshot captured for this conversion.
+ * @param cache - shared process/durable description cache.
  * @param messages - the assembled request messages.
  * @param signal - the caller's cancellation for this conversion pass.
  * @param sessionId - the live Session identity, when available.
+ * @param runtimeHash - stable fingerprint of the vision provider and evidence runtime.
  * @returns the rewritten message list.
  */
 export async function convertImagesToEvidence(
   ctx: Context,
-  runtime: () => VisionToolkitRuntime | undefined,
+  runtime: () => CapturedEvidenceRuntime | undefined,
   cache: EvidenceCache,
   messages: readonly Message[],
   signal?: AbortSignal,
   sessionId?: string,
+  runtimeHash = 'process-only-runtime',
 ): Promise<Message[]> {
+  const session = sessionId === undefined ? undefined : ctx.sessions.get(sessionId as never)
+  const sessionIdentity = session === undefined
+    ? undefined
+    : {
+        createdAt: session.header.createdAt,
+        ...(session.header.cwd === undefined ? {} : { cwd: session.header.cwd }),
+      }
   const plans: Array<{ message: Message; query?: string }> = []
   let lastUserText = ''
   let lastAssistantText = ''
@@ -501,7 +460,13 @@ export async function convertImagesToEvidence(
     if (query === undefined) return message
     const content = await convertBlocks(message.content, (block) => abortableWait(
       limit(
-        () => cache.read(cacheKey(String(block.attachment.attachmentId), query, sessionId), () =>
+        () => cache.read(createEvidenceCacheKey({
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(sessionIdentity === undefined ? {} : { sessionIdentity }),
+          attachmentId: String(block.attachment.attachmentId),
+          prompt: query,
+          runtimeHash,
+        }), () =>
           readImageBlock(ctx, runtime, block, query, sessionId)),
         signal,
       ),
@@ -531,8 +496,6 @@ export async function convertImagesToEvidence(
  * retry policy, and replay handling still apply).
  */
 export class ImageInputVariantAdapter extends LlmAdapter {
-  private lastRuntime: VisionToolkitRuntime | undefined
-
   constructor(
     private readonly ctx: Context,
     private readonly llm: LlmService,
@@ -540,12 +503,16 @@ export class ImageInputVariantAdapter extends LlmAdapter {
     private readonly upstreamName: string,
     private readonly runtime: () => VisionToolkitRuntime | undefined,
     private readonly cache: EvidenceCache,
+    private readonly hidden: () => boolean = () => false,
   ) {
     super()
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: `${this.upstreamName}${VARIANT_SUFFIX}` }
+    return {
+      id: provider,
+      name: this.hidden() ? this.upstreamName : `${this.upstreamName}${VARIANT_SUFFIX}`,
+    }
   }
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
@@ -553,7 +520,7 @@ export class ImageInputVariantAdapter extends LlmAdapter {
     return models.filter(shouldWrapModel).map((model) => ({
       provider,
       id: model.id,
-      name: `${model.name}${VARIANT_SUFFIX}`,
+      name: this.hidden() ? model.name : `${model.name}${VARIANT_SUFFIX}`,
       inputModalities: ['text', 'image'],
       ...(model.description === undefined ? {} : { description: model.description }),
     }))
@@ -571,7 +538,7 @@ export class ImageInputVariantAdapter extends LlmAdapter {
     return {
       provider,
       id: model,
-      name: `${info.name}${VARIANT_SUFFIX}`,
+      name: this.hidden() ? info.name : `${info.name}${VARIANT_SUFFIX}`,
       inputModalities: ['text', 'image'],
       ...(info.description === undefined ? {} : { description: info.description }),
       // Capability and call-default metadata rides through unchanged: the
@@ -584,20 +551,29 @@ export class ImageInputVariantAdapter extends LlmAdapter {
   }
 
   override async *stream(options: GenerateOptions): AsyncGenerator<StreamChunk> {
-    // A reconfigured runtime is a NEW instance; descriptions read through the
-    // previous provider must not be replayed for the new one.
     const current = this.runtime()
-    if (current !== this.lastRuntime) {
-      this.cache.clear()
-      this.lastRuntime = current
+    let captured: CapturedEvidenceRuntime | undefined
+    if (current !== undefined && options.messages.some(message => contentHasImage(message.content))) {
+      try {
+        captured = await current.captureEvidenceRuntime()
+      } catch (error) {
+        // Keep the established graceful-degradation path. The unavailable block
+        // is cached under this fallback fingerprint so historical replay stays
+        // stable; a later successful credential capture produces a different key.
+        captured = Object.freeze({
+          evidenceFingerprint: current.evidenceFingerprint,
+          glance: async () => { throw error },
+        })
+      }
     }
     const messages = await convertImagesToEvidence(
       this.ctx,
-      this.runtime,
+      () => captured,
       this.cache,
       options.messages,
       options.signal,
       options.sessionId === undefined ? undefined : String(options.sessionId),
+      captured?.evidenceFingerprint ?? 'process-only-runtime',
     )
     // Delegate through the host service under the upstream route: the variant
     // is a wire-only facade, and the upstream route owns retry and replay.
@@ -834,7 +810,19 @@ export function installImageInputVariants(
   getConfig: () => ResolvedVisionToolkitConfig,
   getRuntime: () => VisionToolkitRuntime | undefined,
 ): { dispose: () => void; reconcile: () => void } {
+  const evidenceStore = new SessionEvidenceStore(ctx)
+  const evidenceCache = new EvidenceCache(EVIDENCE_CACHE_LIMIT, evidenceStore)
   const registrations = new Map<string, () => void>()
+  // The host snapshots adapter provider metadata (including the group display
+  // name) at registration time, so a transparent-routing toggle must rebuild
+  // every wrapper for the new names to reach the model selector.
+  let lastHidden = false
+  // Upstream ids observed missing and the timestamp of the first missing
+  // observation. A wrapper is only released after its upstream stays absent
+  // for the full grace period, so a transient registry gap (adapter
+  // re-registration, HMR reload) cannot drop a wrapper that a live session is
+  // still pointed at, no matter how many sweeps fire in between.
+  const stale = new Map<string, number>()
   let disposed = false
   // Serialize sweeps: a registration itself announces llm/adapters-updated,
   // and two interleaved sweeps must never probe the same route concurrently.
@@ -843,13 +831,29 @@ export function installImageInputVariants(
   // not one per notification (a single registration emits a notification).
   let sweepQueued = false
 
+  const release = (upstream: string): void => {
+    const dispose = registrations.get(upstream)
+    if (dispose === undefined) return
+    registrations.delete(upstream)
+    stale.delete(upstream)
+    try {
+      dispose()
+    } catch (error) {
+      ctx.logger.warn(
+        'dsh-vision-toolkit: image-input variant release failed for "%s": %s',
+        upstream,
+        messageOf(error),
+      )
+    }
+  }
+
   const releaseAll = (): void => {
-    for (const dispose of [...registrations.values()]) dispose()
-    registrations.clear()
+    stale.clear()
+    for (const upstream of [...registrations.keys()]) release(upstream)
   }
 
   const sweep = (): void => {
-    if (sweepQueued) return
+    if (disposed || sweepQueued) return
     sweepQueued = true
     queueMicrotask(() => {
       sweepQueued = false
@@ -861,6 +865,10 @@ export function installImageInputVariants(
     if (disposed) return
     try {
       const variants = getConfig().imageInputVariants
+      if (variants.hidden !== lastHidden) {
+        lastHidden = variants.hidden
+        releaseAll()
+      }
       if (!variants.enabled) {
         releaseAll()
         return
@@ -874,12 +882,33 @@ export function installImageInputVariants(
       } catch {
         return
       }
+      const live = new Set(providers.map(provider => provider.id))
+      // Release restrict-narrowed routes immediately (a configuration change is
+      // authoritative). For routes merely missing from the live registry, keep
+      // the wrapper until the absence outlives the grace period.
+      for (const upstream of [...registrations.keys()]) {
+        if (restrict.size > 0 && !restrict.has(upstream)) {
+          release(upstream)
+          continue
+        }
+        if (live.has(upstream)) {
+          stale.delete(upstream)
+          continue
+        }
+        const missedAt = stale.get(upstream)
+        if (missedAt !== undefined && Date.now() - missedAt >= VARIANT_RELEASE_GRACE_MS) {
+          release(upstream)
+        } else if (missedAt === undefined) {
+          stale.set(upstream, Date.now())
+        }
+      }
       for (const provider of providers) {
         const upstream = provider.id
         if (restrict.size > 0 && !restrict.has(upstream)) continue
         // Our own variant routes declare image input and are never wrapped;
         // probing them would just re-probe their upstream route.
         if (upstream.startsWith(VARIANT_PROVIDER_PREFIX)) continue
+        const variantId = variantProviderId(upstream)
         let models: readonly LlmModelInfo[]
         try {
           models = await llm.listModels(upstream)
@@ -888,44 +917,44 @@ export function installImageInputVariants(
         }
         const eligible = models.some(shouldWrapModel)
         const registered = registrations.has(upstream)
-        if (!eligible && registered) {
-          // The route lost its eligible models: release the stale variant.
-          const dispose = registrations.get(upstream)
-          dispose?.()
-          registrations.delete(upstream)
-          continue
+        if (registered && live.has(variantId)) {
+          // Re-read the live registry after the await: a rebuild inside the
+          // probe window can drop our wrapper without touching our map.
+          const liveNow = new Set(llm.listProviders().map(provider => provider.id))
+          if (liveNow.has(variantId)) {
+            // Healthy handle: only react when the route lost every eligible model.
+            if (!eligible) release(upstream)
+            continue
+          }
         }
-        if (!eligible || registered) continue
+        if (registered) {
+          // Dead handle from a registry rebuild/reset: drop it and register a
+          // fresh wrapper below.
+          release(upstream)
+        }
+        if (!eligible) continue
         if (disposed) return
         try {
           const dispose = llm.registerAdapter(
-            [variantProviderId(upstream)],
+            [variantId],
             new ImageInputVariantAdapter(
               ctx,
               llm,
               upstream,
               provider.name,
               getRuntime,
-              new EvidenceCache(EVIDENCE_CACHE_LIMIT),
+              evidenceCache,
+              () => getConfig().imageInputVariants.hidden,
             ),
           )
           registrations.set(upstream, dispose)
+          stale.delete(upstream)
         } catch (error) {
           ctx.logger.warn(
             'dsh-vision-toolkit: image-input variant registration skipped for "%s": %s',
             upstream,
             messageOf(error),
           )
-        }
-      }
-      const live = new Set(providers.map(provider => provider.id))
-      for (const [upstream, dispose] of [...registrations]) {
-        // A wrapper is released when its upstream route vanished OR the
-        // current configuration no longer allows that route (restrict
-        // narrowing must not leave stale variants behind).
-        if (!live.has(upstream) || (restrict.size > 0 && !restrict.has(upstream))) {
-          dispose()
-          registrations.delete(upstream)
         }
       }
     } catch (error) {
@@ -937,10 +966,16 @@ export function installImageInputVariants(
     ctx.on('llm/adapters-updated', () => { sweep() })
   }
   sweep()
+  // Self-heal safety net: re-verify periodically so a wrapper dropped by an
+  // unobserved cause (registry rebuild without an event we can see) is restored
+  // within one interval.
+  const timer = setInterval(() => { sweep() }, VARIANT_SWEEP_INTERVAL_MS)
   return {
     dispose: () => {
       disposed = true
+      clearInterval(timer)
       releaseAll()
+      evidenceStore.dispose()
     },
     reconcile: () => { sweep() },
   }

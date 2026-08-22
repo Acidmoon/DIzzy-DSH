@@ -22,7 +22,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { GenericCallView, GenericResultView, JsonSchemaNode, ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { GenuiSpec } from '../client/spec.ts'
-import { GENUI_LIMITS, countGenuiNodes, repairGenuiSpec } from '../client/guard.ts'
+import { GENUI_LIMITS, countDeclaredGenuiNodes, countGenuiNodes, repairGenuiSpec } from '../client/guard.ts'
 import { completeFenceJson } from '../shared/fence-repair.ts'
 
 /**
@@ -313,7 +313,12 @@ export function createValidateDshUiTool(): ToolDefinition {
       if (spec === null) {
         return '❌ 不是合法 GenUI spec：根对象需要 "items" 数组，且每个节点 type 必须在白名单内（见系统提示词）。请修正后重新验证。'
       }
-      return `✅ dsh-ui spec 合法（${countNodes(spec)} 个组件），可以发出围栏。`
+      const validCount = countNodes(spec)
+      const declaredCount = countDeclaredGenuiNodes(parsed, GENUI_LIMITS.maxNodes + 1)
+      if (declaredCount > validCount) {
+        return `❌ 验证未通过：检测到声明了 ${declaredCount} 个组件，但仅成功解析出 ${validCount} 个（有 ${declaredCount - validCount} 个组件因字段格式异常被丢弃）。常见原因：table 的 columns/rows 不是二维字符串数组、tabs 的 items/content 缺失、嵌套组件字段类型不符。请修正后重新验证。`
+      }
+      return `✅ dsh-ui spec 合法（${validCount} 个组件），可以发出围栏。`
     },
     presentCall(): GenericCallView | undefined {
       return { card: 'generic', title: '验证 dsh-ui 围栏', kind: 'other' }

@@ -18,7 +18,7 @@
 | 上游 commit | `338c02e`(docs: 更新安装指南，新增旧版本迁移指导) |
 | License | BSD-3-Clause |
 | 功能 | 订阅会员 OAuth 登录:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;设置 → 订阅服务 登录/注销,按登录状态注册提供商 |
-| 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-subscription-auth-local.patch` |
+| 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-subscription-auth-local.patch` 与 `dsh-subscription-auth-reasoning-effort.patch` |
 
 ## 本地补丁摘要
 

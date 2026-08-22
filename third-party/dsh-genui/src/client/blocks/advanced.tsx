@@ -4,7 +4,7 @@
  * scene3d, timeline, file-tree, quiz, breadcrumb.
  * @module @omdsh-dev/dsh-genui/client/blocks/advanced
  */
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CodeBlock, DiffBlock, JsonTree } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../guard.ts'
@@ -21,7 +21,7 @@ const CALLOUT_TONES: Record<string, string> = {
 }
 
 /** Callout: a tinted notice box with an optional heading. */
-export function CalloutNode({ node }: { node: GenuiCallout }) {
+export const CalloutNode = memo(function CalloutNode({ node }: { node: GenuiCallout }) {
   const tone = node.tone ?? 'info'
   const toneClass = CALLOUT_TONES[tone] ?? css.calloutInfo
   return (
@@ -30,10 +30,10 @@ export function CalloutNode({ node }: { node: GenuiCallout }) {
       <div className={css.calloutBody}>{node.content}</div>
     </div>
   )
-}
+})
 
 /** Steps: a vertical progress checklist with an optional current index. */
-export function StepsNode({ steps }: { steps: GenuiSteps }) {
+export const StepsNode = memo(function StepsNode({ steps }: { steps: GenuiSteps }) {
   const list = steps.steps.slice(0, GENUI_LIMITS.maxSteps)
   const current = steps.current ?? list.length
   return (
@@ -53,10 +53,10 @@ export function StepsNode({ steps }: { steps: GenuiSteps }) {
       })}
     </ol>
   )
-}
+})
 
 /** KeyValue: a definition list for configs and metadata. */
-export function KeyValueNode({ node }: { node: GenuiKeyValue }) {
+export const KeyValueNode = memo(function KeyValueNode({ node }: { node: GenuiKeyValue }) {
   const pairs = node.pairs.slice(0, GENUI_LIMITS.maxKeyValuePairs)
   return (
     <dl className={css.keyvalue}>
@@ -68,37 +68,43 @@ export function KeyValueNode({ node }: { node: GenuiKeyValue }) {
       ))}
     </dl>
   )
-}
+})
 
-/** Plot: SVG function plot over the SafeMath evaluator. */
-export function PlotNode({ plot }: { plot: GenuiPlot }) {
-  const series = plot.series.slice(0, GENUI_LIMITS.maxPlotSeries)
+/** Plot: SVG function plot over the SafeMath evaluator. The series mapping
+ * is memoized on the stable spec node so the memo boundary actually skips
+ * sibling-state re-renders (a fresh mapped array would defeat it). */
+export const PlotNode = memo(function PlotNode({ plot }: { plot: GenuiPlot }) {
+  const series = useMemo(
+    () => plot.series.slice(0, GENUI_LIMITS.maxPlotSeries)
+      .map(s => ({ expr: s.expr, label: s.label, color: s.color, kind: s.kind, params: s.params })),
+    [plot],
+  )
   return (
     <PlotBlock
-      series={series.map(s => ({ expr: s.expr, label: s.label, color: s.color, kind: s.kind, params: s.params }))}
+      series={series}
       xMin={plot.xMin} xMax={plot.xMax} yMin={plot.yMin} yMax={plot.yMax} title={plot.title}
     />
   )
-}
+})
 
 /** Diff: 收编 dsh DiffBlock (same path/oldText/newText shape as DiffHunk). */
-export function DiffNode({ node }: { node: GenuiDiff }) {
+export const DiffNode = memo(function DiffNode({ node }: { node: GenuiDiff }) {
   return <DiffBlock diffs={node.diffs} />
-}
+})
 
 /** Json: 收编 dsh JsonTree. */
-export function JsonNode({ node }: { node: GenuiJson }) {
+export const JsonNode = memo(function JsonNode({ node }: { node: GenuiJson }) {
   const data = node.value
   if (typeof data !== 'object' || data === null) {
     return <div className={css.jsonScalar}>{String(data)}</div>
   }
   return <JsonTree data={data as object | unknown[]} copyable />
-}
+})
 
 /** Code: 收编 dsh CodeBlock with explicit language. */
-export function CodeNode({ node }: { node: GenuiCode }) {
+export const CodeNode = memo(function CodeNode({ node }: { node: GenuiCode }) {
   return <CodeBlock code={node.code.slice(0, GENUI_LIMITS.maxCode)} lang={node.lang} />
-}
+})
 
 /**
  * Table: LOCAL sorting (v2.9) — click a header to sort ascending, click
@@ -203,26 +209,31 @@ export function AccordionNode({ node, onAction, depth = 0, answers }: {
   )
 }
 
-/** Copy: a one-click copy chip. */
-export function CopyNode({ node }: { node: GenuiCopy }) {
+/** Copy: a one-click copy chip. The live region is a visually-hidden SIBLING
+ * (not inside the button) — button content is atomic to screen readers, so a
+ * live region inside it would never announce. */
+export const CopyNode = memo(function CopyNode({ node }: { node: GenuiCopy }) {
   const [copied, setCopied] = useState(false)
   return (
-    <button
-      type="button"
-      className={`${css.copyChip} ${copied ? css.copyChipDone : ''}`}
-      onClick={() => {
-        void navigator.clipboard?.writeText(node.text).catch(() => {})
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      }}
-    >
-      {copied ? '✓ 已复制' : (node.label ?? '复制')}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`${css.copyChip} ${copied ? css.copyChipDone : ''}`}
+        onClick={() => {
+          void navigator.clipboard?.writeText(node.text).catch(() => {})
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        }}
+      >
+        {copied ? '✓ 已复制' : (node.label ?? '复制')}
+      </button>
+      <span className={css.visuallyHidden} role="status">{copied ? '已复制到剪贴板' : ''}</span>
+    </>
   )
-}
+})
 
 /** Mermaid: lazily loaded diagram renderer. */
-export function MermaidNode({ node }: { node: GenuiMermaid }) {
+export const MermaidNode = memo(function MermaidNode({ node }: { node: GenuiMermaid }) {
   const [html, setHtml] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const code = node.code.slice(0, GENUI_LIMITS.maxMermaid)
@@ -241,10 +252,10 @@ export function MermaidNode({ node }: { node: GenuiMermaid }) {
   if (failed) return <div className={css.mermaidFallback}><pre>{code}</pre><div className={css.mermaidErr}>图语法有误，已降级显示源码</div></div>
   if (html === null) return <div className={css.mermaidFallback}><pre>{code}</pre><div className={css.mermaidHint}>渲染中…</div></div>
   return <div className={css.mermaid} dangerouslySetInnerHTML={{ __html: html }} data-genui-mermaid />
-}
+})
 
 /** Scene3D: three.js WebGL canvas, lazily imported. */
-export function Scene3DNode({ node }: { node: GenuiScene3D }) {
+export const Scene3DNode = memo(function Scene3DNode({ node }: { node: GenuiScene3D }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const ref = useRef<HTMLDivElement | null>(null)
   // Mesh cap mirrored from the guard: a pathological scene never reaches
@@ -272,10 +283,10 @@ export function Scene3DNode({ node }: { node: GenuiScene3D }) {
       {status === 'error' && <div className={css.scene3dHint}>3D 渲染失败</div>}
     </div>
   )
-}
+})
 
 /** Timeline: vertical event list with time markers. */
-export function TimelineNode({ node }: { node: GenuiTimeline }) {
+export const TimelineNode = memo(function TimelineNode({ node }: { node: GenuiTimeline }) {
   const items = node.items.slice(0, GENUI_LIMITS.maxTimelineItems)
   return (
     <div className={css.timeline}>
@@ -296,12 +307,12 @@ export function TimelineNode({ node }: { node: GenuiTimeline }) {
       ))}
     </div>
   )
-}
+})
 
 /** FileTree: indented tree of files and folders. Directory rows are LOCAL
  * collapsible (spec.ts promised "collapsible children"; this makes it true)
  * — click a dir to fold/unfold, default fully open. Zero model round trip. */
-export function FileTreeNode({ node }: { node: GenuiFileTree }) {
+export const FileTreeNode = memo(function FileTreeNode({ node }: { node: GenuiFileTree }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const pathKey = (depth: number, i: number): string => `${depth}-${i}`
   const toggle = (k: string): void => {
@@ -333,14 +344,14 @@ export function FileTreeNode({ node }: { node: GenuiFileTree }) {
     )
   }
   return <div className={css.fileTree}>{node.items.slice(0, GENUI_LIMITS.maxListItems).map((n, i) => renderNode(n, 0, i))}</div>
-}
+})
 
 /** Quiz: a self-contained teaching question. Selecting an option marks it
  * correct/incorrect in place and reveals feedback + explanation. With
  * `action`, the chosen answer is ALSO sent back to the model
  * (`{type:'quiz', question, answer, correct}`) so the model can collect or
  * grade it — the in-place judging stays local (no round trip needed). */
-export function QuizNode({ node, onAction }: {
+export const QuizNode = memo(function QuizNode({ node, onAction }: {
   node: GenuiQuiz
   onAction?: GenuiBlockProps['onAction']
 }) {
@@ -397,10 +408,10 @@ export function QuizNode({ node, onAction }: {
       )}
     </div>
   )
-}
+})
 
 /** Breadcrumb: path-style navigation trail. */
-export function BreadcrumbNode({ node }: { node: GenuiBreadcrumb }) {
+export const BreadcrumbNode = memo(function BreadcrumbNode({ node }: { node: GenuiBreadcrumb }) {
   const items = node.items.slice(0, GENUI_LIMITS.maxBreadcrumbItems)
   return (
     <nav className={css.breadcrumb} aria-label="breadcrumb">
@@ -412,7 +423,7 @@ export function BreadcrumbNode({ node }: { node: GenuiBreadcrumb }) {
       ))}
     </nav>
   )
-}
+})
 
 /**
  * Trailing debounce window (ms) for one `[genui-action]` name: rapid

@@ -4,6 +4,130 @@ All notable user-facing changes to DSH Vision Toolkit are documented in this fil
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-08-20
+
+### Fixed
+
+- Persisted the final model-visible image evidence across DSH Profile restarts, so historical images no longer consume vision quota again or change the main model's cached conversation prefix.
+- Preserved both successful descriptions and `[vision unavailable: ...]` results byte-for-byte; only requests that fail before producing any model-visible result are retried.
+- Bound persisted evidence to the Session lifecycle, attachment, focus prompt, credential, and output-affecting runtime settings to prevent replay across incompatible configurations.
+
+## [0.1.37] - 2026-08-20
+
+### Added
+
+- Added a bilingual, screenshot-based AIHubMix guide covering signup through the Inferera entry, API key creation, free Gemini 3.7 Flash model selection, exact Vision Toolkit settings, and troubleshooting.
+
+### Changed
+
+- Replaced the Groq tutorial link in Vision Settings with the AIHubMix guide and select the matching English or Chinese page from the configured vision-output language.
+- Updated the English and Chinese READMEs to use the Inferera signup entry and feature the AIHubMix guide.
+
+## [0.1.36] - 2026-08-20
+
+### Added
+
+- The bundled standalone Python now downloads from the domestic mirror (Tencent Cloud COS, `dsh-vision-python-bootstrap-1317715800.cos.ap-guangzhou.myqcloud.com`) first and falls back to the GitHub release when the mirror is unreachable, so users in China no longer need GitHub connectivity for the first-run Python bootstrap. The pinned `assets/python-bootstrap.json` gained an optional `mirrorBaseUrl`, and all eight platform archives are hosted on the mirror. The locked runtime dependencies (Pillow, NumPy, vtracer) are installed from the Tencent Cloud PyPI mirror (`mirrors.cloud.tencent.com/pypi/simple`) first and fall back to the official PyPI index.
+
+## [0.1.35] - 2026-08-19
+
+### Changed
+
+- Made the fast restore mode trigger more sensitive: a floating "快速还原为 HTML" / "快速生成" / "quick restore" control visible in the reference image now counts as a speed signal.
+
+## [0.1.34] - 2026-08-19
+
+### Changed
+
+- **Transparent variant routing is now on by default**: `imageInputVariants.hidden` defaults to `true`, so image-input variant routes keep the original provider and model display names and the model selector shows one entry per model out of the box. Users who prefer the explicit `(Vision Toolkit)` entries can disable the “透明变体路由” setting (advanced settings → image input) to restore the previous behavior.
+
+## [0.1.33] - 2026-08-19
+
+### Added
+
+- **Transparent variant routing** (`imageInputVariants.hidden`, off by default): image-input variant routes keep the original provider/model display names, and the browser hides the upstream text-only twins so the model selector shows one entry per model. Pasted images, image history, and the built-in `read_image` tool keep working on text-only models; opening the selector no longer flashes a duplicate group because hiding is synchronous DOM reconciliation. Disabling the setting restores the explicit `(Vision Toolkit)` entries.
+- Settings UI: “透明变体路由” checkbox under advanced settings → image input, with bilingual copy.
+
+### Changed
+
+- Lowered the built-in free vision service daily quota to 100 requests.
+
+### Fixed
+
+- Toggling transparent routing is display-only: it no longer rebuilds or re-verifies the vision runtime.
+- The browser display-config cache is invalidated on Settings saves, and an in-flight response can no longer repopulate it with a stale flag.
+- Restoring upstream model entries after transparent routing is disabled, and guarding the selector integrator against duplicate installs.
+
+## [0.1.32] - 2026-08-18
+
+### Fixed
+
+- Fixed the compressed-image cache silently missing on Windows when cache file paths exceeded the 260-character `MAX_PATH` limit; cache keys now use shorter 64-bit digests and are versioned as `v2`, so old oversized entries are pruned automatically.
+- Made the portable package verification and the test suite Windows-compatible, including `npm.cmd` invocation, path-separator handling, Python bootstrap fixture layout, a profile E2E prompt that avoids newline-carrying argv, and restart-helper test skips where automatic restart is intentionally unavailable.
+- Routed Windows `pnpm` batch shims through `cmd.exe` so plugin updates work when the harness resolves `pnpm` to a `pnpm.CMD` path.
+- Added a Windows CI job that runs the portable-package build, tests, and verification on `windows-latest`.
+- Fixed an intermittent `NO_ADAPTER` failure on image-input variant routes (`vision-toolkit-<provider>`) after adapter re-registration, model switches, or hot reload: wrappers now survive transient registry gaps, are re-registered when the live registry drops them, and self-heal on a periodic sweep.
+
+## [0.1.31] - 2026-08-18
+
+### Changed
+
+- Renamed the bundled Skill from `vision-tools` to `vision-skills`, so the model-facing name describes the capability instead of the underlying tools. Sessions created before the rename still restore activation from legacy `vision-tools` history; new sessions invoke `/vision-skills`.
+
+## [0.1.30] - 2026-08-17
+
+### Changed
+
+- Raised the default vision operation timeout from 15 seconds to 30 seconds for both semaphore queueing and tool execution.
+- Removed the practical global ceiling on the built-in free vision service (raised from 5,000 to 1,000,000,000 requests per UTC day) while keeping the per-client daily and burst quotas.
+
+## [0.1.29] - 2026-08-17
+
+### Added
+
+- **Install and use with zero Python setup.** When no system Python 3.11+ is available, the plugin downloads a pinned, sha256-verified standalone Python 3.13 build (about 35 MB) on first use and prepares its isolated runtime with it, so new users no longer need to install Python first. A system Python or an explicit `runtime.python` override still takes precedence, and a committed manifest plus `scripts/python-bootstrap.mjs` keeps the pinned build auditable and updatable.
+
+### Fixed
+
+- Keep the `vision_toolkit_activate` bootstrap callable until the end of the model step when the Skill and the bootstrap are invoked in parallel, preventing a race that surfaced as `unknown tool "vision_toolkit_activate"` while the Skill call was already activating the visual tools.
+- Reword the `vision-tools` Skill description so screenshot-to-UI restoration reliably triggers visual-tool activation.
+
+## [0.1.28] - 2026-08-17
+
+### Fixed
+
+- Treat HTTP 403 from `GET /models` as a warning instead of claiming the API key was rejected, because providers such as Groq can restrict the model-list endpoint while real multimodal requests still work. Settings now notes that this warning can be ignored when the real vision-model test reports success.
+
+## [0.1.27] - 2026-08-17
+
+### Added
+
+- Automatically compress input images above `maxImageBytes` (4 MiB default) or `maxImagePixels`, preferring lossless PNG/WebP/GIF re-encodes before lossy quality reduction and, as a last resort, downscaling.
+- Accept pasted images up to 20 MiB and compress them on first tool use instead of rejecting anything above `maxImageBytes`.
+- Persist compressed copies in a versioned, hash-verified workspace cache so repeated calls reuse the same compressed image.
+- Keep original display names on crop/trace/long-OCR/foreground/pixel-diff outputs and preserve EXIF/ICC metadata when re-encoding.
+
+### Fixed
+
+- Reject tampered or symlinked compressed-cache entries and prune stale or oversized cache files.
+- Mark JPEG q95 as lossy and try true lossless PNG/WebP re-encodes first for every source format.
+
+## [0.1.26] - 2026-08-17
+
+### Docs
+
+- Documented how and when to configure the Python 3.11+ `runtime.python` override with system interpreters, project-local virtual environments, and the Windows `py` launcher.
+- Added reproducible `uv` setup, managed-versus-external dependency guidance, Profile health/model checks, and a `vision_glance` smoke-test workflow.
+- Clarified automatic platform temporary-directory authorization, Windows `/tmp/...` mapping, extra `allowedDirs` roots, and ignored project-local `.venv/` directories.
+
+## [0.1.25] - 2026-08-17
+
+### Fixed
+
+- Added the documented `VISION_SSL_VERIFY` escape hatch for trusted self-signed or MITM-proxied vision endpoints, forwarded it through the isolated DSH runtime, and kept TLS certificate verification enabled by default.
+- Allowed `vision_toolkit_activate` to mount the visual tool schemas even when the model invokes the bootstrap before loading the `vision-tools` Skill, removing the activation deadlock while preserving Agent-scoped exposure.
+- Authorized the platform temporary directory for visual inputs and mapped model-generated `/tmp/...` paths to `%TEMP%` or `%TMP%` on Windows, while retaining realpath fencing and model-visible path guidance.
+
 ## [0.1.24] - 2026-08-17
 
 ### Fixed
@@ -278,7 +402,25 @@ All notable user-facing changes to DSH Vision Toolkit are documented in this fil
 - Runtime teardown cancels in-flight operations before removing Agent-scoped tools, the activation bootstrap, and the Skill.
 - The Web client is published through the current nested `dsh.client` manifest and loader-compatible built artifact required by DSH snapshot0810.
 
-[Unreleased]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.38...HEAD
+[0.1.38]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.37...v0.1.38
+[0.1.37]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.36...v0.1.37
+[0.1.36]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.35...v0.1.36
+[0.1.35]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.34...v0.1.35
+[0.1.34]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.33...v0.1.34
+[0.1.33]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.32...v0.1.33
+[0.1.32]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.31...v0.1.32
+[0.1.31]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.30...v0.1.31
+[0.1.30]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.29...v0.1.30
+[0.1.29]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.28...v0.1.29
+[0.1.28]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.27...v0.1.28
+[0.1.27]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.26...v0.1.27
+[0.1.26]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.25...v0.1.26
+[0.1.25]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.24...v0.1.25
+[0.1.24]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.23...v0.1.24
+[0.1.23]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.22...v0.1.23
+[0.1.22]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.21...v0.1.22
+[0.1.21]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/Anionex/dsh-vision-toolkit/compare/v0.1.17...v0.1.18

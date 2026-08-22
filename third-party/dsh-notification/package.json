@@ -1,7 +1,7 @@
 {
   "name": "dsh-notification",
   "description": "Browser desktop notifications when the DeepSeek Harness finishes a turn: configurable per-outcome toggles and include/exclude keyword rules, shown through the browser Notification API.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -50,13 +50,13 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {

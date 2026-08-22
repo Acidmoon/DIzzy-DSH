@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.9.1] - 2026-08-22
+### 新增
+- **编辑级 `diagram` 组件（diagram-design 移植，PR #9）**：白名单新增 `diagram` 节点——27 种 kind（architecture/flowchart/sequence/state/er/timeline/swimlane/quadrant/radar/loop 等）、正交连接器、语义 token 主题（light/dark/editorial 变体）、dotted-paper 底纹、Zone 分组（≤3 个虚线容器 + mono eyebrow 标签）、64px 节点排版与底部 Legend 色板条。复杂度预算由 guard 强制（节点/边/焦点上限），坐标取整 4px 网格、重复 id 自愈、主题色安全校验；`figcaption` 与 SVG `<title>` 分离 id，`aria-labelledby` 稳定指向 `<title>`。
+
+## [0.9.0] - 2026-08-17
+### 新增
+- **ECharts 集成组件**：新增 `echart` 节点类型，支持模型输出完整 ECharts 图表。两种模式：
+  - **Preset 简写**（`preset` + `data`/`series`）：与 `chart` 节点同构的数据格式，模型只需改 `type` 为 `echart` 并加 `preset`（`bar`/`line`/`area`/`pie`/`scatter`）即可升级到 ECharts 渲染；
+  - **Full option 逃生舱**（`option` 字段）：直传 ECharts `EChartsCoreOption`，支持 dataZoom、visualMap 等高级特性。
+  - ECharts 引擎按需懒加载（`lib/assets/echarts.js`，~1MB），不进主 client bundle。
+### 安全
+- **full option XSS 防护**：`sanitizeEChartOption` 强制覆盖 `tooltip.renderMode: 'richText'`（ECharts 默认 `'html'` 模式经 `innerHTML` 写入 tooltip，是模型输出的 XSS 向量）；同时过滤所有字符串中的 HTML/脚本注入模式（`<script`、`on[a-z]+=`、`javascript:`、`<img` 等）与 `url()` 外带通道。
+- **full option 资源预算**：新增 `maxEChartArrayLen: 500`（单数组上限）与 `maxEChartOptionNodes: 2000`（总遍历条目预算），防止模型输出几十万数据点卡住渲染。
+### 修复
+- **preset `scatter` 数据映射**：xAxis 从 `type: 'value'`（非数字 label 如「一月」画不出来）改为 `type: 'category'`，data 映射从 `[label, value]` 改为 `value`。
+- **懒加载期间 spec 更新丢失**：update effect 依赖加入 `status`，引擎加载完成（`loading → ready`）时重新应用最新 option，避免流式渲染中 spec 变更被旧 option 覆盖。
+- **preset tooltip `renderMode`**：所有 preset 路径的 tooltip 统一设为 `richText`，与 full option 安全姿态对齐。
+- **preset `series[].color` 对齐**：bar/line/area preset 现在尊重 `series[].color`（与 `chart` 节点行为一致）。
+### 无障碍
+- ECharts 画布容器添加 `role="img"` 与 `aria-label`（与 PlotBlock 对齐）。
+### 可观测性
+- ECharts 渲染失败时 `console.warn` 输出诊断信息（asset 404 / 引擎注册失败 / option 异常），遵循「静默失败必须可观测」约定。
+### 构建
+- `tsdown.config.ts` 的 `assetConfig` 签名放宽为 `'mermaid' | 'three' | 'echarts'`；`asset-loader.ts` 的 `@param` 注释同步三资产。
+- `scripts/verify-pack.mjs` 必查列表新增 `lib/assets/echarts.js`（issue #15 发布规范）。
+### 测试
+- 新增 `tests/genui-echart-guard.spec.ts`：preset 白名单、height 100–800、option 深度/数组/节点预算、函数/url()/HTML 过滤、非法节点拒绝。
+- 新增 `tests/genui-echart.spec.tsx`：preset 五种形态渲染容器、error fallback、option 优先于 preset、标题与高度、scatter 中文 label。
+- **guard 容错升级 + validate_dsh_ui 丢弃告警（issue #42）**：table 自愈对象形态（`{title,key}` antd 风格列提取表头、`rows`/`data` 对象数组按列键展平为二维行，非标量单元格字符串化保对齐）；tabs 接受 `content` 作 `items` 别名（数组或单组件）；`countGenuiNodes` 补齐 row/col/grid/card 容器递归（此前计数偏低，掩盖丢弃）；`validate_dsh_ui` 新增声明数 vs 解析数对比（`countDeclaredGenuiNodes` + 白名单过滤，避开 file-tree `{type:'file'}` 误报），声明多于解析时返回 ❌ 并给出丢弃数量与常见原因，不再对半空树绿灯放行。
+
+## [Unreleased]
+### 兼容性
+- **dsh 0.1.0-rc.8**：对齐全部宿主 peer 依赖并补齐实际使用的 conversation、input-trigger、session 直接声明；改用 ui-tool 的公开客户端入口，测试和构建不再读取本机旧源码快照。`tsc`、`tsdown`、Vitest 全通过（316 passed / 104 skipped，0 失败）。
+- **peer 范围放宽至 0.1.1-rc 系列（PR #41）**：strict semver 下 prerelease 版本仅在范围含相同 `major.minor.patch` 元组的比较子时才匹配，`^0.1.0-rc.8` 因此不满足宿主 `0.1.1-rc.1`（marketplace/健康检查误报 unmet peer）。全部 `@deepseek-ai/dsh-*` peer/dev 范围放宽为 `^0.1.0-rc.8 || >=0.1.1-rc.0 <0.2.0`：保留 rc.8 API 下限、覆盖整个 0.1.1-rc 列车与后续 0.1.x 稳定版、仍排除 0.2.0；pnpm-lock 随新范围重算。
+- **dsh 0.1.1-rc.2**：使用完整 rc.2 宿主依赖验证公开客户端入口、DOM 围栏渲染和面板操作契约；无需增加兼容层，类型检查、构建及 Vitest 全通过（379 passed / 104 skipped，0 失败），并在 rc.2 真实 Web 页面确认客户端激活与资源加载。
+### 新增
+- **原生音视频组件（issue #35）**：白名单新增 `audio` / `video`，直接播放工具通过 http(s) 或同源相对地址暴露的媒体；两者固定使用原生控制器且不自动播放，支持循环，视频另支持封面、初始静音和 16:9 / 4:3 / 1:1 / 9:16 比例，加载失败原位提示。危险或本地协议被丢弃，未增加播放器依赖。
+- **视觉 E2E 脚本（无需模型 key）**：新增 `scripts/e2e-visual.mts`——真实 dsh web + link 安装 → DOM 通道注入组件画廊 → headless Chrome 全页截图 + 本地交互（排序/判题/折叠/对齐）硬断言。与 `e2e.mjs`（需要 DEEPSEEK_API_KEY 的模型闭环）互补，样式/组件改动后一条命令做视觉回归。
+### 优化
+- **纯展示节点 memo 化**：table/chart/plot/callout/steps/keyvalue/diff/json/code/timeline/file-tree/breadcrumb/quiz/mermaid/scene3d/copy/audio/video 全部包上 `React.memo`——在块内某个输入框打字、单选或交卷时，这些静态兄弟节点不再整树重渲染（spec 节点是稳定引用，默认浅比较即可命中）。tabs/accordion 透传 answers 状态，保持不 memo。
+### 强化
+- **表格数值感知排序升级**：单元格解析从「裸 `Number()`」升级为 `parseSortableNumber`——支持千分位（`1,234` / 全角 `1，234`）、`k/m/b` 后缀、中文 `万/亿`、`%`、`¥/$/€/£` 前缀、负数；混合列（含非数值单元格）确定性排序：数值在前、文本在后。此前 `'1.2k'` 和 `'950'` 按字典序比较（1.2k < 950 错误）。
+- **数值列自动右对齐**：整列单元格都可解析为数值时，该列表头与单元格右对齐 + tabular-nums——数据列与文本列一眼可分。
+- **donut 中心总数取整**：非整数合计显示一位小数（`3.3 + 6.6` 曾因浮点显示 `9.899999999999999`，现显示 `9.9`）。
+### 美化
+- 表格行 hover 高亮、激活排序列表头提亮、排序按钮按压反馈；柱/分组柱/环图扇区/折线点 hover 提亮；进度条顶部微光泽；按钮/复制芯片按压下沉 1px；tabs/accordion 头部 hover 过渡；细滚动条（tableWrap/fileTree/mermaid/panelBody，Firefox + WebKit 双通道）。
+- 焦点环补全：checkbox/radio/slider 获得与 input/textarea 一致的 2px accent 焦点环（键盘可达性）。
+- `prefers-reduced-motion` 扩展：已触发 chip 动画、进度条/柱图过渡、开关动画一并关闭。
+### 可访问性
+- 「✓ 已触发」「已复制」确认由视觉隐藏的 `role="status"` 活动区域播报（按钮内容是屏幕阅读器的原子内容，内部活动区域不会播报——播报点放在按钮外的隐藏兄弟节点）。
+### 测试
+- 新增 `genui-table-smart-sort.spec.tsx`（14 用例）：`parseSortableNumber` 单位解析、装饰值数值排序、混合列确定性、数值列右对齐类名、donut 合计取整、复制/已触发状态播报。
+- `install-script.spec.ts` 两个 describe 套件级 timeout 提升到 30s——真实 shell 用例在全量并行时偶发 5s 超时（单跑即过），已消除抖动。
+### 诊断
+- **客户端激活标记（issue #33）**：两条渲染通道启动时统一打印 `[genui] client active; fence-channel=registry|dom`；文档明确区分“client.js 下载成功”与“客户端入口真正激活”，并列出宿主必须提供的 `slots` / `sessions` 服务和包身份对齐项。
+### 修复
+- **模型输出缺 `graph TD` 声明时 mermaid 直接降级（本地验证）**：chat 助手生成的流程图常省略首行图类型声明（如 `A[高帧率摄像头 120-240fps] --> B[...]`），此前在渲染前就被白名单门禁拒绝 → 组件直接显示「图语法有误，已降级显示源码」。新增纯函数 `ensureFlowchartKind`（mermaid-safe.ts）：首 token 非已声明 `graph`/`flowchart` 且正文含流程图边（`-->`/`==>`/`-.->`，负向前瞻排除时序图 `-->>` 消息）时自动补 `graph TD` 再渲染；已声明种类、时序图/饼图正文、纯文本一律原样放行——不猜类型。`renderMermaid`（mermaid-core.ts）在种类门禁处接入该修复，其它图类型行为不变。
+### 测试
+- 21 → 29（+8 `ensureFlowchartKind`：缺声明补全 / 多行粗线虚线 / 已声明 graph、flowchart 不动 / 时序图 `-->>` 不误判 / pie 等已声明种类不动 / 纯文本不动 / 首尾空白 trim）；全量 296 passed / 104 skipped、0 新增失败（14 项失败为本机 Windows 环境既有项：install-script `chmod` 与 skill-md yaml 版本，基线复现一致，与本次变更无关）。
+- **对象数组 options 归一化为字符串（PR #43）**：模型有时把 `ask_user_question` 的 `{label,description}` 对象数组格式误用到 select/radio 的 `options`——`repairStrings` 此前只收字符串、对象元素静默丢弃，radio/select 渲染 0 个选项的空白列表。现在对象元素按 `label → value → title → JSON.stringify` 提取可读文本；select/radio options、table columns、submit.groups、breadcrumb items 五处 `repairStrings` 调用点同时受益，纯字符串路径不变。
+
+## [0.8.7] - 2026-08-18
+### 兼容性
+- **dsh 0.1.0-rc.7 适配核查（无需代码改动）**：rc.6 → rc.7 为全部 `dsh-*` 包整体平移升版，依赖树无增删、`@deepseek-ai/cordis` 保持 `^4.0.1`；peerDeps `^0.1.0-rc.6` 经 semver 验证已覆盖 rc.7。以 rc.7 发布包重跑 `tsc` + `tsdown` + `vitest`：287 passed / 102 skipped、0 失败，`lib` 产物与 rc.6 构建逐字节一致。rc.7 相关 API 变化仅 `dsh-client-ui-primitives` 新增 `useDismissOnOutsidePointer`（纯增量导出，本插件未使用）。
+
 ## [0.8.6] - 2026-08-16
 ### 修复
 - **原版 DSH（0.1.0-rc.6）壳上 dsh-ui 围栏全部静默不渲染**：client 入口硬注入声明 `inject: ['slots','sessions','inputTriggers']` 把 `inputTriggers` 当成了激活前置——但 cordis 的 `inject` 是**硬激活门控**：声明的服务永不出现（原版 DSH 壳没有任何插件提供 `inputTriggers` 服务，仅有 vision-toolkit 以 `ctx.inject()` 可选订阅）→ fiber 永久停在 waiting、`apply()` 永不执行 → 渲染器整体未启动：围栏保持代码块、控制台零报错。修复：从硬注入列表移除 `inputTriggers`，`/panel` 改为 `ctx.inject(['inputTriggers'], …)` **可选订阅**（服务与 slots/sessions 由不同 bundle 并发提供，任意到场顺序都能正确注册；缺失时仅不注册 `/panel`，渲染不受影响）；带该服务的宿主行为不变，原版壳上 GenUI 恢复渲染

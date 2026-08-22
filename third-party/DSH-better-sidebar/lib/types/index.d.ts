@@ -23,6 +23,14 @@ export interface SidebarSettingsFace {
         value?: unknown;
         revision?: number;
     };
+    /**
+     * Whether the dsh-web-ui family's aionui-panel has been selected as the
+     * right-panel provider (the `aionui-panel` settings namespace resolves
+     * `rightPanel: 'aionui-panel'`). While true the sidebar must not mount —
+     * the two right panels are mutually exclusive. False when the namespace is
+     * absent (no aionui installed) or the provider is anything else.
+     */
+    externalDisable(): boolean;
     /** Merge a patch (revision-guarded) and return the fresh resolved view. */
     update(patch: Record<string, unknown>, expectedRevision?: number): Promise<{
         value?: unknown;

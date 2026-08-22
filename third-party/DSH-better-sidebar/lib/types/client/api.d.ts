@@ -1,3 +1,5 @@
+import type { LastActivity } from '../subagent-activity.ts';
+import type { SidechatThreadInfo } from '../sidechat-core.ts';
 import type { BrowserProbeResult } from './browser.ts';
 /** One wire failure. */
 export declare class SidebarApiError extends Error {
@@ -67,6 +69,10 @@ export interface JobOutputResult {
     /** Whether the model has read the job at least once. */
     read: boolean;
 }
+/** The `subagents.live` response: running child id → latest activity. */
+export type SubagentLiveResult = {
+    live: Record<string, LastActivity>;
+};
 /** Terminal dependency status (mirror of the host's depsStatus; issue #140). */
 export type TerminalDepsStatus = {
     ok: true;
@@ -100,9 +106,21 @@ export declare const api: {
         entries: FsEntry[];
         truncated: boolean;
     }>;
+    /** Global recursive file-name search rooted at the session cwd (the editor
+     *  side panel's search box); matches are cwd-relative '/'-separated paths. */
+    fsSearch: (scope: SessionScope, query: string, signal?: AbortSignal) => Promise<{
+        matches: string[];
+        truncated: boolean;
+    }>;
     fsRead: (scope: SessionScope, path: string, signal?: AbortSignal) => Promise<FsTextResult | FsBinaryResult>;
     fsWrite: (scope: SessionScope, path: string, content: string) => Promise<{
         ok: true;
+    }>;
+    /** Upload one file's raw bytes into `dir` (keeps the folder tree via
+     *  `relativePath`); the host streams it under the session workspace. */
+    uploadFile: (scope: SessionScope, dir: string, relativePath: string, body: Blob, signal?: AbortSignal) => Promise<{
+        path: string;
+        size: number;
     }>;
     gitStatus: (scope: SessionScope, signal?: AbortSignal) => Promise<GitStatusResult>;
     gitDiff: (scope: SessionScope, path: string | undefined, staged: boolean, signal?: AbortSignal) => Promise<{
@@ -167,10 +185,42 @@ export declare const api: {
         ok: true;
         outcome: "requested" | "already-finished";
     }>;
+    /**
+     * One batch live-preview fetch for the whole Subagent tree. The payload is
+     * the already-resolved topology ROOT (not a session scope); the host
+     * enumerates descendants once and folds running children's activity.
+     */
+    subagentsLive: (rootSessionId: string, signal?: AbortSignal) => Promise<SubagentLiveResult>;
+    /** Create a Side Chat thread: a child session seeded with the parent's
+     *  full log up to now. Empty question = immediate create (Codex-style):
+     *  the thread opens empty, the first prompt carries the boundary. */
+    sidechatStart: (sessionId: string, question?: string) => Promise<{
+        childId: string;
+    }>;
+    /** Deliver one follow-up message to a Side Chat thread. */
+    sidechatPrompt: (childId: string, text: string) => Promise<{
+        accepted: true;
+    }>;
+    /** Abort a Side Chat thread's running turn (queued work is preserved). */
+    sidechatCancel: (childId: string) => Promise<{
+        accepted: true;
+    }>;
+    /** Release a Side Chat thread's live agent (history stays persisted). */
+    sidechatDispose: (childId: string) => Promise<{
+        accepted: true;
+    }>;
+    /** Live state + agent identity (provider/model/preset) of a thread. */
+    sidechatInfo: (childId: string) => Promise<SidechatThreadInfo>;
+    /** The effective terminal shell and its display name (plugin-global). */
+    shellGet: () => Promise<{
+        shell: string;
+        name: string;
+    }>;
     /** Read the side card preferences (plugin-global, no session scope). */
     settingsGet: () => Promise<{
         value?: unknown;
         revision?: number;
+        externalDisable?: boolean;
     }>;
     /** Merge a patch into the side card preferences (revision-guarded). */
     settingsUpdate: (patch: Record<string, unknown>, expectedRevision?: number) => Promise<{

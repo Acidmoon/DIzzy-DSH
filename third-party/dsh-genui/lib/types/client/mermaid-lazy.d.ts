@@ -1,4 +1,4 @@
-export { assertSafeSvg, repairMermaidSource } from './mermaid-safe.ts';
+export { assertSafeSvg, ensureFlowchartKind, repairMermaidSource } from './mermaid-safe.ts';
 /**
  * Render mermaid source to an SVG string (engine loaded on demand).
  * @param code - the mermaid diagram source.

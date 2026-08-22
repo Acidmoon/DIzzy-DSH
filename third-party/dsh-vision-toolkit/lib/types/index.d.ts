@@ -2,8 +2,9 @@
  * @anionex/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
  *
  * Plugin lifecycle follows the documented readiness chain: verify the pinned
- * upstream checkout, publish the vision-tools Skill and its one-shot bootstrap,
- * then mount the execution tools only in Agents that load that Skill. Any
+ * upstream checkout, publish the vision-skills Skill and its one-shot bootstrap,
+ * then mount the execution tools only in Agents that load that Skill or invoke
+ * the bootstrap. Any
  * failure leaves no model capability behind, and disposal unregisters every
  * global and Agent-scoped contribution the plugin mounted.
  * @module @anionex/dsh-vision-toolkit

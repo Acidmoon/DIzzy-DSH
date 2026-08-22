@@ -40,6 +40,9 @@
   --dsl-g-border-strong: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
   --dsl-g-accent: var(--dsw-alias-state-business-primary, #4f8ef7);
   --dsl-g-accent-soft: color-mix(in srgb, var(--dsl-g-accent) var(--dsl-g-tint), transparent);
+  /* Row/surface hover: a 4% wash of the theme's own label color works on
+   * dark AND light hosts without any off-brand literal. */
+  --dsl-g-hover: color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent);
   --dsl-g-tint: 8%;
   --dsl-g-tint-strong: 14%;
   --dsl-g-font-mono: var(--ds-font-family-code, ui-monospace, 'SF Mono', monospace);
@@ -117,12 +120,14 @@
   font-family: inherit;
   line-height: 1.4;
   cursor: pointer;
-  transition: border-color 0.15s, filter 0.15s, background 0.15s;
+  transition: border-color 0.15s, filter 0.15s, background 0.15s, transform 0.1s;
   text-align: center;
 }
 
 .button:hover:not(:disabled) { border-color: var(--dsl-g-accent); filter: brightness(1.06); }
 .button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+/* Press feedback: a 1px sink makes every actionable control feel mechanical. */
+.button:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.97); }
 /* Display-only buttons (no action): honest disabled affordance — the
  * clickable-looking dead button was the top interaction complaint. */
 .button:disabled {
@@ -175,6 +180,11 @@
 
 .checkbox { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-title); color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .checkbox input { accent-color: var(--dsl-g-accent); width: 15px; height: 15px; }
+.checkbox input:focus-visible {
+  outline: 2px solid var(--dsl-g-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 .link {
   color: var(--dsl-g-accent);
@@ -195,6 +205,23 @@
   font-family: inherit;
   text-decoration: none;
 }
+
+/* ---------- native media ---------- */
+
+.media {
+  margin: 0;
+  padding: var(--dsl-g-gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--dsl-g-gap-sm);
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-markdown-code-block));
+  border: 1px solid var(--dsl-g-border);
+  border-radius: var(--dsl-g-radius-surface);
+}
+.mediaLabel { font-size: var(--dsl-g-font-title); font-weight: 600; color: var(--dsw-alias-label-primary); }
+.mediaPlayer { display: block; width: 100%; min-width: 0; }
+.videoPlayer { max-height: min(70vh, 720px); background: #000; object-fit: contain; }
+.mediaError { font-size: var(--dsl-g-font-title); color: var(--dsw-alias-state-error-primary, #f25a5a); }
 
 /* ---------- badges / stat / progress ---------- */
 
@@ -274,7 +301,8 @@
 .fill {
   height: 100%;
   border-radius: var(--dsl-g-radius-pill);
-  background: var(--dsl-g-accent);
+  /* A faint top sheen keeps the accent bar from reading as a flat slab. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsl-g-accent) 85%, white), var(--dsl-g-accent));
   transition: width 0.5s ease;
 }
 
@@ -315,6 +343,11 @@
   line-height: 1.5;
 }
 .table tr:last-child td { border-bottom: none; }
+.table tbody tr { transition: background 0.12s; }
+.table tbody tr:hover { background: var(--dsl-g-hover); }
+/* Numeric columns (auto-detected) right-align with tabular numerals — the
+   table's data voice. */
+.table th.thNum, .table td.tdNum { text-align: right; }
 
 /* sortable header button (v2.9) */
 .thSort {
@@ -327,8 +360,13 @@
   font-weight: inherit;
   cursor: pointer;
   text-align: left;
+  transition: color 0.12s;
 }
+.table th.thNum .thSort { text-align: right; width: 100%; }
 .thSort:hover { color: var(--dsw-alias-label-primary); }
+/* The ACTIVE sort column stays at full contrast — the sort direction mark
+   alone is too faint to read which header owns the order. */
+.table th[aria-sort]:not([aria-sort="none"]) .thSort { color: var(--dsw-alias-label-primary); }
 .thSortMark { color: var(--dsl-g-accent); }
 .thSort:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 1px; border-radius: var(--dsl-g-radius-control); }
 
@@ -379,8 +417,9 @@
   border-radius: 4px 4px 2px 2px;
   min-height: 4px;
   background: var(--dsl-g-accent);
-  transition: height 0.6s ease;
+  transition: height 0.6s ease, filter 0.15s;
 }
+.barFill:hover { filter: brightness(1.18); }
 .barLabel {
   font-size: var(--dsl-g-font-meta);
   color: var(--dsw-alias-label-tertiary);
@@ -405,7 +444,9 @@
   margin-bottom: -1px;
   cursor: pointer;
   line-height: 1.5;
+  transition: color 0.15s, border-bottom-color 0.15s;
 }
+.tab:hover { color: var(--dsw-alias-label-secondary); }
 .tabActive { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsl-g-accent); }
 
 .avatar {
@@ -520,7 +561,8 @@
 
 .lineChart { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
 .linePath { fill: none; stroke: var(--dsl-g-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.lineDot { fill: var(--dsl-g-accent); }
+.lineDot { fill: var(--dsl-g-accent); transition: filter 0.15s; }
+.lineDot:hover { filter: brightness(1.3); }
 .lineGrid { stroke: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.07)); stroke-width: 1; }
 .lineGridAxis { stroke: var(--dsl-g-border-strong); stroke-width: 1; }
 .lineTick {
@@ -551,10 +593,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.groupedFill { flex: 0 0 auto; width: 100%; border-radius: 4px 4px 2px 2px; min-height: 3px; background: var(--dsl-g-accent); }
+.groupedFill { flex: 0 0 auto; width: 100%; border-radius: 4px 4px 2px 2px; min-height: 3px; background: var(--dsl-g-accent); transition: filter 0.15s; }
+.groupedFill:hover { filter: brightness(1.18); }
 
 .donut { display: flex; align-items: center; gap: var(--dsl-g-gap-lg); }
 .donutTrack { stroke: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08)); }
+.donutSeg { transition: filter 0.15s; }
+.donutSeg:hover { filter: brightness(1.18); }
 .donutTotal { fill: var(--dsw-alias-label-primary); font-size: var(--dsl-g-font-h2); font-weight: 700; }
 .donutTotalLabel { fill: var(--dsw-alias-label-tertiary); font-size: 10px; }
 .donutLegend { display: flex; flex-direction: column; gap: var(--dsl-g-gap-xs); font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-secondary); line-height: 1.5; }
@@ -565,6 +610,11 @@
 .fieldLabel { font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-tertiary); }
 .radio { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-title); color: var(--dsw-alias-label-secondary); cursor: pointer; line-height: 1.5; }
 .radio input { accent-color: var(--dsl-g-accent); }
+.radio input:focus-visible {
+  outline: 2px solid var(--dsl-g-accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
 
 /* ---------- submit（交卷聚合 / 本地判卷） ---------- */
 
@@ -641,6 +691,11 @@
   min-width: 0;
   accent-color: var(--dsl-g-accent);
 }
+.sliderInput:focus-visible {
+  outline: 2px solid var(--dsl-g-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .sliderValue {
   min-width: 44px;
   text-align: right;
@@ -693,8 +748,11 @@
   cursor: pointer;
   font-family: inherit;
   line-height: 1.5;
+  transition: background 0.15s, color 0.15s;
 }
-.accChevron { color: var(--dsw-alias-label-tertiary); }
+.accHead:hover { background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, var(--dsw-alias-bg-layer-1)); }
+.accHead:active { color: var(--dsl-g-accent); }
+.accChevron { color: var(--dsw-alias-label-tertiary); transition: transform 0.2s; }
 .accBody {
   padding: var(--dsl-g-gap-md) 14px;
   display: flex;
@@ -719,6 +777,7 @@
   transition: all 0.15s;
 }
 .copyChip:hover { border-color: var(--dsl-g-accent); }
+.copyChip:active { transform: translateY(1px); }
 .copyChipDone { border-color: var(--dsw-alias-state-success-primary, #3ecf8e); color: var(--dsw-alias-state-success-primary, #3ecf8e); }
 
 /* ---------- mermaid ---------- */
@@ -742,6 +801,44 @@
 /* ---------- scene3d ---------- */
 
 .scene3dWrap { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
+
+/* ---------- echart ---------- */
+
+.echartWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dsl-g-gap-sm);
+  padding: var(--dsl-g-gap-md);
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-markdown-code-block));
+  border: 1px solid var(--dsl-g-border);
+  border-radius: var(--dsl-g-radius-surface);
+}
+.echartTitle {
+  font-size: var(--dsl-g-font-title);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.echartCanvas {
+  width: 100%;
+  min-height: 0;
+}
+.echartHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsl-g-font-meta);
+}
+.echartFallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dsl-g-gap-sm);
+  padding: var(--dsl-g-gap-md);
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-markdown-code-block));
+  border: 1px solid var(--dsl-g-border);
+  border-radius: var(--dsl-g-radius-surface);
+}
+.echartErr {
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  font-size: var(--dsl-g-font-meta);
+}
 .scene3dTitle { font-size: var(--dsl-g-font-title); font-weight: 700; color: var(--dsw-alias-label-primary); }
 .scene3dCanvas {
   height: 240px;
@@ -776,7 +873,19 @@
 
 /* ---------- file tree ---------- */
 
-.fileTree { font-family: var(--dsl-g-font-mono); font-size: var(--dsl-g-font-meta); display: flex; flex-direction: column; }
+.fileTree {
+  font-family: var(--dsl-g-font-mono);
+  font-size: var(--dsl-g-font-meta);
+  display: flex;
+  flex-direction: column;
+  /* A deep/long row must never collapse the column: the tree itself is the
+     horizontal scroll container (mirrors .tableWrap). Names additionally
+     ellipsize, so scroll appears only when indentation still overflows. */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  max-width: 100%;
+  min-width: 0;
+}
 .ftRow { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); padding: 3px var(--dsl-g-gap-xs); border-radius: var(--dsl-g-radius-control); }
 .ftRow:hover { background: var(--dsw-alias-bg-layer-1); }
 .ftIcon {
@@ -789,13 +898,22 @@
   line-height: 1;
 }
 .ftIconDir { color: var(--dsl-g-accent); font-size: 11px; }
-.ftName { color: var(--dsw-alias-label-secondary); }
+/* Long paths must stay on ONE line (issue #28: per-character vertical
+   wrapping when the host message column gets narrow). */
+.ftName {
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .ftDir { color: var(--dsw-alias-label-primary); font-weight: 600; }
 .ftNameBtn {
   display: inline-flex;
   align-items: center;
   gap: var(--dsl-g-gap-sm);
   min-width: 0;
+  max-width: 100%;
   background: none;
   border: none;
   font-family: inherit;
@@ -824,13 +942,65 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes genuiPopIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .reveal {
   animation: genuiReveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* "✓ 已触发" confirmation chip: appears next to the button without layout
+   shift risk (it inherits the flex row's gap). */
+.btnSent { animation: genuiPopIn 0.2s ease both; }
+
 /* 尊重用户的减弱动效偏好 */
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; }
+  .btnSent { animation: none; }
+  .fill { transition: none; }
+  .barFill { transition: none; }
+  .switch, .switchKnob { transition: none; }
+}
+
+/* ---------- thin scrollbars ----------
+   Overflow containers (table, file-tree, mermaid, panel) get a restrained
+   thin scrollbar instead of the browser's chunky default. WebKit hosts need
+   the pseudo-element twin; Firefox takes scrollbar-width. */
+.tableWrap, .fileTree, .mermaid, .panelBody {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.22)) transparent;
+}
+.tableWrap::-webkit-scrollbar, .fileTree::-webkit-scrollbar,
+.mermaid::-webkit-scrollbar, .panelBody::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tableWrap::-webkit-scrollbar-thumb, .fileTree::-webkit-scrollbar-thumb,
+.mermaid::-webkit-scrollbar-thumb, .panelBody::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.22));
+  border-radius: 4px;
+}
+.tableWrap::-webkit-scrollbar-track, .fileTree::-webkit-scrollbar-track,
+.mermaid::-webkit-scrollbar-track, .panelBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- a11y utility ---------- */
+
+/* Visually hidden but announced: live regions ride on this clip pattern. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ---------- quiz ---------- */

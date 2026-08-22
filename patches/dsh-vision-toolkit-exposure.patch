@@ -1,10 +1,10 @@
 diff --git a/third-party/dsh-vision-toolkit/src/exposure.ts b/third-party/dsh-vision-toolkit/src/exposure.ts
-index 4bb27a3..697d14c 100644
+index be97085..66d59e9 100644
 --- a/third-party/dsh-vision-toolkit/src/exposure.ts
 +++ b/third-party/dsh-vision-toolkit/src/exposure.ts
-@@ -15,8 +15,20 @@ import { VISION_TOOLS_SKILL_CONTENT, VISION_TOOLS_SKILL_NAME } from './skill.ts'
- /** Small bootstrap tool retained only until the current Agent gains visual tools. */
- export const VISION_TOOLKIT_ACTIVATE = 'vision_toolkit_activate'
+@@ -23,8 +23,25 @@ export const LEGACY_VISION_TOOLS_SKILL_NAME = 'vision-tools'
+ /** Unique pre-rename line in bundled instructions, kept for Session restore. */
+ export const LEGACY_VISION_TOOLS_SKILL_MARKER = 'If this content arrived through a direct `/vision-tools` invocation and the'
  
 +/**
 + * Core tools registered for every Agent at creation, without waiting for the
@@ -15,15 +15,20 @@ index 4bb27a3..697d14c 100644
 + * Dizzy-DSH patch: deviates from upstream, which registers every visual tool
 + * only after the Skill loads. See docs/THIRD-PARTY-PATCHES.md.
 + */
-+const ALWAYS_ON_TOOLS = new Set(['vision_glance', 'vision_ground', 'vision_detect', 'vision_pixel_diff'])
++const ALWAYS_ON_TOOLS = new Set([
++  VISION_TOOL_NAMES.glance,
++  VISION_TOOL_NAMES.ground,
++  VISION_TOOL_NAMES.detect,
++  VISION_TOOL_NAMES.pixelDiff,
++])
 +
  interface AgentExposure {
    active: boolean
 +  coreActive?: boolean
-   hideActivation?: () => void
+   liftRestriction?: () => void
    toolDisposers: Array<() => void>
    toolNames: string[]
-@@ -178,8 +190,9 @@ export class VisionToolExposure {
+@@ -197,8 +214,9 @@ export class VisionToolExposure {
  
    private attach(agent: Agent): void {
      if (this.states.has(agent)) return
@@ -34,7 +39,7 @@ index 4bb27a3..697d14c 100644
    }
  
    private activate(agent: Agent): VisionToolkitActivationResult {
-@@ -190,10 +203,13 @@ export class VisionToolExposure {
+@@ -209,9 +227,12 @@ export class VisionToolExposure {
      if (state.active) return { activated: false, tools: [...state.toolNames] }
  
      const definitions = this.createTools()
@@ -42,17 +47,16 @@ index 4bb27a3..697d14c 100644
 +      ? definitions.filter(definition => !ALWAYS_ON_TOOLS.has(definition.name))
 +      : definitions
      const toolDisposers: Array<() => void> = []
-     let hideActivation: (() => void) | undefined
      try {
 -      for (const definition of definitions) toolDisposers.push(agent.ctx.tools.register(definition))
 +      for (const definition of remaining) toolDisposers.push(agent.ctx.tools.register(definition))
-       hideActivation = agent.ctx.tools.restrict({ deny: [VISION_TOOLKIT_ACTIVATE] })
-     } catch (error) {
-       hideActivation?.()
-@@ -203,6 +219,36 @@ export class VisionToolExposure {
+       // A Skill call and the bootstrap can be issued in the same model step.
+       // Restricting immediately would turn the still-in-flight bootstrap call
+       // into an UNKNOWN_TOOL error, so live sessions hide at step/end.
+@@ -222,6 +243,36 @@ export class VisionToolExposure {
+     }
  
      state.active = true
-     state.hideActivation = hideActivation
 +    state.toolDisposers = [...state.toolDisposers, ...toolDisposers]
 +    state.toolNames = [...state.toolNames, ...remaining.map(definition => definition.name)]
 +    return { activated: true, tools: [...state.toolNames] }
@@ -86,29 +90,25 @@ index 4bb27a3..697d14c 100644
      state.toolDisposers = toolDisposers
      state.toolNames = definitions.map(definition => definition.name)
      return { activated: true, tools: [...state.toolNames] }
-
 diff --git a/third-party/dsh-vision-toolkit/lib/exposure.js b/third-party/dsh-vision-toolkit/lib/exposure.js
-index e1bcce1..c678a23 100644
+index 7f8c711..683a5aa 100644
 --- a/third-party/dsh-vision-toolkit/lib/exposure.js
 +++ b/third-party/dsh-vision-toolkit/lib/exposure.js
-@@ -8,6 +8,16 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
- import { VISION_TOOLS_SKILL_CONTENT, VISION_TOOLS_SKILL_NAME } from "./skill.js";
- /** Small bootstrap tool retained only until the current Agent gains visual tools. */
- export const VISION_TOOLKIT_ACTIVATE = 'vision_toolkit_activate';
-+/**
-+ * Core tools registered for every Agent at creation, without waiting for the
-+ * Skill load: glance (describe/QA/OCR), ground (locate), detect, and
-+ * pixel_diff (compare). The remaining tools keep the upstream progressive
-+ * exposure (their registration is gated by the Skill load).
-+ *
-+ * Dizzy-DSH patch: deviates from upstream, which registers every visual tool
-+ * only after the Skill loads. See docs/THIRD-PARTY-PATCHES.md.
-+ */
-+const ALWAYS_ON_TOOLS = new Set(['vision_glance', 'vision_ground', 'vision_detect', 'vision_pixel_diff']);
+@@ -14,6 +14,13 @@ export const VISION_TOOLKIT_ACTIVATE = 'vision_toolkit_activate';
+ export const LEGACY_VISION_TOOLS_SKILL_NAME = 'vision-tools';
+ /** Unique pre-rename line in bundled instructions, kept for Session restore. */
+ export const LEGACY_VISION_TOOLS_SKILL_MARKER = 'If this content arrived through a direct `/vision-tools` invocation and the';
++/** Dizzy-DSH patch: core vision tools stay resident without waiting for the Skill. */
++const ALWAYS_ON_TOOLS = new Set([
++    VISION_TOOL_NAMES.glance,
++    VISION_TOOL_NAMES.ground,
++    VISION_TOOL_NAMES.detect,
++    VISION_TOOL_NAMES.pixelDiff,
++]);
  function renderJson(_args, value) {
      return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
  }
-@@ -160,9 +170,11 @@ export class VisionToolExposure {
+@@ -176,9 +183,11 @@ export class VisionToolExposure {
      attach(agent) {
          if (this.states.has(agent))
              return;
@@ -121,7 +121,7 @@ index e1bcce1..c678a23 100644
      }
      activate(agent) {
          this.attach(agent);
-@@ -173,10 +185,13 @@ export class VisionToolExposure {
+@@ -189,9 +198,12 @@ export class VisionToolExposure {
          if (state.active)
              return { activated: false, tools: [...state.toolNames] };
          const definitions = this.createTools();
@@ -129,28 +129,24 @@ index e1bcce1..c678a23 100644
 +            ? definitions.filter(definition => !ALWAYS_ON_TOOLS.has(definition.name))
 +            : definitions;
          const toolDisposers = [];
-         let hideActivation;
          try {
 -            for (const definition of definitions)
 +            for (const definition of remaining)
                  toolDisposers.push(agent.ctx.tools.register(definition));
-             hideActivation = agent.ctx.tools.restrict({ deny: [VISION_TOOLKIT_ACTIVATE] });
-         }
-@@ -188,6 +203,38 @@ export class VisionToolExposure {
+             // A Skill call and the bootstrap can be issued in the same model step.
+             // Restricting immediately would turn the still-in-flight bootstrap call
+@@ -205,6 +217,35 @@ export class VisionToolExposure {
+             throw error;
          }
          state.active = true;
-         state.hideActivation = hideActivation;
 +        state.toolDisposers = [...state.toolDisposers, ...toolDisposers];
 +        state.toolNames = [...state.toolNames, ...remaining.map(definition => definition.name)];
 +        return { activated: true, tools: [...state.toolNames] };
 +    }
 +    /**
 +     * Register the always-on core subset for an Agent that has not loaded the
-+     * Skill yet. The activation tool stays visible until the Skill loads and
-+     * the tools/result listener completes the set through {@link activate}.
-+     *
-+     * Dizzy-DSH patch: upstream registers nothing here; see
-+     * docs/THIRD-PARTY-PATCHES.md.
++     * Skill yet. The activation tool stays visible until the Skill loads.
++     * Dizzy-DSH patch: see docs/THIRD-PARTY-PATCHES.md.
 +     */
 +    activateCore(agent) {
 +        this.attach(agent);

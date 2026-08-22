@@ -61,7 +61,25 @@ const GENUI_LIMITS = {
 	maxBreadcrumbItems: 12,
 	maxKeyValuePairs: 24,
 	/** Maximum `file-tree` nesting. */
-	maxTreeDepth: 6
+	maxTreeDepth: 6,
+	/** Maximum `diagram` nodes / edges / zones / focal accents (editorial
+	* complexity budget, mirroring diagram-design's §7 limits). */
+	maxDiagramNodes: 9,
+	maxDiagramEdges: 12,
+	maxDiagramZones: 3,
+	maxDiagramFocal: 2,
+	maxDiagramLabel: 14,
+	/** Maximum depth of an `echart` option object (prevents pathological nested
+	* ECharts configs from stalling the guard walk). */
+	maxEChartOptionDepth: 10,
+	/** Maximum length of any single array inside an `echart` option (prevents
+	* a model from stalling rendering with `series.data` of hundreds of
+	* thousands of points). */
+	maxEChartArrayLen: 500,
+	/** Maximum total entries (object keys + array elements) traversed while
+	* sanitizing an `echart` option. Bounds the walk so a pathologically
+	* large option object cannot stall the guard. */
+	maxEChartOptionNodes: 2e3
 };
 /** Is `v` one of `values`? (enum guard) */
 function inEnum(v, values) {
@@ -95,6 +113,17 @@ function safeHref(v) {
 	const s = v.trim();
 	if (s.length > 2048) return void 0;
 	return /^https?:\/\//i.test(s) || /^mailto:[^@\s]+@[^@\s]+$/i.test(s) ? s : void 0;
+}
+/** Media loads bytes, so accept only browser-reachable http(s) or same-origin
+* relative paths. Active/local schemes and protocol-relative URLs are
+* rejected. The renderer always keeps playback user-controlled. */
+function safeMediaSrc(v) {
+	if (typeof v !== "string") return void 0;
+	const s = v.trim();
+	if (s === "" || s.length > 2048) return void 0;
+	if (/^https?:\/\//i.test(s)) return s;
+	if (/^[a-z][a-z0-9+.-]*:/i.test(s) || /^[/\\]{2}/.test(s)) return void 0;
+	return s;
 }
 /** Finite-number field: clamp into [min, max], or undefined when not finite. */
 function num(v, min, max) {
@@ -162,6 +191,12 @@ const PLOT_KINDS = [
 	"area",
 	"scatter"
 ];
+const MEDIA_ASPECT_RATIOS = [
+	"16:9",
+	"4:3",
+	"1:1",
+	"9:16"
+];
 const MESH_SHAPES = [
 	"box",
 	"sphere",
@@ -170,6 +205,67 @@ const MESH_SHAPES = [
 	"torus"
 ];
 const FILE_TYPES = ["file", "dir"];
+const DIAGRAM_KINDS = [
+	"architecture",
+	"it-state",
+	"flowchart",
+	"sequence",
+	"state",
+	"er",
+	"timeline",
+	"swimlane",
+	"quadrant",
+	"radar",
+	"loop",
+	"nested",
+	"tree",
+	"org-chart",
+	"layers",
+	"venn",
+	"pyramid",
+	"bar",
+	"line",
+	"gantt",
+	"scatter",
+	"high-level",
+	"process",
+	"medallion",
+	"data-flow",
+	"dp-integration",
+	"dp-security-matrix"
+];
+const DIAGRAM_NODE_TYPES = [
+	"focal",
+	"backend",
+	"store",
+	"external",
+	"input",
+	"optional",
+	"security"
+];
+const DIAGRAM_VARIANTS = [
+	"light",
+	"dark",
+	"editorial"
+];
+const DIAGRAM_EDGE_KINDS = [
+	"solid",
+	"dashed",
+	"accent",
+	"link"
+];
+const DIAGRAM_ROUTES = [
+	"auto",
+	"orthogonal",
+	"straight"
+];
+const ECHART_PRESETS = [
+	"bar",
+	"line",
+	"area",
+	"pie",
+	"scatter"
+];
 /** Walk `list` with the shared node budget; drops invalid entries. */
 function repairItems(list, ctx, depth) {
 	if (!Array.isArray(list)) return [];
@@ -190,7 +286,7 @@ function repairNode(value, ctx, depth) {
 	if (typeof type !== "string") return null;
 	switch (type) {
 		case "text": {
-			const content = str(v.content, GENUI_LIMITS.maxString);
+			const content = str(v.content, GENUI_LIMITS.maxString) ?? str(v.text, GENUI_LIMITS.maxString);
 			if (content === void 0) return null;
 			return {
 				type: "text",
@@ -273,8 +369,31 @@ function repairNode(value, ctx, depth) {
 				...opt("href", safeHref(v.href))
 			};
 		}
+		case "audio": {
+			const src = safeMediaSrc(v.src);
+			if (src === void 0) return null;
+			return {
+				type: "audio",
+				src,
+				...opt("alt", str(v.alt, GENUI_LIMITS.maxString)),
+				...opt("loop", v.loop === true ? true : void 0)
+			};
+		}
+		case "video": {
+			const src = safeMediaSrc(v.src);
+			if (src === void 0) return null;
+			return {
+				type: "video",
+				src,
+				...opt("alt", str(v.alt, GENUI_LIMITS.maxString)),
+				...opt("poster", safeMediaSrc(v.poster)),
+				...opt("loop", v.loop === true ? true : void 0),
+				...opt("muted", v.muted === true ? true : void 0),
+				...opt("aspectRatio", enu(v.aspectRatio, MEDIA_ASPECT_RATIOS))
+			};
+		}
 		case "badge": {
-			const label = str(v.label, GENUI_LIMITS.maxString);
+			const label = str(v.label, GENUI_LIMITS.maxString) ?? str(v.text, GENUI_LIMITS.maxString) ?? str(v.value, GENUI_LIMITS.maxString);
 			if (label === void 0) return null;
 			return {
 				type: "badge",
@@ -316,7 +435,7 @@ function repairNode(value, ctx, depth) {
 			};
 		}
 		case "list": {
-			const items = repairListItems(v.items, GENUI_LIMITS.maxListItems);
+			const items = repairListItems(v.items, GENUI_LIMITS.maxListItems, ctx, depth + 1);
 			if (items === void 0) return null;
 			return {
 				type: "list",
@@ -324,8 +443,15 @@ function repairNode(value, ctx, depth) {
 			};
 		}
 		case "table": {
-			const columns = repairStrings(v.columns, GENUI_LIMITS.maxTableCols, 128);
-			const rows = repairRows(v.rows, GENUI_LIMITS.maxTableRows, GENUI_LIMITS.maxTableCols);
+			let rawCols = v.columns;
+			let rawRows = v.rows !== void 0 ? v.rows : v.data;
+			if (Array.isArray(rawCols) && rawCols.length > 0 && typeof rawCols[0] === "object" && rawCols[0] !== null) rawCols = rawCols.map((c) => columnHeaderText(c));
+			if (Array.isArray(rawRows) && rawRows.length > 0 && typeof rawRows[0] === "object" && rawRows[0] !== null && !Array.isArray(rawRows[0])) {
+				const keys = Array.isArray(v.columns) && v.columns.length > 0 && typeof v.columns[0] === "object" && v.columns[0] !== null ? v.columns.map((c) => columnKeyOf(c)).filter((k) => k !== void 0) : Object.keys(rawRows[0]);
+				rawRows = rawRows.map((row) => keys.map((k) => cellText(row[k])));
+			}
+			const columns = repairStrings(rawCols, GENUI_LIMITS.maxTableCols, 128);
+			const rows = repairRows(rawRows, GENUI_LIMITS.maxTableRows, GENUI_LIMITS.maxTableCols);
 			if (columns === void 0 || rows === void 0) return null;
 			return {
 				type: "table",
@@ -514,6 +640,7 @@ function repairNode(value, ctx, depth) {
 				...opt("background", color(v.background))
 			};
 		}
+		case "diagram": return repairDiagram(v);
 		case "timeline": {
 			const items = repairTimeline(v.items, GENUI_LIMITS.maxTimelineItems);
 			if (items === void 0) return null;
@@ -551,6 +678,22 @@ function repairNode(value, ctx, depth) {
 				...opt("action", str(v.action, 200))
 			};
 		}
+		case "echart": {
+			const data = v.data !== void 0 ? repairChartData(v.data, GENUI_LIMITS.maxChartPoints) : void 0;
+			const series = v.series !== void 0 && Array.isArray(v.series) ? repairSeries(v.series, GENUI_LIMITS.maxPlotSeries, GENUI_LIMITS.maxChartPoints) : void 0;
+			const sanitized = v.option !== void 0 ? sanitizeEChartOption(v.option, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }) : void 0;
+			const option = sanitized === void 0 || typeof sanitized !== "object" || sanitized === null || Array.isArray(sanitized) ? void 0 : sanitized;
+			if (option === void 0 && data === void 0 && series === void 0) return null;
+			return {
+				type: "echart",
+				...opt("title", str(v.title, GENUI_LIMITS.maxString)),
+				...opt("height", int(v.height, 100, 800)),
+				...opt("preset", enu(v.preset, ECHART_PRESETS)),
+				...opt("data", data),
+				...opt("series", series),
+				...opt("option", option)
+			};
+		}
 		default: return value;
 	}
 }
@@ -560,10 +703,15 @@ function repairStrings(v, cap, strCap) {
 	for (const item of v) {
 		if (out.length >= cap) break;
 		if (typeof item === "string") out.push(item.slice(0, strCap));
+		else if (item !== null && typeof item === "object") {
+			const o = item;
+			const s = typeof o.label === "string" ? o.label : typeof o.value === "string" ? o.value : typeof o.title === "string" ? o.title : JSON.stringify(item);
+			out.push(s.slice(0, strCap));
+		}
 	}
 	return out;
 }
-function repairListItems(v, cap) {
+function repairListItems(v, cap, ctx, depth) {
 	if (!Array.isArray(v)) return void 0;
 	const out = [];
 	for (const item of v) {
@@ -574,11 +722,19 @@ function repairListItems(v, cap) {
 		}
 		const o = obj(item);
 		const title = o === void 0 ? void 0 : str(o.title, GENUI_LIMITS.maxString);
-		if (title === void 0) continue;
-		out.push({
-			title,
-			...opt("desc", o === void 0 ? void 0 : str(o.desc, GENUI_LIMITS.maxString))
-		});
+		if (title !== void 0) {
+			out.push({
+				title,
+				...opt("desc", o === void 0 ? void 0 : str(o.desc, GENUI_LIMITS.maxString))
+			});
+			continue;
+		}
+		if (o !== void 0 && typeof o.type === "string") {
+			if (ctx.remaining <= 0) break;
+			ctx.remaining -= 1;
+			const node = repairNode(o, ctx, depth);
+			if (node !== null) out.push(node);
+		}
 	}
 	return out;
 }
@@ -640,12 +796,51 @@ function repairTabs(v, ctx, depth) {
 		const o = obj(tab);
 		const label = o === void 0 ? void 0 : str(o.label, 128);
 		if (label === void 0 || o === void 0) continue;
+		const rawItems = o.items !== void 0 ? o.items : o.content !== void 0 ? Array.isArray(o.content) ? o.content : [o.content] : void 0;
 		out.push({
 			label,
-			items: repairItems(o.items, ctx, depth + 1)
+			items: repairItems(rawItems, ctx, depth + 1)
 		});
 	}
 	return out;
+}
+/** Header text for an object-shaped table column ({title,key} antd style). */
+function columnHeaderText(c) {
+	const o = obj(c);
+	if (o === void 0) return String(c);
+	for (const k of [
+		"title",
+		"label",
+		"key",
+		"dataIndex"
+	]) {
+		const s = o[k];
+		if (typeof s === "string" && s !== "") return s;
+	}
+	return JSON.stringify(c);
+}
+/** Row key for an object-shaped column, mirroring columnHeaderText's order. */
+function columnKeyOf(c) {
+	const o = obj(c);
+	if (o === void 0) return void 0;
+	for (const k of [
+		"key",
+		"dataIndex",
+		"title",
+		"label"
+	]) {
+		const s = o[k];
+		if (typeof s === "string" && s !== "") return s;
+	}
+}
+/** Cell text for object-array rows: strings/finite numbers pass through,
+* everything else stringifies so the column alignment is preserved
+* (repairRows would drop null/undefined cells and shift the row). */
+function cellText(v) {
+	if (typeof v === "string") return v;
+	if (typeof v === "number" && Number.isFinite(v)) return v;
+	if (v === null || v === void 0) return "";
+	return JSON.stringify(v);
 }
 function repairPlotSeries(v, cap) {
 	if (!Array.isArray(v)) return void 0;
@@ -778,6 +973,125 @@ function tuple3(v) {
 		Math.min(1e6, Math.max(-1e6, c))
 	];
 }
+/** Clamp a coordinate/size to the 4px editorial grid. */
+function grid4(v, min, max) {
+	return Math.min(max, Math.max(min, Math.round(v / 4) * 4));
+}
+function repairDiagramNodes(v) {
+	if (!Array.isArray(v)) return void 0;
+	const out = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of v) {
+		if (out.length >= GENUI_LIMITS.maxDiagramNodes) break;
+		const o = obj(raw);
+		if (o === void 0) continue;
+		const id = str(o.id, 128);
+		const label = str(o.label, GENUI_LIMITS.maxString);
+		if (id === void 0 || label === void 0) continue;
+		if (seen.has(id)) continue;
+		seen.add(id);
+		const nodeType = enu(o.type, DIAGRAM_NODE_TYPES);
+		const x = o.x === void 0 ? void 0 : grid4(num(o.x, -1e6, 1e6) ?? 0, 0, 1e6);
+		const y = o.y === void 0 ? void 0 : grid4(num(o.y, -1e6, 1e6) ?? 0, 0, 1e6);
+		const w = o.w === void 0 ? void 0 : grid4(num(o.w, -1e6, 1e6) ?? 96, 40, 2e3);
+		const h = o.h === void 0 ? void 0 : grid4(num(o.h, -1e6, 1e6) ?? 48, 24, 1200);
+		out.push({
+			id,
+			label,
+			...opt("sub", str(o.sub, 256)),
+			...opt("type", nodeType),
+			...opt("x", x),
+			...opt("y", y),
+			...opt("w", w),
+			...opt("h", h),
+			...opt("tag", str(o.tag, 32))
+		});
+	}
+	return out;
+}
+function repairDiagramEdges(v) {
+	if (v === void 0) return [];
+	if (!Array.isArray(v)) return void 0;
+	const out = [];
+	for (const raw of v) {
+		if (out.length >= GENUI_LIMITS.maxDiagramEdges) break;
+		const o = obj(raw);
+		if (o === void 0) continue;
+		const from = str(o.from, 128);
+		const to = str(o.to, 128);
+		if (from === void 0 || to === void 0) continue;
+		out.push({
+			from,
+			to,
+			...opt("label", str(o.label, GENUI_LIMITS.maxDiagramLabel)),
+			...opt("kind", enu(o.kind, DIAGRAM_EDGE_KINDS)),
+			...opt("route", enu(o.route, DIAGRAM_ROUTES))
+		});
+	}
+	return out;
+}
+function repairDiagramTheme(v) {
+	const o = obj(v);
+	if (o === void 0) return void 0;
+	const out = {};
+	for (const key of [
+		"paper",
+		"paper-2",
+		"ink",
+		"muted",
+		"soft",
+		"rule",
+		"accent",
+		"accent-tint",
+		"link"
+	]) {
+		const c = color(o[key]);
+		if (c !== void 0) out[key] = c;
+	}
+	return Object.keys(out).length === 0 ? void 0 : out;
+}
+function repairDiagramZones(v) {
+	if (v === void 0) return [];
+	if (!Array.isArray(v)) return void 0;
+	const out = [];
+	for (const raw of v) {
+		if (out.length >= GENUI_LIMITS.maxDiagramZones) break;
+		const o = obj(raw);
+		if (o === void 0) continue;
+		const label = str(o.label, 64);
+		if (label === void 0) continue;
+		out.push({
+			label,
+			...opt("x", o.x === void 0 ? void 0 : grid4(num(o.x, -1e6, 1e6) ?? 0, 0, 1e6)),
+			...opt("y", o.y === void 0 ? void 0 : grid4(num(o.y, -1e6, 1e6) ?? 0, 0, 1e6)),
+			...opt("w", o.w === void 0 ? void 0 : grid4(num(o.w, -1e6, 1e6) ?? 100, 40, 2e3)),
+			...opt("h", o.h === void 0 ? void 0 : grid4(num(o.h, -1e6, 1e6) ?? 100, 40, 1200))
+		});
+	}
+	return out;
+}
+function repairDiagram(v) {
+	const o = obj(v);
+	if (o === void 0) return null;
+	const kind = enu(o.kind, DIAGRAM_KINDS);
+	if (kind === void 0) return null;
+	const nodes = repairDiagramNodes(o.nodes);
+	if (nodes === void 0) return null;
+	const edges = repairDiagramEdges(o.edges);
+	if (edges === void 0) return null;
+	const zones = repairDiagramZones(o.zones);
+	if (zones === void 0) return null;
+	return {
+		type: "diagram",
+		kind,
+		nodes,
+		edges,
+		zones,
+		...opt("variant", enu(o.variant, DIAGRAM_VARIANTS)),
+		...opt("title", str(o.title, 256)),
+		...opt("theme", repairDiagramTheme(o.theme))
+	};
+}
 function repairTimeline(v, cap) {
 	if (!Array.isArray(v)) return void 0;
 	const out = [];
@@ -831,6 +1145,66 @@ function repairQuizOptions(v) {
 	return out;
 }
 /**
+* Patterns that indicate HTML/script injection in a string field. ECharts
+* default `tooltip.renderMode: 'html'` writes tooltip content via
+* `innerHTML`; even with renderMode forced to 'richText' (see below),
+* filtering these patterns is defense-in-depth — a model (or a
+* prompt-injected model) should never emit `<script>`, `onerror=`, or
+* `javascript:` inside a chart option string.
+*/
+const ECHART_HTML_DANGER_RE = /<(?:script|img|svg|iframe|video|audio|object|embed|source)\b|on[a-z]+\s*=|javascript:/i;
+/**
+* Sanitize an ECharts option object: depth-bounded, budget-bounded
+* pass-through that strips dangerous values (functions, `url()` in styles,
+* HTML/script injection patterns in strings) but preserves the object shape
+* ECharts needs. Scalars are KEPT: ECharts options are full of them,
+* including inside `data` arrays (`data: [120, 150, 180]`,
+* `xAxis.data: ['1月', '2月']`). Previously a scalar hit the plain-object
+* gate below and returned undefined, so every primitive-valued array was
+* filtered to empty and dropped — a chart with a full `option` rendered
+* with empty series (blank canvas). This is a safety walk, not an ECharts
+* semantic validator.
+*
+* Security: `tooltip.renderMode` is forced to `'richText'` on every tooltip
+* object. ECharts' default `'html'` mode writes tooltip content via
+* `innerHTML`, which is an XSS vector when the option originates from model
+* output — a prompt-injected model could emit
+* `{"tooltip":{"formatter":"<img src=x onerror=...>"}}` and execute
+* arbitrary script. `richText` renders as text, never touching innerHTML.
+*/
+function sanitizeEChartOption(v, depth, budget) {
+	if (budget.count <= 0) return void 0;
+	budget.count -= 1;
+	if (depth > GENUI_LIMITS.maxEChartOptionDepth) return void 0;
+	if (typeof v === "string") {
+		const s = v.slice(0, GENUI_LIMITS.maxString);
+		if (s.toLowerCase().includes("url(") || ECHART_HTML_DANGER_RE.test(s)) return void 0;
+		return s;
+	}
+	if (typeof v === "number" && Number.isFinite(v)) return v;
+	if (typeof v === "boolean") return v;
+	if (v === null) return null;
+	if (Array.isArray(v)) {
+		const cap = Math.min(v.length, GENUI_LIMITS.maxEChartArrayLen);
+		const arr = [];
+		for (let i = 0; i < cap; i++) {
+			const s = sanitizeEChartOption(v[i], depth + 1, budget);
+			if (s !== void 0) arr.push(s);
+		}
+		return arr.length > 0 ? arr : void 0;
+	}
+	const o = obj(v);
+	if (o === void 0) return void 0;
+	const out = {};
+	for (const [key, val] of Object.entries(o)) {
+		const s = sanitizeEChartOption(val, depth + 1, budget);
+		if (s === void 0) continue;
+		if (key === "tooltip" && typeof s === "object" && s !== null && !Array.isArray(s)) s.renderMode = "richText";
+		out[key] = s;
+	}
+	return Object.keys(out).length > 0 ? out : void 0;
+}
+/**
 * Deterministically repair a raw spec value into a renderable GenuiSpec.
 * Returns null only when the root is not an object with an `items` array
 * (a bare component root is wrapped into a col first — the documented fence
@@ -857,11 +1231,12 @@ function repairGenuiSpec(value) {
 }
 /**
 * Count the nodes of a spec tree (every item, descending into tabs /
-* accordion / file-tree containers — the same descent `validateGenuiSpec`
-* walks). Shared by the panel fold (node-budget gate) and validation, so
-* the panel never runs a second, divergent traversal. `cap` bounds the walk
-* for hostile inputs; the panel passes `PANEL_LIMITS.maxNodes + 1` to detect
-* overflow without counting the whole tree.
+* accordion / file-tree / list containers — the same descent
+* `validateGenuiSpec` walks). Shared by the panel fold (node-budget gate)
+* and validation, so the panel never runs a second, divergent traversal.
+* `cap` bounds the walk for hostile inputs; the panel passes
+* `PANEL_LIMITS.maxNodes + 1` to detect overflow without counting the whole
+* tree.
 */
 function countGenuiNodes(value, cap = Number.POSITIVE_INFINITY) {
 	let count = 0;
@@ -882,11 +1257,108 @@ function countGenuiNodes(value, cap = Number.POSITIVE_INFINITY) {
 				const io = obj(it);
 				if (io !== void 0) walk(io.items);
 			}
+			else if ((v.type === "row" || v.type === "col" || v.type === "grid" || v.type === "card") && Array.isArray(v.items)) walk(v.items);
 			else if (v.type === "file-tree" && Array.isArray(v.items)) walk(v.items);
+			else if (v.type === "list" && Array.isArray(v.items)) for (const li of v.items) {
+				if (count >= cap) return;
+				const lo = obj(li);
+				if (lo !== void 0 && typeof lo.type === "string") walk([lo]);
+			}
 		}
 	};
 	const root = obj(value);
 	walk(root === void 0 ? [] : root.items);
+	return count;
+}
+/** Every white-listed node `type`. Keep in sync with the repairNode switch —
+* validate_dsh_ui uses it to tell declared GenUI nodes apart from unrelated
+* `"type"` strings (e.g. file-tree's `{type:'file'}` children). */
+const GENUI_NODE_TYPES = /* @__PURE__ */ new Set([
+	"accordion",
+	"audio",
+	"avatar",
+	"badge",
+	"breadcrumb",
+	"button",
+	"callout",
+	"card",
+	"chart",
+	"checkbox",
+	"code",
+	"col",
+	"copy",
+	"diff",
+	"divider",
+	"file-tree",
+	"grid",
+	"input",
+	"json",
+	"keyvalue",
+	"link",
+	"list",
+	"mermaid",
+	"plot",
+	"progress",
+	"quiz",
+	"radio",
+	"row",
+	"scene3d",
+	"select",
+	"slider",
+	"spacer",
+	"stat",
+	"steps",
+	"submit",
+	"switch",
+	"table",
+	"tabs",
+	"text",
+	"textarea",
+	"timeline",
+	"video",
+	"echart",
+	"diagram"
+]);
+/**
+* Count DECLARED nodes in a raw spec tree: objects whose `type` is a
+* white-listed string, descending the same containers `countGenuiNodes`
+* walks. `validate_dsh_ui` compares this with the repaired count to surface
+* children the repair silently dropped (blank-render class of bugs, issue
+* #42) instead of reporting a green check on a half-empty tree.
+*/
+function countDeclaredGenuiNodes(value, cap = Number.POSITIVE_INFINITY) {
+	let count = 0;
+	const declared = (candidate) => {
+		const o = obj(candidate);
+		return o !== void 0 && typeof o.type === "string" && GENUI_NODE_TYPES.has(o.type);
+	};
+	const walk = (list) => {
+		if (!Array.isArray(list)) return;
+		for (const item of list) {
+			if (count >= cap) return;
+			if (!declared(item)) continue;
+			count += 1;
+			const v = obj(item);
+			if (v === void 0) continue;
+			if (v.type === "tabs" && Array.isArray(v.tabs)) for (const t of v.tabs) walkItemsOf(t);
+			else if (v.type === "accordion" && Array.isArray(v.items)) for (const it of v.items) walkItemsOf(it);
+			else if ((v.type === "row" || v.type === "col" || v.type === "grid" || v.type === "card") && Array.isArray(v.items)) walk(v.items);
+			else if (v.type === "list" && Array.isArray(v.items)) {
+				for (const li of v.items) if (declared(li)) walk([li]);
+			}
+		}
+	};
+	const walkItemsOf = (holder) => {
+		const o = obj(holder);
+		if (o === void 0) return;
+		const items = o.items !== void 0 ? o.items : o.content;
+		if (Array.isArray(items)) walk(items);
+		else if (declared(items)) walk([items]);
+	};
+	const root = obj(value);
+	if (root === void 0) return count;
+	if (!Array.isArray(root.items) && declared(value)) walk([value]);
+	else walk(root.items);
 	return count;
 }
 //#endregion
@@ -1272,7 +1744,10 @@ function createValidateDshUiTool() {
 			}
 			const spec = repairGenuiSpec(parsed);
 			if (spec === null) return "❌ 不是合法 GenUI spec：根对象需要 \"items\" 数组，且每个节点 type 必须在白名单内（见系统提示词）。请修正后重新验证。";
-			return `✅ dsh-ui spec 合法（${countNodes(spec)} 个组件），可以发出围栏。`;
+			const validCount = countNodes(spec);
+			const declaredCount = countDeclaredGenuiNodes(parsed, GENUI_LIMITS.maxNodes + 1);
+			if (declaredCount > validCount) return `❌ 验证未通过：检测到声明了 ${declaredCount} 个组件，但仅成功解析出 ${validCount} 个（有 ${declaredCount - validCount} 个组件因字段格式异常被丢弃）。常见原因：table 的 columns/rows 不是二维字符串数组、tabs 的 items/content 缺失、嵌套组件字段类型不符。请修正后重新验证。`;
+			return `✅ dsh-ui spec 合法（${validCount} 个组件），可以发出围栏。`;
 		},
 		presentCall() {
 			return {
@@ -1347,59 +1822,34 @@ async function serveGenuiAsset(req, res) {
 		res.end();
 	}
 }
-/** The fence language description injected into every assembled system prompt. */
+/** The fence language description injected into every assembled system prompt.
+*  Deliberately slim: the `genui` skill carries the full component→field
+*  mapping; this section keeps only the contract that must always be
+*  present (fence syntax, type whitelist, and critical behavioral rules). */
 const GENUI_SECTION_TEXT = `You can render interactive UI components INSIDE your reply — between paragraphs — by emitting a fenced block with the language tag \`dsh-ui\` containing a JSON spec:
 
 \`\`\`dsh-ui
 {"title":"可选标题","gap":14,"items":[...]}
 \`\`\`
 
-The spec is a white-listed component tree rendered inline where the fence sits. Vocabulary (only these \`type\` values; the \`genui\` skill, when available, carries the fuller content→component mapping and field details):
+The spec is a white-listed component tree rendered inline where the fence sits. Only these \`type\` values; the \`genui\` skill, when available, carries the full content→component mapping and per-component field details:
 
-- text: {"type":"text","size":"h1|h2|h3|body|muted|caption","content":"...","center":true?}
-- row / col: {"type":"row"|"col","items":[...],"wrap":true?,"spacer":true?,"gap":n?} — 布局容器
-- grid: {"type":"grid","cols":n,"items":[...]} / card: {"type":"card","title":"...","items":[...]}
-- button: {"type":"button","label":"...","tone":"primary|danger|success|ghost","full":true?,"small":true?,"icon":"emoji?","action":"name"?} — 无 action 时渲染为禁用态
-- input / textarea: {"type":"input"|"textarea","label":"...","placeholder":"...","inputType":"text|email"?,"rows":n?,"value":"...","action":"name"?,"id":"field-id"?} — input 按 Enter 提交（submit:true）、textarea Ctrl/Cmd+Enter；blur 仅值有变化才发送；带 id 的值跨刷新持久化并被 sibling submit 收集为 fields:{id:value}
-- select: {"type":"select","label":"...","options":[...],"selected":下标?,"action":"name"?,"id":"field-id"?} — id/selected 语义同 input
-- checkbox / switch / slider: {"type":"checkbox"|"switch","label":"...","checked":true?,"action":"name"?} · {"type":"slider","label":"...","min":0,"max":100,"step":1,"value":n?,"action":"name"?,"id":"field-id"?} — slider 是数值表单：id 持久化并进 submit 的 fields
-- radio: {"type":"radio","label":"...","options":[...],"selected":n?,"action":"name"?} — 加 "group":"题目名" 记录选择（点击不往返）；再加 "answer":正确下标|标签 与 "explanation":"解析" 供 sibling submit 本地判分
-- submit: {"type":"submit","label":"交卷","groups":["q1"]?,"action":"name"?,"resetAction":"name"?} — LOCAL-FIRST：题目带 answer 时点击就地判分（得分 + 逐题 ✓/✗ + 解析）并锁定至「重新作答」，零往返、无需 action；仅当无 answer 时才发一个 action {answers:{group:choice},fields:{id:value},total,answered}；未答完保持禁用
-- quiz: {"type":"quiz","question":"...","options":[{"label":"...","correct":true?,"feedback":"..."?}],"explanation":"...","id":"..."?,"action":"name"?} — 点选就地判对错 + 重试；id 变化重置；带 action 时另回传 {type:'quiz',question,answer,correct}
-- link: {"type":"link","label":"...","href":"https://..."?} — 仅 http(s)/mailto；无 href 渲染为纯文本
-- badge: {"type":"badge","label":"...","tone":"success|warn|danger|accent","icon":"emoji?"}
-- stat: {"type":"stat","label":"...","value":"...","delta":"+12.4%|-3%"}
-- progress: {"type":"progress","label":"...","value":0-100,"valueLabel":"70%"}
-- divider: {"type":"divider"} / spacer: {"type":"spacer"}
-- list: {"type":"list","items":["..."] or [{"title":"...","desc":"..."}]}
-- table: {"type":"table","columns":["..."],"rows":[["...","..."]]} — 表头点击本地排序（升/降/还原，数值感知）
-- chart: {"type":"chart","kind":"bars|line|donut","data":[{"label":"...","value":n,"color":"#hex?"}],"series":[...]?} — bars 默认；line 趋势；donut 占比；series=分组柱；负值柱高为 0 但标注照显；hover 显示精确值
-- tabs: {"type":"tabs","tabs":[{"label":"...","items":[...]}]} / accordion: {"type":"accordion","items":[{"title":"...","items":[...]}]}
-- avatar: {"type":"avatar","name":"..."}
-- plot: {"type":"plot","series":[{"expr":"sin(x)","label":"...","kind":"line|area|scatter"?,"params":[...]?}],"xMin":-5,"xMax":5,"yMin":?,"yMax":?,"title":"..."} — SVG 函数图（可拖拽平移/滚轮缩放；params 渲染实时滑块）；kind 缺省 line，area 填到基线，scatter 散点；表达式白名单 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x
-- callout: {"type":"callout","tone":"info|success|warning|error","title":"...","content":"..."}
-- steps: {"type":"steps","current":n,"steps":[{"title":"...","desc":"..."}]}
-- keyvalue: {"type":"keyvalue","pairs":[{"key":"...","value":"..."}]} / json: {"type":"json","value":...} / code: {"type":"code","lang":"ts","code":"..."} / diff: {"type":"diff","diffs":[{"path":"...","oldText":"..."|null,"newText":"..."}]}
-- copy: {"type":"copy","label":"复制","text":"..."}
-- mermaid: {"type":"mermaid","code":"graph TD\\nA-->B"} — flowchart/sequence/class/gantt/pie/er/state/journey
-- scene3d: {"type":"scene3d","title":"...","meshes":[{"shape":"box|sphere|cone|cylinder|torus","color":"#hex?","size":n|[w,h,d]?,"position":[x,y,z]?,"rotation":[rx,ry,rz]?,"scale":n?|[x,y,z]?}],"ambient":0-2?,"background":"#hex?"} — 拖拽旋转滚轮缩放
-- timeline: {"type":"timeline","items":[{"title":"...","desc":"...","time":"..."}]}
-- file-tree: {"type":"file-tree","items":[{"name":"...","type":"file|dir","children":[...]?}]} — 目录行可点击折叠
-- breadcrumb: {"type":"breadcrumb","items":["首页","设置","账户"]}
+- 布局: text · row · col · grid · card · divider · spacer
+- 展示: badge · stat · progress · list · table · keyvalue · avatar · audio · video · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy
+- 图表: chart (bars|line|donut) · echart (preset|option) · plot (函数图)
+- 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
+- 高级: mermaid (flowchart/sequence/class/gantt/pie/er/state/journey) · diagram (编辑级架构/流程图，27 种 kind) · scene3d (3D WebGL)
 
 Rules:
-- Trigger: 结构化表达优于纯文本时就主动用围栏（要点、强调、对比、流程、步骤、状态、数据、演示），纯问答与一句话不套 UI。
-- 围栏放在回答中该组件该在的位置，文字前后照常流动；不要把围栏套进别的代码围栏，JSON 字符串内不放 markdown。
-- Component choice (每个主题一个主组件): 结论/提醒→callout · 2–4 指标→grid+stat · 进度→progress · 多阶段→steps · 要点→list · 配置→keyvalue · 对比→table · 趋势→chart(line) · 占比→chart(donut) · 分类对比→chart(bars) · 数学曲线→plot · 事件→timeline · 分页内容→tabs · 长内容→accordion · 树→file-tree · 代码→code · 文件变更→diff · 嵌套JSON→json · 架构/流程→mermaid · 仅几何内容→scene3d · 教学→quiz · 单操作→button(action)。优先 table/chart 而非文字堆砌；同一数据不重复出现在两个组件；每次回复 3–8 个组件，拿不准就少。
-- 语法: 坏围栏降级为代码块，保持 JSON 严格。≥3 节点或含 table 的围栏发出前调用 validate_dsh_ui 验证，❌ 则修好再发；若 ❌ 回复里附了「已自动修复」的 JSON，照抄即可。
-- 主题: 内容适配暗色；UI 主题跟随 app，不要自造。规模: ≤200 节点、嵌套≤8 层（超出被截断）；3D 网格 1–5 个；plot 给合理 xMin/xMax。
-- v2 actions: button/input/select/checkbox/radio/switch/slider/textarea/quiz 可带 "action":"name"，交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI。可交互组件必须带 action（无 action 按钮禁用）；带 action 的按钮点击有「已触发」本地反馈。
-- LOCAL-FIRST: UI 自己能做的状态变化（判卷、判题、重置、展开、选中）全部就地完成，零模型往返；action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。
-- Durable state: 交互状态按「会话+内容指纹」持久化——刷新/重放同一内容恢复原状；换内容（换题、改 spec）自动清空。重渲染相同内容保留状态，渲染新内容重置状态。
-- Exam pattern: 每题一个 radio（group 题目名 + answer + explanation）+ 一个 submit（groups 全列）；用户答完点交卷，本地即时判分。仅当用户要新卷或追问建议时才重渲染。
-- Secrets ban: GenUI 不得索取密码、API Key、访问令牌、恢复码等秘密；需要时拒绝并解释。
+- 触发: 结构化表达优于纯文本时主动用（要点、强调、对比、流程、步骤、状态、数据、演示），纯问答与一句话不套 UI；一个主题一个主组件，每次 3–8 个组件，同一数据不重复出现。
+- JSON 严格: 坏围栏降级为代码块；≥3 节点或含 table 的围栏发出前调用 validate_dsh_ui，❌ 修好再发（若附「已自动修复」JSON 照抄即可）。
+- 规模: ≤200 节点、嵌套≤8 层（超出被截断）；3D mesh 1–5；plot 给合理 xMin/xMax。
+- LOCAL-FIRST + actions: UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互组件带 "action":"name"，交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
+- Durable state: 交互状态按「会话+内容指纹」持久化——刷新/重放恢复；重渲染相同内容保留，新内容重置。
+- 卷子模式: 每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
+- Secrets ban: 不索取密码、API Key、Token、恢复码；需要时拒绝并解释。
 - Tool channel: render_ui 工具把同一 spec 渲染为工具行卡片（交付物型界面用）；围栏用于回答内联 UI。
-- Panel: "panel":true 围栏只渲染进会话面板 dock 并原地更新；"append":true 追加合并（同标签 tabs 追加/新标签加入/尾部追加）；面板上限 200 节点/200 次追加，满了发 replace 重建。面板组件来的 [genui-action] 只回一个 panel:true 围栏 + 至多一行 10 字以内确认，不解释、不用普通围栏。`;
+- Panel: "panel":true 只渲染进会话面板 dock 并原地更新；"append":true 追加合并（同标签 tabs 追加/新标签加入/尾部追加）；上限 200 节点/200 次追加，满了发 replace 重建。面板组件来的 [genui-action] 只回一个 panel:true 围栏 + 至多一行 10 字内确认，不解释、不用普通围栏。`;
 /**
 * Register the GenUI output-language section and the render_ui tool.
 * @param ctx - cordis context.

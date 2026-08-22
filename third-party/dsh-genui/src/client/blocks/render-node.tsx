@@ -8,9 +8,9 @@ import { type ReactNode, type ComponentType } from 'react'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../guard.ts'
-import type { GenuiNode } from '../spec.ts'
+import type { GenuiList, GenuiNode } from '../spec.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
-import { avatarColor, ClickFeedbackButton } from './basic.tsx'
+import { AudioNode, avatarColor, ClickFeedbackButton, VideoNode } from './basic.tsx'
 import { ChartNode, TableNode } from './charts.tsx'
 import {
   InputNode, RadioNode, SelectNode, SliderNode, SubmitNode, SwitchNode, TextareaNode,
@@ -19,6 +19,9 @@ import {
   AccordionNode, BreadcrumbNode, CalloutNode, CodeNode, CopyNode, DiffNode, FileTreeNode, JsonNode, KeyValueNode,
   MermaidNode, PlotNode, QuizNode, Scene3DNode, StepsNode, TabsNode, TimelineNode,
 } from './advanced.tsx'
+import { DiagramNode } from './diagram/index.tsx'
+
+import { EChartNode } from '../EChartNode.tsx'
 
 /** Custom node data shape (declared locally: pristine hosts export no type). */
 interface GenuiCustomNode {
@@ -38,6 +41,10 @@ type HostGenuiExt = {
   getGenuiComponent?: (type: string) => ComponentType<GenuiCustomProps> | undefined
 }
 const getGenuiComponent = (primitives as unknown as HostGenuiExt).getGenuiComponent
+
+function isListItemNode(item: GenuiList['items'][number]): item is GenuiNode {
+  return typeof item === 'object' && item !== null && 'type' in item
+}
 
 export function renderNode(
   node: GenuiNode,
@@ -136,6 +143,8 @@ export function renderNode(
         ? <a key={key} className={css.link} href={href} target="_blank" rel="noopener noreferrer">{node.label}</a>
         : <span key={key} className={css.linkText}>{node.label}</span>
     }
+    case 'audio': return <AudioNode key={`${key}:${node.src}`} node={node} />
+    case 'video': return <VideoNode key={`${key}:${node.src}`} node={node} />
     case 'badge': {
       const tone = node.tone ?? ''
       return (
@@ -184,9 +193,9 @@ export function renderNode(
         <div key={key} className={css.list}>
           {items.map((item, i) => (
             <div key={i} className={css.li}>
-              {typeof item === 'string'
-                ? <span className={css.liTitle}>{item}</span>
-                : <><span className={css.liTitle}>{item.title}</span>{item.desc !== undefined && <span className={css.liDesc}>{item.desc}</span>}</>}
+              {isListItemNode(item)
+                ? renderNode(item, i, onAction, depth + 1, answers)
+                : <><span className={css.liTitle}>{typeof item === 'string' ? item : item.title}</span>{typeof item !== 'string' && item.desc !== undefined && <span className={css.liDesc}>{item.desc}</span>}</>}
             </div>
           ))}
         </div>
@@ -223,6 +232,9 @@ export function renderNode(
     case 'file-tree': return <FileTreeNode key={key} node={node} />
     case 'breadcrumb': return <BreadcrumbNode key={key} node={node} />
     case 'quiz': return <QuizNode key={key} node={node} onAction={onAction} />
+    case 'diagram': return <DiagramNode key={key} node={node} />
+
+    case 'echart': return <EChartNode key={key} node={node} />
     default: {
       // Plugin-registered custom types: a plugin ships a renderer through
       // registerGenuiComponent; unregistered unknowns render nothing. The

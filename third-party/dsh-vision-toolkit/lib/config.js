@@ -39,7 +39,7 @@ export const Config = z.object({
         userAgent: z.string().default(DEFAULT_VISION_USER_AGENT),
     }),
     language: z.union(['zh', 'en']).default('zh'),
-    timeoutMs: z.number().default(15000),
+    timeoutMs: z.number().default(30000),
     maxImageBytes: z.number().default(4194304),
     maxImagePixels: z.number().default(20000000),
     concurrency: z.number().default(4),
@@ -53,6 +53,7 @@ export const Config = z.object({
         enabled: z.boolean().default(true),
         providers: z.array(z.string()).default([]),
         autoSwitch: z.boolean().default(true),
+        hidden: z.boolean().default(true),
     }),
 });
 const MAX_TIMEOUT_MS = 600000;
@@ -101,7 +102,7 @@ export function resolveConfig(config = {}) {
     if (language !== 'zh' && language !== 'en') {
         throw new VisionToolkitError('config', 'language must be "zh" or "en"');
     }
-    const timeoutMs = config.timeoutMs ?? 15000;
+    const timeoutMs = config.timeoutMs ?? 30000;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > MAX_TIMEOUT_MS) {
         throw new VisionToolkitError('config', `timeoutMs must be an integer between 1000 and ${MAX_TIMEOUT_MS}`);
     }
@@ -157,6 +158,7 @@ export function resolveConfig(config = {}) {
             enabled: imageInputVariants.enabled ?? true,
             providers: variantProviders,
             autoSwitch: imageInputVariants.autoSwitch ?? true,
+            hidden: imageInputVariants.hidden ?? true,
         },
     };
 }

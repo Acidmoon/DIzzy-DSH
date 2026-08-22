@@ -20,7 +20,7 @@ describe('resolveConfig', () => {
     expect(config.provider.anthropicThinking).toBe('omit')
     expect(config.provider.userAgent).toBe(DEFAULT_VISION_USER_AGENT)
     expect(config.language).toBe('zh')
-    expect(config.timeoutMs).toBe(15000)
+    expect(config.timeoutMs).toBe(30000)
     expect(config.maxImageBytes).toBe(4194304)
     expect(config.maxImagePixels).toBe(20000000)
     expect(isBuiltInFreeVisionProvider(config.provider)).toBe(true)
@@ -28,7 +28,7 @@ describe('resolveConfig', () => {
     expect(config.runtime.mode).toBe('managed')
     expect(config.runtime.python).toBeUndefined()
     expect(config.allowedDirs).toEqual([])
-    expect(config.imageInputVariants).toEqual({ enabled: true, providers: [], autoSwitch: true })
+    expect(config.imageInputVariants).toEqual({ enabled: true, providers: [], autoSwitch: true, hidden: true })
   })
 
   it('normalizes image-input variant settings', () => {
@@ -38,8 +38,9 @@ describe('resolveConfig', () => {
         providers: [' deepseek-official ', '  ', 'glm'],
       },
     })
-    expect(config.imageInputVariants).toEqual({ enabled: false, providers: ['deepseek-official', 'glm'], autoSwitch: true })
-    expect(resolveConfig({ imageInputVariants: {} }).imageInputVariants).toEqual({ enabled: true, providers: [], autoSwitch: true })
+    expect(config.imageInputVariants).toEqual({ enabled: false, providers: ['deepseek-official', 'glm'], autoSwitch: true, hidden: true })
+    expect(resolveConfig({ imageInputVariants: {} }).imageInputVariants).toEqual({ enabled: true, providers: [], autoSwitch: true, hidden: true })
+    expect(resolveConfig({ imageInputVariants: { hidden: true } }).imageInputVariants.hidden).toBe(true)
   })
 
   it('normalizes the provider URL and credential', () => {

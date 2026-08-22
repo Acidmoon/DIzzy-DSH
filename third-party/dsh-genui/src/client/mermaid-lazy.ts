@@ -11,7 +11,7 @@
  * @module @omdsh-dev/dsh-genui/client/mermaid-lazy
  */
 import { loadGenuiAsset } from './asset-loader.ts'
-export { assertSafeSvg, repairMermaidSource } from './mermaid-safe.ts'
+export { assertSafeSvg, ensureFlowchartKind, repairMermaidSource } from './mermaid-safe.ts'
 
 /** The engine surface registered by the mermaid asset bundle. */
 interface MermaidAssetApi {

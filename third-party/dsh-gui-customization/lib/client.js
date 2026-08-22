@@ -1259,8 +1259,8 @@ window.__ModuleLoader__.load({
 			}, () => (0, react.createElement)(AmbientLayer)));
 			slots.inject("settings.plugin.item", () => slots.register({
 				name: "settings.plugin.item",
-				key: "gui-customization",
 				id: "gui-customization",
+				key: "gui-customization",
 				order: 30,
 				label: () => t("nav.label")
 			}, () => (0, react.createElement)(PluginCard)));

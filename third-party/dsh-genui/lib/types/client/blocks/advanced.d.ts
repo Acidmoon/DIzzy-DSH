@@ -1,33 +1,35 @@
 import type { AnswersState, GenuiBlockProps } from './state.ts';
 import type { GenuiAccordion, GenuiBreadcrumb, GenuiCallout, GenuiCode, GenuiCopy, GenuiDiff, GenuiFileTree, GenuiJson, GenuiKeyValue, GenuiMermaid, GenuiPlot, GenuiQuiz, GenuiScene3D, GenuiSteps, GenuiTabs, GenuiTimeline } from '../spec.ts';
 /** Callout: a tinted notice box with an optional heading. */
-export declare function CalloutNode({ node }: {
+export declare const CalloutNode: import("react").NamedExoticComponent<{
     node: GenuiCallout;
-}): import("react").JSX.Element;
+}>;
 /** Steps: a vertical progress checklist with an optional current index. */
-export declare function StepsNode({ steps }: {
+export declare const StepsNode: import("react").NamedExoticComponent<{
     steps: GenuiSteps;
-}): import("react").JSX.Element;
+}>;
 /** KeyValue: a definition list for configs and metadata. */
-export declare function KeyValueNode({ node }: {
+export declare const KeyValueNode: import("react").NamedExoticComponent<{
     node: GenuiKeyValue;
-}): import("react").JSX.Element;
-/** Plot: SVG function plot over the SafeMath evaluator. */
-export declare function PlotNode({ plot }: {
+}>;
+/** Plot: SVG function plot over the SafeMath evaluator. The series mapping
+ * is memoized on the stable spec node so the memo boundary actually skips
+ * sibling-state re-renders (a fresh mapped array would defeat it). */
+export declare const PlotNode: import("react").NamedExoticComponent<{
     plot: GenuiPlot;
-}): import("react").JSX.Element;
+}>;
 /** Diff: 收编 dsh DiffBlock (same path/oldText/newText shape as DiffHunk). */
-export declare function DiffNode({ node }: {
+export declare const DiffNode: import("react").NamedExoticComponent<{
     node: GenuiDiff;
-}): import("react").JSX.Element;
+}>;
 /** Json: 收编 dsh JsonTree. */
-export declare function JsonNode({ node }: {
+export declare const JsonNode: import("react").NamedExoticComponent<{
     node: GenuiJson;
-}): import("react").JSX.Element;
+}>;
 /** Code: 收编 dsh CodeBlock with explicit language. */
-export declare function CodeNode({ node }: {
+export declare const CodeNode: import("react").NamedExoticComponent<{
     node: GenuiCode;
-}): import("react").JSX.Element;
+}>;
 /**
  * Table: LOCAL sorting (v2.9) — click a header to sort ascending, click
  * again for descending, a third click restores the spec order. Zero model
@@ -55,41 +57,43 @@ export declare function AccordionNode({ node, onAction, depth, answers }: {
     depth?: number;
     answers?: AnswersState | undefined;
 }): import("react").JSX.Element;
-/** Copy: a one-click copy chip. */
-export declare function CopyNode({ node }: {
+/** Copy: a one-click copy chip. The live region is a visually-hidden SIBLING
+ * (not inside the button) — button content is atomic to screen readers, so a
+ * live region inside it would never announce. */
+export declare const CopyNode: import("react").NamedExoticComponent<{
     node: GenuiCopy;
-}): import("react").JSX.Element;
+}>;
 /** Mermaid: lazily loaded diagram renderer. */
-export declare function MermaidNode({ node }: {
+export declare const MermaidNode: import("react").NamedExoticComponent<{
     node: GenuiMermaid;
-}): import("react").JSX.Element;
+}>;
 /** Scene3D: three.js WebGL canvas, lazily imported. */
-export declare function Scene3DNode({ node }: {
+export declare const Scene3DNode: import("react").NamedExoticComponent<{
     node: GenuiScene3D;
-}): import("react").JSX.Element;
+}>;
 /** Timeline: vertical event list with time markers. */
-export declare function TimelineNode({ node }: {
+export declare const TimelineNode: import("react").NamedExoticComponent<{
     node: GenuiTimeline;
-}): import("react").JSX.Element;
+}>;
 /** FileTree: indented tree of files and folders. Directory rows are LOCAL
  * collapsible (spec.ts promised "collapsible children"; this makes it true)
  * — click a dir to fold/unfold, default fully open. Zero model round trip. */
-export declare function FileTreeNode({ node }: {
+export declare const FileTreeNode: import("react").NamedExoticComponent<{
     node: GenuiFileTree;
-}): import("react").JSX.Element;
+}>;
 /** Quiz: a self-contained teaching question. Selecting an option marks it
  * correct/incorrect in place and reveals feedback + explanation. With
  * `action`, the chosen answer is ALSO sent back to the model
  * (`{type:'quiz', question, answer, correct}`) so the model can collect or
  * grade it — the in-place judging stays local (no round trip needed). */
-export declare function QuizNode({ node, onAction }: {
+export declare const QuizNode: import("react").NamedExoticComponent<{
     node: GenuiQuiz;
-    onAction?: GenuiBlockProps['onAction'];
-}): import("react").JSX.Element;
+    onAction?: GenuiBlockProps["onAction"];
+}>;
 /** Breadcrumb: path-style navigation trail. */
-export declare function BreadcrumbNode({ node }: {
+export declare const BreadcrumbNode: import("react").NamedExoticComponent<{
     node: GenuiBreadcrumb;
-}): import("react").JSX.Element;
+}>;
 /**
  * Trailing debounce window (ms) for one `[genui-action]` name: rapid
  * repeated interactions on one control (button mashing, switch flipping)

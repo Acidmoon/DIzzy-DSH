@@ -108,6 +108,34 @@ describe('GenUI fence rendering', () => {
   })
 })
 
+describe('GenUI nested list rendering', () => {
+  it.skipIf(!hasFenceRegistry)('renders row/text/badge children inside a list', () => {
+    const spec = {
+      items: [
+        {
+          type: 'list',
+          items: [
+            'src',
+            {
+              type: 'row',
+              items: [
+                { type: 'text', text: 'app.ts' },
+                { type: 'badge', text: 'TS' },
+                { type: 'badge', value: '42 lines' },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const { container } = render(<MarkdownText text={fenced(spec)} />)
+    expect(container.textContent).toContain('src')
+    expect(container.textContent).toContain('app.ts')
+    expect(container.textContent).toContain('TS')
+    expect(container.textContent).toContain('42 lines')
+  })
+})
+
 describe('GenUI chart skeleton (design system v2)', () => {
   it.skipIf(!hasFenceRegistry)('gives bar charts a plot area with baseline + 25/50/75% gridlines and a separate label row', () => {
     const spec = {

@@ -5,15 +5,17 @@
  * the main client bundle stays small.
  *
  * Whitelist: only a fixed set of diagram kinds render; anything else throws
- * so the caller shows its fallback. mermaid runs client-side with its own
- * sanitizer; we additionally refuse `securityLevel: 'loose'`-style inputs by
+ * so the caller shows its fallback — except undeclared flowchart bodies
+ * (model-generated sources missing the `graph TD` header line), which get
+ * the declaration prepended via ensureFlowchartKind and render normally.
+ * mermaid runs client-side with its own sanitizer; we additionally refuse `securityLevel: 'loose'`-style inputs by
  * only initializing with the strict default, AND we re-check the rendered SVG
  * before it is injected (see `assertSafeSvg` in mermaid-safe): the injection
  * point is the only place in GenUI that uses `dangerouslySetInnerHTML`, so
  * the last line of defense lives here, not inside mermaid.
  * @module @omdsh-dev/dsh-genui/client/mermaid-core
  */
-import { assertSafeSvg, repairMermaidSource } from './mermaid-safe.ts'
+import { assertSafeSvg, ensureFlowchartKind, repairMermaidSource } from './mermaid-safe.ts'
 
 let mermaidPromise: Promise<typeof import('mermaid')> | null = null
 
@@ -81,9 +83,21 @@ async function renderInto(m: typeof import('mermaid'), id: string, code: string,
  *   fails the sanitization check.
  */
 export async function renderMermaid(code: string): Promise<string> {
-  const trimmed = code.trim()
+  let trimmed = code.trim()
   const firstLine = trimmed.split('\n', 1)[0] ?? ''
-  const kind = /^([A-Za-z]+)/.exec(firstLine)?.[1] ?? ''
+  let kind = /^([A-Za-z]+)/.exec(firstLine)?.[1] ?? ''
+  if (!ALLOWED_KINDS.includes(kind)) {
+    // Lenient: model-generated sources frequently omit the mandatory
+    // diagram-type declaration line (`A --> B` with no leading
+    // `graph TD`). Detect a flowchart body by its edge arrows and prepend
+    // the declaration instead of throwing straight to the raw-source
+    // fallback; genuinely unclassifiable input still fails as before.
+    const lenient = ensureFlowchartKind(trimmed)
+    if (lenient !== trimmed) {
+      trimmed = lenient
+      kind = 'graph'
+    }
+  }
   if (!ALLOWED_KINDS.includes(kind)) {
     throw new Error(`mermaid kind '${kind}' is not allowed`)
   }

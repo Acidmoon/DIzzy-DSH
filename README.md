@@ -5,6 +5,8 @@
 
 无需 npm 发布;仓库本身作为 bundle 层安装,重启后依然生效。
 
+> 目标 DSH:`@deepseek-ai/dsh@0.1.1-rc.2`(2026-08-22 上游最新 tag)。`dsh-genui@0.9.1` 与 `dsh-better-sidebar@0.15.0` 的 peer 从 `0.1.0-rc.8` / `0.1.1-rc` 起匹配;本机若仍是 `0.1.0-rc.6`,请先 `npm i -g @deepseek-ai/dsh@0.1.1-rc.2` 再重装合集。
+
 ##  能力总览
 
 ### 自有插件
@@ -20,12 +22,12 @@
 
 | 插件 | 能力 | 怎么用 | 状态 |
 |---|---|---|---|
-|  **视觉识别** `dsh-vision-toolkit` | 看图问答 / 描述 / OCR / 元素定位 / 检测 / 像素对比 / 长截图 OCR / UI 还原 | `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff` 四个核心工具**随会话常驻**;其余工具加载 vision-tools skill 后可用 | ✅ 稳定(v0.1.24) |
-|  **生成式 UI** `dsh-genui` | 模型的回答中直接渲染可交互组件:数据卡片、图表、表格、表单、试卷判分、mermaid 流程图、3D 场景 | 模型回答时自动输出 `dsh-ui` 围栏;`render_ui` 工具可把界面渲染到工具行 | ✅ 稳定(v0.8.6) |
-|  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.2) |
-|  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.12.3) |
+|  **视觉识别** `dsh-vision-toolkit` | 看图问答 / 描述 / OCR / 元素定位 / 检测 / 像素对比 / 长截图 OCR / UI 还原 | `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff` 四个核心工具**随会话常驻**;其余工具加载 vision-skills skill 后可用 | ✅ 稳定(v0.1.38) |
+|  **生成式 UI** `dsh-genui` | 模型的回答中直接渲染可交互组件:数据卡片、图表(含 ECharts)、diagram、表格、表单、试卷判分、mermaid、3D、音视频 | 模型回答时自动输出 `dsh-ui` 围栏;`render_ui` 工具可把界面渲染到工具行 | ✅ 稳定(v0.9.1) |
+|  **桌面通知** `dsh-notification` | 会话跑完一轮任务时弹系统通知,切走也能知道进度 | 设置 > 通知 可配:结束状态(完成/出错/中止/阻塞)、关键词包含/排除规则 | ✅ 稳定(v0.1.3) |
+|  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器 / 侧边对话,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.15.0) |
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
-|  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.6.2) |
+|  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.6.3) |
 
 ### 自有预设(agent preset)
 
@@ -50,13 +52,13 @@ registry。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/T
 
 | 插件 | 作者 | 项目 | 地址 | 版本 | 收录方式 |
 |---|---|---|---|---|---|
-| dsh-vision-toolkit | [Anionex](https://github.com/Anionex) | dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | 0.1.24 | 仓库快照(包名 `@anionex/dsh-vision-toolkit`) |
-| dsh-genui | [omdsh-dev](https://github.com/omdsh-dev) | dsh-genui | https://github.com/omdsh-dev/dsh-genui | 0.8.6 | 仓库快照 |
-| dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.2 | 仓库快照 |
-| dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.12.3 | npm registry |
+| dsh-vision-toolkit | [Anionex](https://github.com/Anionex) | dsh-vision-toolkit | https://github.com/Anionex/dsh-vision-toolkit | 0.1.38 | 仓库快照(包名 `@anionex/dsh-vision-toolkit`) |
+| dsh-genui | [omdsh-dev](https://github.com/omdsh-dev) | dsh-genui | https://github.com/omdsh-dev/dsh-genui | 0.9.1 | 仓库快照 |
+| dsh-notification | [omdsh-dev](https://github.com/omdsh-dev) | dsh-notification | https://github.com/omdsh-dev/dsh-notification | 0.1.3 | 仓库快照 |
+| dsh-better-sidebar | [omdsh-dev](https://github.com/omdsh-dev) | DSH-better-sidebar | https://github.com/omdsh-dev/DSH-better-sidebar | 0.15.0 | npm registry |
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 | dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
-| dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.6.2 | 仓库快照(插件包子目录) |
+| dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.6.3 | 仓库快照(插件包子目录) |
 
 ##  快速开始
 
@@ -278,7 +280,7 @@ vision-toolkit:
 
 **验证**:新会话给模型一张图片,让它用 `vision_glance` 描述;工具目录应直接
 出现 `vision_glance` / `vision_ground` / `vision_detect` / `vision_pixel_diff`
-四个常驻工具(其余工具加载 vision-tools skill 后出现)。
+四个常驻工具(其余工具加载 vision-skills skill 后出现)。
 
 **排查**:
 
@@ -286,7 +288,7 @@ vision-toolkit:
   Python 工具链,失败多为网络/磁盘问题;或改用 `runtime.mode: external` 并指定
   `agentVisionToolkitPath` / `python` 指向已有环境;
 - 调用报 credential 错误:检查 credentials 里是否真的设置了对应名字的 key;
-- 只能看到 4 个常驻工具:正常,其余工具由 vision-tools skill 激活。
+- 只能看到 4 个常驻工具:正常,其余工具由 vision-skills skill 激活。
 
 ### 2. 生成式 UI dsh-genui
 
@@ -326,7 +328,7 @@ vision-toolkit:
 
 **需用户提供**:无。
 
-**配置**:零配置,即点即用(界面右侧侧边栏图标)。v0.12.2 起内置 Office 预览(docx/xlsx/pptx)已拆出,需要时另装上游推荐的扩展插件。
+**配置**:零配置,即点即用(界面右侧侧边栏图标)。v0.12.2 起内置 Office 预览(docx/xlsx/pptx)已拆出,需要时另装上游推荐的扩展插件。v0.15.0 起含侧边对话(Side Chat,beta)。
 
 **验证**:点开侧边栏,可见资源管理器 / 编辑器 / 终端 / Git / 浏览器分区,按会话隔离。
 
@@ -354,7 +356,7 @@ vision-toolkit:
 
 - 设置里没有「界面设定」:未重装合集或未硬刷新。走「更新」仪式(删 `dizzy-dsh*` 与 `dsh-gui-customization` 副本再 add)后重启 + Ctrl+Shift+R;
 - 曾单独 `dsh plugin add dsh-gui-customization`(或 GitHub 直装):合集接管前先 `remove` 那份,否则会撞 `duplicate loader entry id: ui-gui-customization`;
-- 大背景图不显示:上游 0.5.1 已改 Blob URL;确认快照版本 ≥ 0.6.2;
+- 大背景图不显示:上游 0.5.1 已改 Blob URL;确认快照版本 ≥ 0.6.3;
 - 侧边栏开透明后 better-sidebar 衬底可能发虚:关「侧边栏透明」即可,不是挂载失败;
 - 换浏览器 / 清站点数据会丢配色和背景,这是浏览器存储,不是合集没装上。
 

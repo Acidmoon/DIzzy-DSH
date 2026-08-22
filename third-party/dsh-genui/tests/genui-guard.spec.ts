@@ -2,8 +2,8 @@
 // Pure node tests — no DOM. The fence path runs every body through
 // `repairGenuiSpec` before rendering, so these invariants protect the UI.
 import { describe, expect, it } from 'vitest'
-import { GENUI_LIMITS, repairGenuiSpec, validateGenuiSpec } from '../src/client/guard.ts'
-import { isGenuiSpec, parseGenuiSpec } from '../src/client/spec.ts'
+import { GENUI_LIMITS, countDeclaredGenuiNodes, countGenuiNodes, repairGenuiSpec, validateGenuiSpec } from '../src/client/guard.ts'
+import { type GenuiNode, type GenuiList, isGenuiSpec, parseGenuiSpec } from '../src/client/spec.ts'
 
 const text = (content: string) => ({ type: 'text', content })
 
@@ -100,10 +100,30 @@ describe('repairGenuiSpec: node-level healing', () => {
       { type: 'button' }, // no label
       { type: 'table', columns: ['a'] }, // no rows
       { type: 'quiz', question: 'q' }, // no options
+      { type: 'audio' }, // no src
+      { type: 'video' }, // no src
       text('kept'),
     ] })
     expect(spec?.items).toHaveLength(1)
     expect((spec?.items[0] as { content: string }).content).toBe('kept')
+  })
+
+  it('normalizes object-array options into strings (select/radio)', () => {
+    // Models sometimes reuse ask_user_question's {label,description} shape for
+    // select/radio options; the guard must extract readable text instead of
+    // silently dropping every option (empty list = "options not rendered").
+    const spec = repairGenuiSpec({ items: [
+      { type: 'radio', label: 'Q', group: 'q', options: [
+        { label: '甲方案', description: '说明' },
+        { value: '乙方案' },
+        { title: '丙方案' },
+        { x: 1 },
+      ] },
+      { type: 'select', options: [{ label: '选项A' }, { label: '选项B' }] },
+    ] })
+    const [radio, select] = spec!.items as Array<{ options?: string[] }>
+    expect(radio.options).toEqual(['甲方案', '乙方案', '丙方案', '{"x":1}'])
+    expect(select.options).toEqual(['选项A', '选项B'])
   })
 
   it('clamps out-of-range numbers', () => {
@@ -127,6 +147,20 @@ describe('repairGenuiSpec: node-level healing', () => {
     const long = 'x'.repeat(5000)
     const spec = repairGenuiSpec({ items: [text(long)] })
     expect((spec!.items[0] as { content: string }).content).toHaveLength(GENUI_LIMITS.maxString)
+  })
+
+  it('keeps safe media URLs and rejects active or local schemes', () => {
+    const spec = repairGenuiSpec({ items: [
+      { type: 'audio', src: '/mmx-files/a.mp3', alt: 'A', loop: true },
+      { type: 'video', src: 'https://cdn.example.com/b.mp4', poster: '/b.jpg', aspectRatio: '4:3', muted: true },
+      { type: 'audio', src: 'javascript:alert(1)' },
+      { type: 'video', src: 'file:///tmp/private.mp4' },
+      { type: 'video', src: '//example.com/protocol-relative.mp4' },
+    ] })
+    expect(spec?.items).toEqual([
+      { type: 'audio', src: '/mmx-files/a.mp3', alt: 'A', loop: true },
+      { type: 'video', src: 'https://cdn.example.com/b.mp4', poster: '/b.jpg', muted: true, aspectRatio: '4:3' },
+    ])
   })
 
   it('truncates oversized code and mermaid bodies', () => {
@@ -201,6 +235,198 @@ describe('repairGenuiSpec: node-level healing', () => {
   })
 })
 
+describe('repairGenuiSpec: table / tabs tolerance (issue #42)', () => {
+  it('flattens object columns and object-array rows (data alias) into a real table', () => {
+    const spec = repairGenuiSpec({ items: [
+      { type: 'table',
+        columns: [{ title: '名称', key: 'name' }, { title: '数量', dataIndex: 'count' }],
+        data: [
+          { name: '苹果', count: 3, extra: 'x' },
+          { name: '梨', count: null },
+        ] },
+    ] })
+    const table = spec?.items[0] as { columns: string[], rows: Array<Array<string | number>> }
+    expect(table.columns).toEqual(['名称', '数量'])
+    expect(table.rows).toEqual([['苹果', 3], ['梨', '']])
+  })
+
+  it('keys object rows by the first row when columns are plain strings', () => {
+    const spec = repairGenuiSpec({ items: [
+      { type: 'table', columns: ['a', 'b'], rows: [{ a: 1, b: 'two' }] },
+    ] })
+    const table = spec?.items[0] as { rows: Array<Array<string | number>> }
+    expect(table.rows).toEqual([[1, 'two']])
+  })
+
+  it('accepts tabs[].content as an items alias (array or single component)', () => {
+    const spec = repairGenuiSpec({ items: [
+      { type: 'tabs', tabs: [
+        { label: '一', content: [{ type: 'text', content: 'a' }, { type: 'badge', label: 'b' }] },
+        { label: '二', content: { type: 'text', content: 'c' } },
+      ] },
+    ] })
+    const tabs = spec?.items[0] as { tabs: Array<{ label: string, items: unknown[] }> }
+    expect(tabs.tabs[0]?.items).toHaveLength(2)
+    expect(tabs.tabs[1]?.items).toHaveLength(1)
+  })
+})
+
+describe('node counting: container descent + declared nodes (issue #42)', () => {
+  it('countGenuiNodes descends into row / col / grid / card containers', () => {
+    const tree = { items: [
+      { type: 'row', items: [{ type: 'col', items: [text('a'), text('b')] }] },
+      { type: 'grid', cols: 2, items: [text('c')] },
+      { type: 'card', title: 'k', items: [text('d')] },
+    ] }
+    expect(countGenuiNodes(tree)).toBe(8)
+  })
+
+  it('countDeclaredGenuiNodes walks the same containers and skips non-node "type" strings', () => {
+    const tree = { items: [
+      { type: 'row', items: [text('a')] },
+      { type: 'file-tree', items: [
+        { name: 'src', type: 'dir', children: [{ name: 'i.ts', type: 'file' }] },
+      ] },
+    ] }
+    // row + text + the file-tree node itself; the dir/file children are not
+    // GenUI nodes and must not count.
+    expect(countDeclaredGenuiNodes(tree)).toBe(3)
+  })
+
+  it('countDeclaredGenuiNodes counts a single-component root', () => {
+    expect(countDeclaredGenuiNodes({ type: 'callout', content: 'x' })).toBe(1)
+  })
+})
+
+describe('repairGenuiSpec: list nodes', () => {
+  it('keeps row/text/badge children inside a list', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        {
+          type: 'list',
+          items: [
+            'src',
+            {
+              type: 'row',
+              items: [
+                { type: 'text', text: 'app.ts' },
+                { type: 'badge', text: 'TS' },
+                { type: 'badge', value: '42 lines' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const [list] = spec!.items as Array<{ items: GenuiList['items'] }>
+    expect(list.items).toHaveLength(2)
+    expect(list.items[0]).toBe('src')
+    const row = list.items[1] as GenuiNode & { items: GenuiNode[] }
+    expect(row.type).toBe('row')
+    expect(row.items.map(item => item.type)).toEqual(['text', 'badge', 'badge'])
+    expect(row.items[0]).toMatchObject({ type: 'text', content: 'app.ts' })
+    expect(row.items[1]).toMatchObject({ type: 'badge', label: 'TS' })
+    expect(row.items[2]).toMatchObject({ type: 'badge', label: '42 lines' })
+  })
+
+  it('keeps valid entries while dropping invalid typed list nodes', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        {
+          type: 'list',
+          items: [
+            'plain',
+            { type: 'row', items: [{ type: 'text', content: 'keep' }] },
+            { type: 'text' },
+            { type: 'button' },
+            { type: 'badge', label: 'ok' },
+          ],
+        },
+      ],
+    })
+    const [list] = spec!.items as Array<{ items: GenuiList['items'] }>
+    expect(list.items).toEqual([
+      'plain',
+      { type: 'row', items: [{ type: 'text', content: 'keep' }] },
+      { type: 'badge', label: 'ok' },
+    ])
+  })
+
+  it('charges typed list children against the shared node budget', () => {
+    const badges = (n: number) => Array.from({ length: n }, (_, i) => ({ type: 'badge' as const, label: `b${i}` }))
+    const spec = repairGenuiSpec({
+      items: [
+        { type: 'list', items: badges(50) },
+        { type: 'list', items: badges(50) },
+        { type: 'list', items: badges(50) },
+        { type: 'list', items: badges(50) },
+      ],
+    })
+    const lists = spec!.items as Array<{ items: Array<{ type: string; label: string }> }>
+    // 3 full lists (3×50 badges) + 3 list nodes = 153 nodes; the 4th list
+    // node costs 1 and fits 46 more badges before the 200-node budget cuts
+    // (196 badges + 4 lists = 200 exactly). Without the deduction all 204
+    // nodes would slip through.
+    expect(lists[0]!.items).toHaveLength(50)
+    expect(lists[1]!.items).toHaveLength(50)
+    expect(lists[2]!.items).toHaveLength(50)
+    expect(lists[3]!.items).toHaveLength(46)
+    expect(countGenuiNodes(spec)).toBe(GENUI_LIMITS.maxNodes)
+  })
+
+  it('keeps title-objects, strings, and typed nodes interleaved in order', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        {
+          type: 'list',
+          items: [
+            { type: 'badge', label: 'node-first' },
+            { title: 'titled', desc: 'd' },
+            'plain',
+            { type: 'text', text: 'typed-last' },
+          ],
+        },
+      ],
+    })
+    const [list] = spec!.items as Array<{ items: GenuiList['items'] }>
+    expect(list.items).toEqual([
+      { type: 'badge', label: 'node-first' },
+      { title: 'titled', desc: 'd' },
+      'plain',
+      { type: 'text', content: 'typed-last' },
+    ])
+  })
+
+  it('prefers the title form when an object carries both title and type', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        { type: 'list', items: [{ title: 'T', desc: 'D', type: 'badge', label: 'B' }] },
+      ],
+    })
+    const [list] = spec!.items as Array<{ items: GenuiList['items'] }>
+    expect(list.items).toEqual([{ title: 'T', desc: 'D' }])
+  })
+
+  it('countGenuiNodes includes typed list children', () => {
+    const count = countGenuiNodes({
+      items: [
+        {
+          type: 'list',
+          items: [
+            { type: 'badge', label: 'a' },
+            { type: 'list', items: [{ type: 'text', content: 'x' }] },
+            'plain',
+            { title: 't' },
+          ],
+        },
+      ],
+    })
+    // list + badge + nested-list + nested-text = 4; the 'plain' string and
+    // {title,desc} shape are list-item entries, not nodes.
+    expect(count).toBe(4)
+  })
+})
+
 describe('validateGenuiSpec: diagnostics', () => {
   it('passes a well-formed spec', () => {
     const result = validateGenuiSpec({ items: [text('a'), { type: 'progress', value: 50 }] })
@@ -234,6 +460,31 @@ describe('validateGenuiSpec: diagnostics', () => {
     const result = validateGenuiSpec({ items: [{ type: 'my-widget' }] })
     expect(result.ok).toBe(false)
     expect(result.errors.join('\n')).toContain("unknown type 'my-widget'")
+  })
+
+  it('accepts text/badge aliases the same way repair does', () => {
+    const result = validateGenuiSpec({
+      items: [
+        {
+          type: 'list',
+          items: [
+            { type: 'text', text: 'app.ts' },
+            { type: 'badge', text: 'TS' },
+            { type: 'badge', value: '42 lines' },
+            { type: 'badge', label: 'plain' },
+          ],
+        },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('still rejects text/badge without any accepted label field', () => {
+    const result = validateGenuiSpec({ items: [{ type: 'text' }, { type: 'badge' }] })
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toContain("requires content or text")
+    expect(result.errors.join('\n')).toContain("requires label, text, or value")
   })
 })
 

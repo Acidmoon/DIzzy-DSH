@@ -12,15 +12,15 @@
 | 项 | 值 |
 |---|---|
 | 上游仓库 | https://github.com/Anionex/dsh-vision-toolkit |
-| 收录版本 | `0.1.24`(npm 包 `@anionex/dsh-vision-toolkit@0.1.24`) |
-| 上游 commit | `86fcf71`(chore: release v0.1.24) |
+| 收录版本 | `0.1.38`(npm 包 `@anionex/dsh-vision-toolkit@0.1.38`;git HEAD `5a33bf6` 含 tag 之后的 label/docs 修复) |
+| 上游 commit | `5a33bf6`(docs: distinguish AIHubMix signup regions) |
 | License | MIT |
 | 功能 | DSH 视觉工程工具集:`vision_glance / ground / detect / crop / trace / pixel_diff` 等原生视觉工具,基于上游 [agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit)(`v0.1.0+snapshot.bc9803d`) |
 | 手工补丁 | 有,见 [docs/THIRD-PARTY-PATCHES.md](../../docs/THIRD-PARTY-PATCHES.md) 的 `dsh-vision-toolkit-exposure.patch` 与 `dsh-vision-toolkit-windows-ensurepip.patch` |
 
 ## 收录说明
 
-- git subtree 跟随上游 `main`(`86fcf71` / v0.1.24,`--squash` 模式)。
+- 跟随上游 `main`(`5a33bf6` / 0.1.38+)。skill 已改名为 `vision-skills`(旧 `vision-tools` 仍识别)。
 - 包名已从停用的 `@dsh-external/dsh-vision-toolkit` 迁到 `@anionex/dsh-vision-toolkit`;
   合集 `package.json` 与 `cordis.patch.yml` 必须跟新包名。
 - 上游 0.1.8+ 新增 `workers/`(Cloudflare Worker 部署,与 DSH 插件本体无关),

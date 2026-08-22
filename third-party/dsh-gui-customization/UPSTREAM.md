@@ -12,8 +12,8 @@
 |---|---|
 | 上游仓库 | https://github.com/LAN-TINA-WS/dsh-gui-customization |
 | 作者 | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) |
-| 收录版本 | `0.6.2` |
-| 上游 commit | `57d7098`(docs: add creator to Contributors section; 含 Terracotta 预设改名) |
+| 收录版本 | `0.6.3` |
+| 上游 commit | `9945cdb`(fix: dual-protocol registration for settings.plugin.item; bump 0.6.3) |
 | License | MIT |
 | 功能 | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景、配色导入导出、中英双语;入口在「设置 → 界面设定」 |
 
@@ -23,7 +23,7 @@
   本快照只收录该子包(含已构建的 `lib/` 与内置背景图),不含仓库根的
   `plugins/` 动态原型、`docs/`、`build/`、`templates/`。
 - 已排除 `.git`、`node_modules`。
-- **未修改任何上游文件**。合集侧只多这一份 `UPSTREAM.md`。
+- **未修改任何上游文件**(0.6.3 已吸收 keyed-slot 双协议,本地补丁已删除)。合集侧只多这一份 `UPSTREAM.md`。
 - 包自带 `dsh.bundle.patch`(id `ui-gui-customization`),但合集安装时它
   **不会**作为独立 bundle 生效(reconcile 只扫 profile 顶层依赖)。挂载
   由主插件 `cordis.patch.yml` 的 entry(id `ui-gui-customization`,与上游

@@ -31,6 +31,10 @@ export declare function FeatureSettingsRows(props: {
      *  display (clamped for numbers, the current pref when the input is
      *  invalid). Optional: rows with no handler keep their draft. */
     onCommit?: (toggle: SidebarSettingToggle, raw: string) => string;
+    /** Commit one select row: the picked option's value (single) or the array
+     *  of picked values (`multi: true`). Optional: rows with no handler are
+     *  display-only. */
+    onSelectValue?: (toggle: SidebarSettingToggle, next: unknown) => void;
     /** Explicit value source (v0.12.0+): when given, rows read their values
      *  from it instead of the `prefs` face — plugin-owned rows read their
      *  own blob, so a plugin key can never collide with (or silently read)
@@ -54,8 +58,10 @@ export declare function SettingsBody(props: {
     service: BetterSidebarService;
     onToggle: (toggle: SidebarSettingToggle, next: boolean) => void;
     onCommit: (toggle: SidebarSettingToggle, raw: string) => string;
+    onSelectValue: (toggle: SidebarSettingToggle, next: unknown) => void;
     onPluginToggle: (toggle: SidebarSettingToggle, next: boolean) => void;
     onPluginCommit: (toggle: SidebarSettingToggle, raw: string) => string;
+    onPluginSelectValue: (toggle: SidebarSettingToggle, next: unknown) => void;
     onPluginWrite: (key: string, value: unknown) => void;
     onClose: () => void;
 }): import("react").JSX.Element | null;

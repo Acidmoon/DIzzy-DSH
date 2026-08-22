@@ -74,7 +74,10 @@ function env(): Env {
   return e
 }
 
-describe('install.sh skill sync safety', () => {
+// Each case spawns REAL shells (stub PATH + chmod + sh) at ~1s per run, so
+// the default 5000ms per-test budget can trip under a full parallel suite
+// (observed on busy machines). A suite-level timeout keeps CI deterministic.
+describe('install.sh skill sync safety', { timeout: 30_000 }, () => {
   it('creates the skill file when the target does not exist', () => {
     const e = env()
     const { status, stdout } = e.run()
@@ -167,7 +170,7 @@ describe('install.sh skill sync safety', () => {
   })
 })
 
-describe('install.sh argument safety', () => {
+describe('install.sh argument safety', { timeout: 30_000 }, () => {
   it('rejects an illegal profile name before doing anything', () => {
     const e = env()
     const { status, stdout } = e.run('web; rm -rf /tmp/x')

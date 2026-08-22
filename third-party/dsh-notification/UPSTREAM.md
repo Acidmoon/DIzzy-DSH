@@ -12,16 +12,16 @@
 |---|---|
 | 上游仓库 | https://github.com/omdsh-dev/dsh-notification |
 | 作者 | [omdsh-dev](https://github.com/omdsh-dev) |
-| 收录版本 | `0.1.2` |
-| 上游 commit | `2399457`(feat: notify for pending interactions) |
+| 收录版本 | `0.1.3` |
+| 上游 commit | `ddec603`(chore: release 0.1.3) |
 | License | MIT |
 | 功能 | 会话跑完一轮任务时弹系统通知;设置 > 通知 可配结束状态与关键词规则 |
 
 ## 收录说明
 
-- git subtree 跟随上游 `main`(`2399457` / v0.1.2,`--squash` 模式)。
-- **未修改任何上游文件**。合集侧只多这一份 `UPSTREAM.md`。
-- 上游无 tag、未发布 npm,只能跟 `main`。
+- 跟随上游 `main`(`ddec603` / v0.1.3)。
+- 合集另有 `patches/dsh-notification-peer-ranges.patch`:上游 peer 仍是 `*`,收敛后才能和 rc 包一起解析。
+- 上游已打 tag `v0.1.3`;registry 上的 npm 包仍可能落后,合集跟 git。
 
 ## 更新方式
 

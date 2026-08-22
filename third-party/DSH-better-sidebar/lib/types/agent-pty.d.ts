@@ -112,11 +112,12 @@ export declare function snapshotOf(handle: AgentTerminalHandle): AgentTerminalSn
  */
 export declare class AgentPtyRegistry {
     private readonly shell;
+    private readonly shellArgs;
     /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
     private readonly nodePty;
     private readonly sessions;
     private readonly changeListeners;
-    constructor(shell: string, 
+    constructor(shell: string, shellArgs?: string[], 
     /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
     nodePty?: NodePtyModule);
     /**
@@ -127,7 +128,7 @@ export declare class AgentPtyRegistry {
      * user closes the sidebar tab. An empty `command` spawns a bare shell.
      * @returns the new handle's uuid (the model-facing opaque id).
      */
-    create(sessionId: string, title: string, command: string, cwd: string, cols?: number, rows?: number): string;
+    create(sessionId: string, title: string, command: string, cwd: string, cols?: number, rows?: number, shell?: string, shellArgs?: string[]): string;
     /** All live agent terminals belonging to one conversation. */
     list(sessionId: string): AgentTerminalSnapshot[];
     /** Resolve a live handle by uuid, or throw `not-found`. */

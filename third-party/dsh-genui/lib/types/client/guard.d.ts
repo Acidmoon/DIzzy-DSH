@@ -60,6 +60,24 @@ export declare const GENUI_LIMITS: {
     readonly maxKeyValuePairs: 24;
     /** Maximum `file-tree` nesting. */
     readonly maxTreeDepth: 6;
+    /** Maximum `diagram` nodes / edges / zones / focal accents (editorial
+     * complexity budget, mirroring diagram-design's §7 limits). */
+    readonly maxDiagramNodes: 9;
+    readonly maxDiagramEdges: 12;
+    readonly maxDiagramZones: 3;
+    readonly maxDiagramFocal: 2;
+    readonly maxDiagramLabel: 14;
+    /** Maximum depth of an `echart` option object (prevents pathological nested
+     * ECharts configs from stalling the guard walk). */
+    readonly maxEChartOptionDepth: 10;
+    /** Maximum length of any single array inside an `echart` option (prevents
+     * a model from stalling rendering with `series.data` of hundreds of
+     * thousands of points). */
+    readonly maxEChartArrayLen: 500;
+    /** Maximum total entries (object keys + array elements) traversed while
+     * sanitizing an `echart` option. Bounds the walk so a pathologically
+     * large option object cannot stall the guard. */
+    readonly maxEChartOptionNodes: 2000;
 };
 /** Result of `validateGenuiSpec`. */
 export interface GenuiValidation {
@@ -78,13 +96,26 @@ export interface GenuiValidation {
 export declare function repairGenuiSpec(value: unknown): GenuiSpec | null;
 /**
  * Count the nodes of a spec tree (every item, descending into tabs /
- * accordion / file-tree containers — the same descent `validateGenuiSpec`
- * walks). Shared by the panel fold (node-budget gate) and validation, so
- * the panel never runs a second, divergent traversal. `cap` bounds the walk
- * for hostile inputs; the panel passes `PANEL_LIMITS.maxNodes + 1` to detect
- * overflow without counting the whole tree.
+ * accordion / file-tree / list containers — the same descent
+ * `validateGenuiSpec` walks). Shared by the panel fold (node-budget gate)
+ * and validation, so the panel never runs a second, divergent traversal.
+ * `cap` bounds the walk for hostile inputs; the panel passes
+ * `PANEL_LIMITS.maxNodes + 1` to detect overflow without counting the whole
+ * tree.
  */
 export declare function countGenuiNodes(value: unknown, cap?: number): number;
+/** Every white-listed node `type`. Keep in sync with the repairNode switch —
+ * validate_dsh_ui uses it to tell declared GenUI nodes apart from unrelated
+ * `"type"` strings (e.g. file-tree's `{type:'file'}` children). */
+export declare const GENUI_NODE_TYPES: ReadonlySet<string>;
+/**
+ * Count DECLARED nodes in a raw spec tree: objects whose `type` is a
+ * white-listed string, descending the same containers `countGenuiNodes`
+ * walks. `validate_dsh_ui` compares this with the repaired count to surface
+ * children the repair silently dropped (blank-render class of bugs, issue
+ * #42) instead of reporting a green check on a half-empty tree.
+ */
+export declare function countDeclaredGenuiNodes(value: unknown, cap?: number): number;
 /**
  * Validate a raw spec value against the white list and limits, collecting
  * human-readable problems. Unlike repair this never mutates: it is a

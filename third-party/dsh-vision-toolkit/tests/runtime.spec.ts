@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -155,6 +155,43 @@ describe('VisionToolkitRuntime', () => {
     expect(result.images[0]?.bytes).toBeGreaterThan(0)
   })
 
+  it('pins one resolved credential to the evidence fingerprint and vision call', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(LocalSubprocessService)
+    let credential = 'first-vision-key'
+    const resolve = vi.fn(async () => ({ value: credential, source: 'file' }))
+    ctx.provide('credentials', { resolve } as unknown as Credentials)
+    const config = resolveConfig({
+      provider: {
+        baseUrl: 'https://vision.example/v1',
+        credential: 'VISION_API_KEY',
+        model: 'fixture-model',
+      },
+      runtime: { mode: 'external', agentVisionToolkitPath: FIXTURE_UPSTREAM, python: 'python3' },
+    })
+    const adapter = new UpstreamAdapter(ctx, config, preparedFixture())
+    const runtime = new VisionToolkitRuntime(ctx, config, adapter)
+    const run = vi.spyOn(adapter, 'run')
+    const workspace = await tempWorkspace()
+
+    const captured = await runtime.captureEvidenceRuntime()
+    credential = 'second-vision-key'
+    await captured.glance({ images: ['sample.png'] }, { signal, workspace })
+
+    expect(resolve).toHaveBeenCalledTimes(1)
+    expect(run).toHaveBeenCalledWith(
+      'glance',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({ VISION_API_KEY: 'first-vision-key' }),
+      }),
+    )
+    const next = await runtime.captureEvidenceRuntime()
+    expect(resolve).toHaveBeenCalledTimes(2)
+    expect(next.evidenceFingerprint).not.toBe(captured.evidenceFingerprint)
+  })
+
   it('glance answers a question, OCRs, and zooms into a region', async () => {
     const { runtime } = await setup()
     const workspace = await tempWorkspace()
@@ -248,6 +285,7 @@ describe('VisionToolkitRuntime', () => {
       target: 'send button',
       image: {
         path: expect.stringMatching(/sample\.png$/),
+        originalPath: expect.stringMatching(/sample\.png$/),
         bytes: expect.any(Number),
         width: 256,
         height: 256,
@@ -361,14 +399,100 @@ describe('VisionToolkitRuntime', () => {
       .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('enforces byte and decoded-pixel limits as capacity errors', async () => {
+  it('auto-compresses oversized images and resizes pixel-over-limit images', async () => {
     const workspace = await tempWorkspace()
     const byteLimited = await setup({ maxImageBytes: 1024 })
-    await expect(byteLimited.runtime.glance({ images: ['sample.png'] }, { signal, workspace }))
-      .rejects.toMatchObject({ code: 'capacity' })
+    const byteResult = await byteLimited.runtime.glance({ images: ['sample.png'] }, { signal, workspace })
+    const byteImage = byteResult.images[0]
+    expect(byteImage?.bytes ?? 0).toBeLessThanOrEqual(1024)
+    expect(byteImage?.path).toMatch(/compressed-images/u)
+    expect(byteImage?.originalPath).toBe(await realpath(join(workspace, 'sample.png')))
+    await expect(readFile(join(workspace, 'sample.png'))).resolves.toEqual(await readFile(SAMPLE_IMAGE))
+
     const pixelLimited = await setup({ maxImagePixels: 65_535 })
-    await expect(pixelLimited.runtime.glance({ images: ['sample.png'] }, { signal, workspace }))
-      .rejects.toMatchObject({ code: 'capacity' })
+    const pixelResult = await pixelLimited.runtime.glance({ images: ['sample.png'] }, { signal, workspace })
+    const pixelImage = pixelResult.images[0]
+    expect((pixelImage?.width ?? 0) * (pixelImage?.height ?? 0)).toBeLessThanOrEqual(65_535)
+    expect(pixelImage?.path).toMatch(/compressed-images/u)
+    expect(pixelImage?.originalPath).toBe(await realpath(join(workspace, 'sample.png')))
+  })
+
+  it('reuses the durable compressed-image cache for identical inputs', async () => {
+    const { adapter, runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    const compress = vi.spyOn(adapter, 'compressImage')
+    const options = { signal, workspace }
+
+    const first = await runtime.glance({ images: ['sample.png'] }, options)
+    const second = await runtime.glance({ images: ['sample.png'] }, options)
+    expect(second).toEqual(first)
+    expect(compress).toHaveBeenCalledTimes(1)
+    const entries = await readdir(join(workspace, '.dsh-vision-toolkit', 'tmp', 'compressed-images'))
+    const cacheEntry = entries.find(entry => !entry.startsWith('.'))
+    expect(cacheEntry).toBeDefined()
+    expect(cacheEntry).toMatch(/^v2-[0-9a-f]{16}-b\d+-p\d+-[0-9a-f]{16}-\d+x\d+\.(?:jpg|png|webp)$/u)
+    expect(cacheEntry?.length).toBeLessThan(120)
+  })
+
+  it('ignores and replaces tampered compressed-cache entries', async () => {
+    const { runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    const options = { signal, workspace }
+    await runtime.glance({ images: ['sample.png'] }, options)
+    const cacheDir = join(workspace, '.dsh-vision-toolkit', 'tmp', 'compressed-images')
+    const entries = (await readdir(cacheDir)).filter(name => !name.startsWith('.'))
+    expect(entries).toHaveLength(1)
+    const entry = entries[0]!
+    await rm(join(cacheDir, entry))
+    const decoy = join(workspace, 'decoy.png')
+    await copyFile(SAMPLE_IMAGE, decoy)
+    await symlink(decoy, join(cacheDir, entry))
+
+    const result = await runtime.glance({ images: ['sample.png'] }, options)
+    expect(result.images[0]?.path).toMatch(/compressed-images/u)
+    const info = await lstat(join(cacheDir, entry))
+    expect(info.isSymbolicLink()).toBe(false)
+    expect(info.isFile()).toBe(true)
+    expect(info.size).toBeLessThanOrEqual(1024)
+  })
+
+  it('prunes cache entries from older compression schemas', async () => {
+    const { runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    const options = { signal, workspace }
+    await runtime.glance({ images: ['sample.png'] }, options)
+    const cacheDir = join(workspace, '.dsh-vision-toolkit', 'tmp', 'compressed-images')
+    const v1Entry = `v1-${'a'.repeat(64)}-b1024-p1000000-${'b'.repeat(64)}-256x256.png`
+    await writeFile(join(cacheDir, 'legacy-entry'), 'stale')
+    await writeFile(join(cacheDir, v1Entry), 'stale')
+
+    await runtime.glance({ images: ['sample.png'] }, options)
+    const entries = (await readdir(cacheDir)).filter(name => !name.startsWith('.'))
+    expect(entries).not.toContain('legacy-entry')
+    expect(entries).not.toContain(v1Entry)
+    expect(entries.length).toBeGreaterThan(0)
+  })
+
+  it('forwards the compressed copy to upstream and leaves the original file untouched', async () => {
+    const { adapter, runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    const run = vi.spyOn(adapter, 'run')
+
+    await runtime.glance({ images: ['sample.png'] }, { signal, workspace })
+    const upstreamPath = run.mock.calls[0]?.[1]?.[0]
+    expect(upstreamPath).toMatch(/compressed-images/u)
+    await expect(readFile(join(workspace, 'sample.png'))).resolves.toEqual(await readFile(SAMPLE_IMAGE))
+  })
+
+  it('keeps a capacity error when auto-compression cannot reach the configured limit', async () => {
+    const { adapter, runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    vi.spyOn(adapter, 'compressImage').mockRejectedValue(
+      new VisionToolkitError('capacity', 'cannot compress image under 1024 bytes: test failure'),
+    )
+
+    await expect(runtime.glance({ images: ['sample.png'] }, { signal, workspace }))
+      .rejects.toMatchObject({ code: 'capacity', message: 'cannot compress image under 1024 bytes: test failure' })
   })
 
   it('rejects missing images, malformed regions, and extension/content mismatches', async () => {
@@ -381,6 +505,19 @@ describe('VisionToolkitRuntime', () => {
       .rejects.toMatchObject({ code: 'input' })
     await expect(runtime.glance({ images: ['disguised.jpg'] }, { signal, workspace }))
       .rejects.toMatchObject({ code: 'input' })
+  })
+
+  it('refuses to overwrite the original image with a crop output after compression', async () => {
+    const { runtime } = await setup({ maxImageBytes: 1024 })
+    const workspace = await tempWorkspace()
+    const artifactDir = join(workspace, '.dsh-vision-toolkit', 'artifacts')
+    await mkdir(artifactDir, { recursive: true })
+    await copyFile(SAMPLE_IMAGE, join(artifactDir, 'sample.png'))
+    await expect(runtime.crop(
+      { image: '.dsh-vision-toolkit/artifacts/sample.png', region: '0,0,10,10', output: 'sample.png' },
+      { signal, workspace },
+    )).rejects.toMatchObject({ code: 'input' })
+    await expect(readFile(join(artifactDir, 'sample.png'))).resolves.toEqual(await readFile(SAMPLE_IMAGE))
   })
 
   it('distinguishes caller cancellation from a hard operation timeout', async () => {
@@ -603,6 +740,39 @@ describe('VisionToolkitRuntime', () => {
         connectionTested: true,
         modelTested: true,
         checks: { service: { status: 'ok' }, model: { status: 'ok' } },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
+    }
+  })
+
+  it('treats a 403 from GET /models as a warning instead of claiming the key was rejected', async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(403, { 'content-type': 'application/json' })
+      response.end('{"error":{"message":"Forbidden","type":"permission_error","code":"restricted"}}')
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('missing fixture server address')
+      const { runtime } = await setup({
+        provider: {
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          credential: 'VISION_API_KEY',
+          model: 'fixture-model',
+        },
+      })
+      const workspace = await tempWorkspace()
+      const result = await runtime.health(true, { signal, workspace })
+      expect(result).toMatchObject({
+        healthy: true,
+        connectionTested: true,
+        checks: {
+          service: {
+            status: 'warning',
+            detail: expect.stringContaining('restricted GET /models (HTTP 403)'),
+          },
+        },
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
@@ -904,6 +1074,19 @@ describe('upstream adapter version facts', () => {
       VISION_API_KEY: 'test-vision-key',
       VISION_USER_AGENT: expect.stringContaining('Mozilla/5.0'),
     })
+  })
+
+  it('forwards VISION_SSL_VERIFY to the isolated upstream process', async () => {
+    vi.stubEnv('VISION_SSL_VERIFY', 'off')
+    const { ctx, adapter, runtime } = await setup()
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+
+    const env = await runtime.resolveVisionEnv()
+    expect(env.VISION_SSL_VERIFY).toBe('off')
+    await adapter.run('glance', [SAMPLE_IMAGE], { signal, env })
+
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(spawn.mock.calls[0]?.[0].env).toMatchObject({ VISION_SSL_VERIFY: 'off' })
   })
 
   it('fails prepare with a clear runtime error when the external path is missing', async () => {

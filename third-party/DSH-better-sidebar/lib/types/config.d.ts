@@ -13,6 +13,8 @@ export interface SidebarConfig {
     readLimit?: number;
     /** Media route cap (bytes); larger binaries are refused. */
     mediaLimit?: number;
+    /** Upload route cap (bytes); larger files are refused without touching disk. */
+    uploadLimit?: number;
     /** Explorer row bound of one level. */
     listLimit?: number;
     /** Terminals per session. */
@@ -24,9 +26,17 @@ export interface SidebarConfig {
      * terminal tabs and the model-facing `terminal_*` tools. Empty = auto:
      * POSIX follows `$SHELL` then the account login shell; Windows follows
      * `DSH_SIDEBAR_SHELL`, then probes for `pwsh.exe`, then falls back to the
-     * inbox `powershell.exe` (5.1).
+     * inbox `powershell.exe` (5.1). Set it from `cordis.patch.yml` / profile
+     * plugin config, e.g. `config: { shell: /bin/zsh }`.
      */
     shell?: string;
+    /**
+     * Optional arguments passed to the shell executable. When non-empty these
+     * REPLACE the automatic platform defaults (POSIX `-l` / Windows none), so
+     * the deployment has full control over how the shell starts. When omitted
+     * the existing default behavior is kept.
+     */
+    shellArgs?: string[];
 }
 /** Schemastery schema for the plugin configuration. */
 export declare const Config: z<SidebarConfig>;
@@ -34,10 +44,14 @@ export declare const Config: z<SidebarConfig>;
 export interface ResolvedSidebarConfig {
     readLimit: number;
     mediaLimit: number;
+    uploadLimit: number;
     listLimit: number;
     terminalsPerSession: number;
     reconnectGraceMs: number;
+    /** The configured terminal shell; empty means the host auto-resolves it. */
     shell: string;
+    /** Explicit shell arguments; empty means use the platform defaults. */
+    shellArgs: string[];
 }
 /**
  * Apply direct-call defaults after Loader schema validation has normally run.

@@ -12,7 +12,7 @@ import {
 } from '../src/client/panel-store.ts'
 import { GenuiToolView } from '../src/client/toolview.tsx'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/src/client/contract/slots'
+import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 
 afterEach(() => {
   cleanup()

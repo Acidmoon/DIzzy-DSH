@@ -32,6 +32,7 @@ describe('gallery spec', () => {
     expect(body).toContain('成功')
     expect(body).toContain('CPU')
     expect(body).toContain('训练进度')
+    expect(document.querySelector('audio[controls][preload="none"]')).not.toBeNull()
     expect(body).toContain('性能指标')
     expect(body).toContain('版本')
     expect(body).toContain('标题项')
@@ -47,6 +48,8 @@ describe('gallery spec', () => {
     expect(screenAllByRole('switch').length).toBeGreaterThan(0)
     expect(document.querySelector('input[type="radio"]')).not.toBeNull()
     expect(body).toContain('复制令牌')
+    expect(document.querySelector('audio[controls][preload="metadata"]')).not.toBeNull()
+    expect(document.querySelector('video[controls][preload="metadata"]')).not.toBeNull()
     // Advanced
     expect(document.querySelector('[data-genui-callout]')).not.toBeNull()
     expect(document.querySelector('[data-genui-quiz]')).not.toBeNull()

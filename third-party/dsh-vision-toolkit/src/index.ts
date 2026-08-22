@@ -2,8 +2,9 @@
  * @anionex/dsh-vision-toolkit — DSH Vision Toolkit profile bundle.
  *
  * Plugin lifecycle follows the documented readiness chain: verify the pinned
- * upstream checkout, publish the vision-tools Skill and its one-shot bootstrap,
- * then mount the execution tools only in Agents that load that Skill. Any
+ * upstream checkout, publish the vision-skills Skill and its one-shot bootstrap,
+ * then mount the execution tools only in Agents that load that Skill or invoke
+ * the bootstrap. Any
  * failure leaves no model capability behind, and disposal unregisters every
  * global and Agent-scoped contribution the plugin mounted.
  * @module @anionex/dsh-vision-toolkit
@@ -23,11 +24,11 @@ import {
 import { VisionToolExposure } from './exposure.ts'
 import { createPasteTakeoverResolver, installImageInputVariants } from './image-input-variants.ts'
 import { VisionToolkitRuntimeManager } from './runtime-manager.ts'
-import { VISION_TOOLS_SKILL } from './skill.ts'
+import { VISION_SKILLS_SKILL } from './skill.ts'
 import { createVisionTools } from './tools.ts'
 import { PLUGIN_VERSION } from './version.ts'
 import { installVisionToolkitWeb, VisionToolkitWebBackend } from './web.ts'
-import { PastedImageBackend } from './paste-images.ts'
+import { MAX_PASTE_IMAGE_BYTES, PastedImageBackend } from './paste-images.ts'
 
 export const name = '@anionex/dsh-vision-toolkit'
 
@@ -64,7 +65,7 @@ export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Pro
     let skill: (() => void) | undefined
     try {
       activationTool = ctx.tools.register(exposure.activationTool)
-      skill = ctx.skills.register(VISION_TOOLS_SKILL)
+      skill = ctx.skills.register(VISION_SKILLS_SKILL)
       exposureDisposer = exposure.install()
       operationalDisposers = { activationTool, exposure: exposureDisposer, skill }
       const info = manager.current().upstreamVersion
@@ -89,7 +90,7 @@ export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Pro
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     ctx.logger.error(
-      'dsh-vision-toolkit %s: runtime not ready; the vision-tools skill, activation bootstrap, and Agent-scoped visual tools are NOT registered. Settings remain available for repair. %s',
+      'dsh-vision-toolkit %s: runtime not ready; the vision-skills skill, activation bootstrap, and Agent-scoped visual tools are NOT registered. Settings remain available for repair. %s',
       PLUGIN_VERSION,
       message,
     )
@@ -97,7 +98,7 @@ export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Pro
 
   const backend = new VisionToolkitWebBackend(ctx, manager, artifacts, ensureOperational)
   const pastedImages = new PastedImageBackend(ctx, {
-    maxImageBytes: () => manager.status().activeConfig?.maxImageBytes ?? resolveConfig(settings.get()).maxImageBytes,
+    maxUploadBytes: () => MAX_PASTE_IMAGE_BYTES,
   })
   // Image-input variants register asynchronously once eligible routes exist;
   // the runtime getter stays lazy so variants appear even when the runtime
@@ -113,6 +114,7 @@ export async function apply(ctx: Context, config: VisionToolkitConfig = {}): Pro
     artifacts,
     pastedImages,
     createPasteTakeoverResolver(ctx, () => resolveConfig(settings.get())),
+    () => ({ hidden: resolveConfig(settings.get()).imageInputVariants.hidden }),
   )
   disposers.push(variants.dispose)
   disposers.push(settings.watch(async (next) => {

@@ -11,8 +11,8 @@
  */
 import { type SidebarPrefs } from '../prefs-shared.ts';
 /**
- * Tab type identifier. Builtins register their ids (explorer / git / editor
- * / terminal / subagent / diff) through the sidebar service; external
+ * Tab type identifier. Builtins register their ids (editor / git / terminal
+ * / subagent / browser / diff) through the sidebar service; external
  * plugins register their own (e.g. `'my-plugin:db'`). Kept as `string` so
  * the registry stays open.
  */
@@ -29,7 +29,7 @@ export type SidebarDiffRef = {
     hashFull: string;
     subject: string;
 };
-/** One open tab. `path` carries the file (editor) or is absent (explorer/git);
+/** One open tab. `path` carries the file (editor) or is absent (git/terminal);
  *  `diff` carries the change a diff tab shows; `meta` (v0.12.0+) carries
  *  plugin-owned JSON-serializable state, preserved across reloads. */
 export interface SidebarTab {
@@ -96,14 +96,22 @@ export declare const TAB_MAX_WIDTH = 160;
  * bound is the viewport, enforced by {@link setBottomHeight}). */
 export declare const BOTTOM_MIN = 120;
 export declare const BOTTOM_DEFAULT = 220;
-/** A fresh default state: one explorer tab in one pane, open per the caller's
+/** Mint a fresh uid-based tab id. The `'editor:' + path` convention only
+ *  covers openSidebarFile opens (per-path dedupe); opens that must not
+ *  dedupe (the tree's "open to the side") mint through here. */
+export declare function mintTabId(): string;
+/** The default tab a fresh session seeds. */
+export type DefaultSeed = 'editor-home' | 'none';
+/** A fresh default state: one seeded tab in one pane, open per the caller's
  * preference. `width` is the caller's preferred panel width (default
  * PANEL_DEFAULT) and `panelOpen` whether the panel starts expanded (default
  * true); the store seeds new sessions from the user's side card prefs.
- * `seedExplorer` places the default explorer tab — the store passes false
- * when the user disabled the explorer tab type in settings, so a fresh
- * session starts with an empty pane instead of a tab they turned off. */
-export declare function makeDefaultState(width?: number, panelOpen?: boolean, seedExplorer?: boolean): SidebarState;
+ * `seed` picks the seeded tab: 'editor-home' places the EMPTY files window
+ * (an editor tab with no path whose tree panel starts open,
+ * `meta.treeOpen: true`) — in BOTH editorExplorer modes that window is the
+ * file explorer page — and 'none' starts with an empty pane (the store
+ * passes it when the user disabled the editor tab type in settings). */
+export declare function makeDefaultState(width?: number, panelOpen?: boolean, seed?: DefaultSeed): SidebarState;
 /** Which tree owns a pane/split id: 'bottomSplits' when the id lives in the
  *  bottom panel's tree, else 'splits' (the right panel's tree). Ids are
  *  globally unique (the shared uid counter), so an id in neither tree falls
@@ -289,6 +297,20 @@ export declare class SidebarStore {
     private readonly persistTimers;
     /** User-facing side card prefs seeding brand-new session states (defaults until the settings RPC resolves). */
     private prefs;
+    /**
+     * External disable (the dsh-web-ui family's aionui-panel provider choice):
+     * while true the sidebar must not mount at all. Not part of the snapshot —
+     * nothing renders on it; the mount gate and the intercept predicates read
+     * it directly.
+     */
+    private suspended;
+    /**
+     * Set the external-disable flag (from the settings route) and remember it
+     * for the mount gate and the intercept predicates.
+     */
+    setSuspended(suspended: boolean): void;
+    /** Whether the sidebar is externally disabled (aionui-panel chosen). */
+    getSuspended(): boolean;
     /**
      * Replace the side card prefs (the settings RPC result / settings page
      * write). Notifies like any store change: the snapshot carries the prefs,

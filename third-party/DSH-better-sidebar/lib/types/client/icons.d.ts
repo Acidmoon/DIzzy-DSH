@@ -29,6 +29,9 @@ export declare const IconDiffOutline16: ({ size, className }: IconProps) => impo
  * app's outline scale (16), the universal "halt this work" mark.
  */
 export declare const IconStopOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
+/** Upload glyph in the app's outline style: an arrow rising into a tray
+ *  (the file-manager "upload into the workspace" action). */
+export declare const IconUploadOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
 /** Image viewer glyph: a picture frame with a sun and a mountain. */
 export declare const IconImageOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
 /** PDF viewer glyph: a document frame with the "PDF" label. */
@@ -39,3 +42,9 @@ export declare const IconMarkdownOutline16: ({ size, className }: IconProps) => 
 export declare const IconHtmlOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
 /** Browser tab glyph: a globe with meridians. */
 export declare const IconGlobeOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
+/** History glyph (thread switcher): a clock with a counterclockwise arrow,
+ *  in the app's outline style — the "past conversations" mark. */
+export declare const IconHistoryOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;
+/** Save glyph (save-as-new-session): the classic floppy disk, in the app's
+ *  outline style. */
+export declare const IconSaveOutline16: ({ size, className }: IconProps) => import("react").JSX.Element;

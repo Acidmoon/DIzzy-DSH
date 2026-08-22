@@ -11,14 +11,14 @@
 |---|---|
 | 上游仓库 | https://github.com/omdsh-dev/dsh-genui |
 | 作者 | [omdsh-dev](https://github.com/omdsh-dev) |
-| 收录版本 | `0.8.6` |
-| 上游 commit | `2187fa4`(Merge PR #26 release/v0.8.6-draft; tag `v0.8.6`) |
+| 收录版本 | `0.9.1` |
+| 上游 commit | `1ca5da4`(Merge PR #45 dsh-0.1.1-rc2-verified; 含 ECharts / diagram / 音视频) |
 | License | MIT |
-| 功能 | 模型回答中直接渲染 `dsh-ui` 围栏:布局 / 图表 / 表单 / quiz / mermaid / 3D,以及 `render_ui` 工具 |
+| 功能 | 模型回答中直接渲染 `dsh-ui` 围栏:布局 / 图表(含 ECharts) / diagram / 表单 / quiz / mermaid / 3D / 音视频,以及 `render_ui` 工具 |
 
 ## 收录说明
 
-- git subtree 跟随上游 `main`(`2187fa4` / v0.8.6,`--squash` 模式)。
+- 跟随上游 `main`(`1ca5da4` / 0.9.1)。peer 要求 DSH `0.1.0-rc.8` 或 `0.1.1-rc` 列车。
 - `assets/demo.mp4` 与上游 `pnpm-lock.yaml` 被仓库 `.gitignore` 排除,不入库。
 - **未修改任何上游文件**。合集侧只多这一份 `UPSTREAM.md`。
 

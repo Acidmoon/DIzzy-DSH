@@ -52,7 +52,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
 2. 主插件 `package.json` 的 `dependencies` 声明自有子包
-   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.12.3`
+   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.15.0`
    走 registry、其余含 `dsh-subscription-auth` 走仓库快照)—— `file:`
    安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
@@ -462,7 +462,7 @@ git add -A && git commit -m "feat: ..." && git push
   收录位置 / 说明
 
 安装收录的插件**不需要单独 add**:主插件 `package.json` 的 `dependencies`
-声明了它们(`dsh-better-sidebar@0.12.3` registry + `@anionex/dsh-vision-toolkit`
+声明了它们(`dsh-better-sidebar@0.15.0` registry + `@anionex/dsh-vision-toolkit`
 `file:./third-party/...` 快照),一条 `dsh plugin add file:<仓库>` 全部安装
 并随主插件 patch 一起挂载:
 
@@ -493,7 +493,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 | 面 | 实现 |
 |---|---|
-| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`,统计 `assistant/message` 事件的 `data.usage`(`inputTokens+outputTokens+cacheReadTokens`)按本地日期聚合;模型归属取同一事件的 `data.message.source`(provider/model,缺省 `unknown`);增量刷新(文件 mtime+size 变化才重读,30s TTL) |
+| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`。DSH 0.1.1-rc.2 起按 token-meter:每步 `assistant/chunk { type: 'usage' }` 先入账,同 turn/step 的 `assistant/message.usage` 覆盖(失败请求只留 chunk 也计入);旧日志只有 message.usage 时按条累计。模型归属取 message 的 `data.message.source`(provider/model,缺省 `unknown`)。金额按本地价 > DeepSeek 官网峰谷价 > OpenRouter 聚合价。增量刷新(文件 mtime+size 变化才重读,30s TTL) |
 | 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, detail, scannedAt, errors }`:`days` 保持「日期 → 总 tokens」(后向兼容),`detail` = `{ days: 逐日 input/output/cacheRead 分项, recent7: 近 7 天(与查看月无关,含零用量天), today: 今日分模型 }`;`errors` > 0 时副标题提示「N 个日志文件解析失败,用量可能被低估」。旧 Host(无 `detail`)下 client 自动退化:弹窗只显总量、今日明细显重启提示 |
 | 挂载 | Client 注册 `conversation.view` list 插槽(`id: 'usage'`、`order: 20`、`label: '用量'`;chat=0、trajectory=10)。宿主把每个 entry 投影为页头 Tab,`renderSlot(..., { only: activeId })` 一次只渲染激活视图;选中状态存于宿主每会话 store(`persist: dsh.conversation.chat`),刷新页面保持;插件卸载后宿主 `resolveActiveView` 自动回退 chat。视图本身是普通整页流,不需要 portal;悬浮读数是视图内的 `position:fixed` 弹窗,跟鼠标并避让视口边缘 |
 | 热力图 | 周一起始 `7 × 周数` 网格(34px 格,行=周一~周日、列=周),格内日期数字;DeepSeek 蓝阶四档(lv1–lv4,按当月峰值比例分档),月外 `visibility:hidden`;今日描边+脉冲;hover/focus 浮层显示日期 + 总量 + 输入(未命中)/输入(命中缓存)/输出 |
@@ -503,9 +503,10 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 | 时钟 | 独立 `PeakClock`(不拖整页重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
 | 外观 | 居中栏(max-width 860px),全部吃宿主 `--dsw-*` token(明暗主题跟随);纵向滚动由宿主 scrollBody 提供,视图只管内容流;scrollBody 与对话共用,激活时主动 `scrollTop = 0` 回顶(对话自身有每会话滚动位置存档,不受影响) |
 
-> 注意:DeepSeek 官方 API 无按天用量接口(唯一官方数据源是响应里的
-> usage 字段,已由 DSH 落进会话日志),本视图展示的是**本地记录的
-> DSH 会话 token 消耗**,与官方控制台「用量」页口径可能不同。
+> 注意:DeepSeek 官方 API 无按天用量接口。DSH 0.1.1-rc.2 token-meter 以
+> 每步 `assistant/chunk { type: 'usage' }` 为样本,同 turn/step 的
+> `assistant/message.usage` 覆盖该步;本视图按同一规则聚合本地会话日志,
+> 与官方控制台「用量」页口径可能不同。
 > zstd 多帧解压逻辑复刻自 `@deepseek-ai/dsh-session-persistence-jsonl`
 > 的 `scanZstdFrames`(按 block 遍历,不依赖 FCS),插件不能 import
 > 该包(profile 的 node_modules 里没有 @deepseek-ai/*)。
@@ -566,5 +567,5 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 ---
 
-*文档版本:1.0(2026-08)。所有机制均经实际验证;修改架构前请先在
+*文档版本:1.1(2026-08-22,对齐 DSH 0.1.1-rc.2)。所有机制均经实际验证;修改架构前请先在
 创造模式用 `cordis_inspect_query` 确认当前运行时契约,再更新本文档。*

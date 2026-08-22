@@ -144,6 +144,28 @@ describe('validate_dsh_ui tool', () => {
     expect(String(await vtool.execute(good))).toContain('✅')
   })
 
+  it('warns when declared components were silently dropped (issue #42)', async () => {
+    // The table has no recognizable rows/columns at all: repair drops it and
+    // the tool must not green-light a half-empty tree.
+    const dropping = '{"items":[{"type":"table","columns":{},"rows":42},{"type":"text","content":"好"}]}'
+    const value = String(await vtool.execute({ spec: dropping }))
+    expect(value).toContain('❌')
+    expect(value).toContain('声明了 2 个组件')
+    expect(value).toContain('仅成功解析出 1 个')
+  })
+
+  it('stays green when object-shaped tables heal instead of dropping', async () => {
+    const healed = '{"items":[{"type":"table","columns":[{"title":"a","key":"k"}],"data":[{"k":"v"}]}]}'
+    const value = String(await vtool.execute({ spec: healed }))
+    expect(value).toContain('✅')
+  })
+
+  it('does not mistake file-tree children for dropped components', async () => {
+    const tree = '{"items":[{"type":"file-tree","items":[{"name":"src","type":"dir","children":[{"name":"a.ts","type":"file"}]}]}]}'
+    const value = String(await vtool.execute({ spec: tree }))
+    expect(value).toContain('✅')
+  })
+
   it('reports parse failures with position and bracket counts', async () => {
     // The real-world failure: rows-array `]` emitted as `}` (stray closer).
     const bad = '{"title":"x","items":[{"type":"table","columns":["a"],"rows":[["1"]}]}]}]}'

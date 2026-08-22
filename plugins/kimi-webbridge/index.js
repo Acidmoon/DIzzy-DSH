@@ -5,8 +5,9 @@
  * 采用渐进式披露(参考 dsh-vision-toolkit 的 exposure 模式):
  *
  *   - 全局仅注册一个引导工具 kimi_browser_activate(所有会话可见);
- *   - 模型调用引导工具后,全套 kimi_browser_* 工具注册进该 agent 的作用域,
- *     引导工具随即被 restrict 隐藏(一次性);
+ *   - 模型调用引导工具后,全套 kimi_browser_* 工具注册进该 agent 的作用域;
+ *     live 会话等到 step/end 再 restrict 隐藏引导工具,避免同一步里
+ *     仍在飞行的激活调用变成 UNKNOWN_TOOL(与 vision-toolkit 同款);
  *   - agent 销毁时工具随作用域释放。
  *
  * 配置化(与 dsh 官方插件同一模式):
@@ -315,7 +316,9 @@ export default {
     const BROWSER_TOOLS = [navigate, snapshot, click, fill, screenshot, findTab, listTabs, closeSession, command]
 
     /**
-     * 向一个 agent 注入全套浏览器工具并隐藏引导工具。
+     * 向一个 agent 注入全套浏览器工具。引导工具的隐藏延到 step/end:
+     * DSH 0.1.1-rc.2 起,同一模型步骤里立刻 restrict 会把仍在飞行的
+     * kimi_browser_activate 变成 UNKNOWN_TOOL(与 vision-toolkit 同款)。
      * @param agent - 目标 agent。
      * @returns { activated, tools }。
      */
@@ -325,17 +328,41 @@ export default {
         return { activated: false, tools: BROWSER_TOOLS.map((t) => t.name) }
       }
       const disposers = []
-      let hideActivation
       try {
         for (const tool of BROWSER_TOOLS) disposers.push(agent.ctx.tools.register(tool))
-        hideActivation = agent.ctx.tools.restrict({ deny: [ACTIVATE_NAME] })
       } catch (error) {
         for (const dispose of disposers.reverse()) dispose()
-        hideActivation?.()
         throw error
       }
-      states.set(agent, { active: true, disposers: [...disposers, hideActivation] })
+      states.set(agent, { active: true, hidden: false, disposers })
+      // 非 live 会话(测试/无 sessions 服务)立刻隐藏;生产等到 step/end。
+      try {
+        if (!isLiveSession(agent)) hideActivation(agent)
+      } catch (error) {
+        detach(agent)
+        throw error
+      }
       return { activated: true, tools: BROWSER_TOOLS.map((t) => t.name) }
+    }
+
+    function isLiveSession(agent) {
+      const sessions = ctx.get('sessions')
+      const session = agent.session
+      if (sessions === undefined || session === undefined || typeof sessions.get !== 'function') return false
+      try {
+        return sessions.get(session.id) === session
+      } catch {
+        return false
+      }
+    }
+
+    function hideActivation(agent) {
+      const state = states.get(agent)
+      if (state === undefined || state.hidden) return
+      // restrict 成功后再闩 hidden:失败时下次 step/end 还能重试(对齐 vision-toolkit)。
+      const lift = agent.ctx.tools.restrict({ deny: [ACTIVATE_NAME] })
+      state.hidden = true
+      state.disposers.push(lift)
     }
 
     /** 释放一个 agent 的全部工具注册。 */
@@ -366,7 +393,20 @@ export default {
     const onDisposed = ctx.on('agent/disposed', ({ agent }) => {
       detach(agent)
     })
+    const onStepEnd = ctx.on('session/event', (session, event) => {
+      if (event.type !== 'step/end') return
+      for (const [agent, state] of states) {
+        if (state.active && !state.hidden && agent.session === session) {
+          try {
+            hideActivation(agent)
+          } catch {
+            // agent 已拆掉或引导工具已不在全局层:忽略,随 detach 清理。
+          }
+        }
+      }
+    })
     return () => {
+      onStepEnd()
       onDisposed()
       disposeActivation()
       for (const state of states.values()) {

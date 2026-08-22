@@ -64,9 +64,9 @@ export interface VisionToolkitConfig {
   language?: 'zh' | 'en'
   /** Single remote/upstream call budget in milliseconds. */
   timeoutMs?: number
-  /** Maximum accepted input image size in bytes. */
+  /** Maximum input image size in bytes; larger images are auto-compressed (lossless first). */
   maxImageBytes?: number
-  /** Maximum decoded pixel count per input image. */
+  /** Maximum decoded pixel count per input image; larger images are auto-downscaled to fit. */
   maxImagePixels?: number
   /** In-flight tool execution cap per session. */
   concurrency?: number
@@ -100,6 +100,15 @@ export interface VisionToolkitConfig {
      * keeps the path-only takeover instead (default true).
      */
     autoSwitch?: boolean
+    /**
+     * Transparent routing: variant routes keep the upstream provider and model
+     * display names, and the browser integration hides the upstream text-only
+     * entries that have a variant twin, so the model selector shows one entry
+     * per model and sessions stay on the image-capable variant without users
+     * seeing or switching a `(Vision Toolkit)` route. On by default; disable
+     * to restore the explicit sibling entries.
+     */
+    hidden?: boolean
   }
 }
 
@@ -114,7 +123,7 @@ export const Config: Schema<VisionToolkitConfig> = z.object({
     userAgent: z.string().default(DEFAULT_VISION_USER_AGENT),
   }),
   language: z.union(['zh', 'en'] as const).default('zh'),
-  timeoutMs: z.number().default(15000),
+  timeoutMs: z.number().default(30000),
   maxImageBytes: z.number().default(4194304),
   maxImagePixels: z.number().default(20000000),
   concurrency: z.number().default(4),
@@ -128,6 +137,7 @@ export const Config: Schema<VisionToolkitConfig> = z.object({
     enabled: z.boolean().default(true),
     providers: z.array(z.string()).default([]),
     autoSwitch: z.boolean().default(true),
+    hidden: z.boolean().default(true),
   }),
 })
 
@@ -156,6 +166,7 @@ export interface ResolvedVisionToolkitConfig {
     enabled: boolean
     providers: string[]
     autoSwitch: boolean
+    hidden: boolean
   }
 }
 
@@ -209,7 +220,7 @@ export function resolveConfig(config: VisionToolkitConfig = {}): ResolvedVisionT
   if (language !== 'zh' && language !== 'en') {
     throw new VisionToolkitError('config', 'language must be "zh" or "en"')
   }
-  const timeoutMs = config.timeoutMs ?? 15000
+  const timeoutMs = config.timeoutMs ?? 30000
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new VisionToolkitError('config', `timeoutMs must be an integer between 1000 and ${MAX_TIMEOUT_MS}`)
   }
@@ -265,6 +276,7 @@ export function resolveConfig(config: VisionToolkitConfig = {}): ResolvedVisionT
       enabled: imageInputVariants.enabled ?? true,
       providers: variantProviders,
       autoSwitch: imageInputVariants.autoSwitch ?? true,
+      hidden: imageInputVariants.hidden ?? true,
     },
   }
 }

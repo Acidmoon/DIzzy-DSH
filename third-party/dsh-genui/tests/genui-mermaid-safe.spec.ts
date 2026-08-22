@@ -6,7 +6,7 @@
  * event-handler attributes, or javascript: URIs must throw.
  */
 import { describe, expect, it } from 'vitest'
-import { assertSafeSvg, repairMermaidSource } from '../src/client/mermaid-lazy.ts'
+import { assertSafeSvg, ensureFlowchartKind, repairMermaidSource } from '../src/client/mermaid-lazy.ts'
 
 const LEGIT = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><style>#a{fill:red}</style><path d="M0 0L1 1" fill="none" stroke="#333"/><text>graph TD</text></svg>`
 
@@ -131,5 +131,47 @@ describe('repairMermaidSource', () => {
     expect(repaired).toContain('A["模型"]')
     expect(repaired).toContain('|"输出 [spec]"|')
     expect(repaired).toContain('B["渲染"]')
+  })
+})
+
+describe('ensureFlowchartKind', () => {
+  it('prepends graph TD to an undeclared flowchart body (the live AI-output failure)', () => {
+    const src = 'A[高帧率摄像头 120-240fps] --> B[人脸检测+关键点追踪]\nB --> C[ROI 区域: 额头/面颊/颈部/咬肌]'
+    expect(ensureFlowchartKind(src)).toBe('graph TD\n' + src)
+  })
+
+  it('handles a multi-line body with thick and dotted edges', () => {
+    const src = 'A ==> B\nB -.-> C\nC --> D'
+    expect(ensureFlowchartKind(src)).toBe('graph TD\n' + src)
+  })
+
+  it('leaves an already-declared graph source unchanged', () => {
+    const src = 'graph LR\nA --> B'
+    expect(ensureFlowchartKind(src)).toBe(src)
+  })
+
+  it('leaves an already-declared flowchart source unchanged', () => {
+    const src = 'flowchart TD\nA --> B'
+    expect(ensureFlowchartKind(src)).toBe(src)
+  })
+
+  it('does not guess at a sequence-diagram body (-->> messages are not flowchart edges)', () => {
+    const src = 'Alice->>Bob: 你好\nBob-->>Alice: 收到'
+    expect(ensureFlowchartKind(src)).toBe(src)
+  })
+
+  it('leaves other declared diagram kinds alone', () => {
+    const src = 'pie\n  "A" : 1\n  "B" : 2'
+    expect(ensureFlowchartKind(src)).toBe(src)
+  })
+
+  it('leaves plain text alone', () => {
+    const src = 'hello world 随便写的文字'
+    expect(ensureFlowchartKind(src)).toBe(src)
+  })
+
+  it('trims surrounding whitespace before prepending', () => {
+    const src = '\n  A --> B\n'
+    expect(ensureFlowchartKind(src)).toBe('graph TD\nA --> B')
   })
 })

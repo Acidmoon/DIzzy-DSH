@@ -9,7 +9,7 @@
  * are operable, but events do NOT flow back to the model.
  */
 /** One node in the component tree. */
-export type GenuiNode = GenuiText | GenuiRow | GenuiCol | GenuiGrid | GenuiCard | GenuiButton | GenuiInput | GenuiSelect | GenuiCheckbox | GenuiLink | GenuiBadge | GenuiStat | GenuiProgress | GenuiDivider | GenuiList | GenuiTable | GenuiChart | GenuiTabs | GenuiAvatar | GenuiSpacer | GenuiPlot | GenuiCallout | GenuiSteps | GenuiKeyValue | GenuiDiff | GenuiJson | GenuiCode | GenuiRadio | GenuiSubmit | GenuiSwitch | GenuiSlider | GenuiTextarea | GenuiAccordion | GenuiCopy | GenuiMermaid | GenuiScene3D | GenuiTimeline | GenuiFileTree | GenuiBreadcrumb | GenuiQuiz;
+export type GenuiNode = GenuiText | GenuiRow | GenuiCol | GenuiGrid | GenuiCard | GenuiButton | GenuiInput | GenuiSelect | GenuiCheckbox | GenuiLink | GenuiAudio | GenuiVideo | GenuiBadge | GenuiStat | GenuiProgress | GenuiDivider | GenuiList | GenuiTable | GenuiChart | GenuiTabs | GenuiAvatar | GenuiSpacer | GenuiPlot | GenuiCallout | GenuiSteps | GenuiKeyValue | GenuiDiff | GenuiJson | GenuiCode | GenuiRadio | GenuiSubmit | GenuiSwitch | GenuiSlider | GenuiTextarea | GenuiAccordion | GenuiCopy | GenuiMermaid | GenuiScene3D | GenuiTimeline | GenuiFileTree | GenuiBreadcrumb | GenuiQuiz | GenuiDiagram | GenuiEChart;
 export interface GenuiSpec {
     /** Short title shown as the card banner. */
     title?: string;
@@ -95,6 +95,25 @@ export interface GenuiLink {
      */
     href?: string;
 }
+/** User-controlled audio from a browser-reachable URL. */
+export interface GenuiAudio {
+    type: 'audio';
+    src: string;
+    /** Visible caption and accessible player name. */
+    alt?: string;
+    loop?: boolean;
+}
+/** User-controlled video from a browser-reachable URL. */
+export interface GenuiVideo {
+    type: 'video';
+    src: string;
+    /** Visible caption and accessible player name. */
+    alt?: string;
+    poster?: string;
+    loop?: boolean;
+    muted?: boolean;
+    aspectRatio?: '16:9' | '4:3' | '1:1' | '9:16';
+}
 export interface GenuiBadge {
     type: 'badge';
     label: string;
@@ -151,7 +170,7 @@ export interface GenuiList {
     items: Array<string | {
         title: string;
         desc?: string;
-    }>;
+    } | GenuiNode>;
 }
 export interface GenuiTable {
     type: 'table';
@@ -454,6 +473,130 @@ export interface GenuiQuiz {
      * (`{type:'quiz', question, answer, correct}`) so the model can collect
      * or grade it. */
     action?: string;
+}
+/** Editorial diagram kinds, ported from cathrynlavery/diagram-design (27 types). */
+export declare const DIAGRAM_KINDS: readonly ["architecture", "it-state", "flowchart", "sequence", "state", "er", "timeline", "swimlane", "quadrant", "radar", "loop", "nested", "tree", "org-chart", "layers", "venn", "pyramid", "bar", "line", "gantt", "scatter", "high-level", "process", "medallion", "data-flow", "dp-integration", "dp-security-matrix"];
+export type GenuiDiagramKind = typeof DIAGRAM_KINDS[number];
+/** Diagram surface variant: light / dark follow the host theme; editorial is the full skin. */
+export type GenuiDiagramVariant = 'light' | 'dark' | 'editorial';
+/** Node treatment classes (map to the diagram-design semantic fills/strokes). */
+export type GenuiDiagramNodeType = 'focal' | 'backend' | 'store' | 'external' | 'input' | 'optional' | 'security';
+/** One positioned node in a coordinate-mode diagram. */
+export interface GenuiDiagramNode {
+    /** Stable node id referenced by edges. */
+    id: string;
+    /** Human-readable label (Geist sans in the renderer). */
+    label: string;
+    /** Optional technical sublabel (Geist mono in the renderer). */
+    sub?: string;
+    /** Semantic treatment; `focal` is budgeted (max 2 per diagram). */
+    type?: GenuiDiagramNodeType;
+    /** Position / size (coordinate-mode kinds only). 4px grid is enforced at render. */
+    x?: number;
+    y?: number;
+    w?: number;
+    h?: number;
+    /** Optional rectangular type tag (e.g. `API`). */
+    tag?: string;
+}
+/** One connector between two nodes. */
+export interface GenuiDiagramEdge {
+    /** Source node id. */
+    from: string;
+    /** Target node id. */
+    to: string;
+    /** Optional edge label (all-caps, <=14 chars in the renderer). */
+    label?: string;
+    /** Stroke semantics: solid (default), dashed (optional/async), accent, link (HTTP/API). */
+    kind?: 'solid' | 'dashed' | 'accent' | 'link';
+    /** Route hint; `auto` (default) lets the renderer choose orthogonal routing. */
+    route?: 'auto' | 'orthogonal' | 'straight';
+}
+/** Optional brand override; every key maps to a diagram-design semantic token. */
+export interface GenuiDiagramTheme {
+    paper?: string;
+    'paper-2'?: string;
+    ink?: string;
+    muted?: string;
+    soft?: string;
+    rule?: string;
+    accent?: string;
+    'accent-tint'?: string;
+    link?: string;
+}
+/** Zone container: a labelled region grouping related nodes (max 3). */
+export interface GenuiDiagramZone {
+    /** Zone label (mono uppercase eyebrow in the renderer). */
+    label: string;
+    /** Bounding box in the same canvas space as the nodes. */
+    x?: number;
+    y?: number;
+    w?: number;
+    h?: number;
+}
+/**
+ * Editorial diagram (diagram-design port): a white-listed declarative diagram
+ * rendered as inline SVG by the browser. `kind` selects the layout grammar
+ * (coordinate kinds place nodes via x/y; rule kinds auto-layout from data),
+ * `variant` selects the skin, and `theme` overrides semantic tokens. The
+ * renderer enforces the editorial constraints — orthogonal connectors, 4px
+ * grid, complexity budget, focal accent budget — so the model cannot emit
+ * "AI slop" schematics.
+ */
+export interface GenuiDiagram {
+    type: 'diagram';
+    /** The 27-type editorial vocabulary. */
+    kind: GenuiDiagramKind;
+    /** Surface skin; default follows the host theme. */
+    variant?: GenuiDiagramVariant;
+    /** Optional diagram title (Instrument Serif in the renderer). */
+    title?: string;
+    /** Nodes (coordinate kinds use x/y/w/h; rule kinds may omit positions). */
+    nodes: GenuiDiagramNode[];
+    /** Connectors. */
+    edges?: GenuiDiagramEdge[];
+    /** Optional labelled regions grouping nodes (max 3). */
+    zones?: GenuiDiagramZone[];
+    /** Optional semantic-token overrides. */
+    theme?: GenuiDiagramTheme;
+}
+/** Preset chart kinds the `echart` node can build from `data`/`series` without
+ * a full ECharts option. Each maps to a themed option template. */
+export type EChartPreset = 'bar' | 'line' | 'area' | 'pie' | 'scatter';
+/** ECharts node: renders a full ECharts chart. Two modes:
+ *
+ * 1. **Full option** (`option` set): the model provides a standard ECharts
+ *    `EChartsCoreOption` object directly. This is the escape hatch for
+ *    custom chart types, complex series, or advanced features (dataZoom,
+ *    visualMap, etc.).
+ * 2. **Preset shorthand** (`preset` + `data`/`series`): the model provides
+ *    the same simple `data`/`series` shape as the `chart` node, and the
+ *    component builds a themed ECharts option automatically. This is the
+ *    easy upgrade path: change `type: 'chart'` to `type: 'echart'` and add
+ *    `preset`.
+ *
+ * The echarts engine is lazy-loaded (lib/assets/echarts.js) only when an
+ * `echart` node appears in a spec. */
+export interface GenuiEChart {
+    type: 'echart';
+    /** Optional title shown above the chart. */
+    title?: string;
+    /** Chart height in pixels (default 300). */
+    height?: number;
+    /** Preset: builds the ECharts option from `data`/`series` when `option`
+     * is absent. */
+    preset?: EChartPreset;
+    /** Simple data for preset mode (same shape as `chart.data`). */
+    data?: GenuiChartDatum[];
+    /** Multi-series for preset mode (same shape as `chart.series`). */
+    series?: Array<{
+        label: string;
+        color?: string;
+        data: GenuiChartDatum[];
+    }>;
+    /** Full ECharts option object. When present, `preset`/`data`/`series` are
+     * ignored. This is a pass-through to `echarts.setOption`. */
+    option?: Record<string, unknown>;
 }
 /** Parse the raw fence body as a GenuiSpec, or null when it is not one. */
 export declare function parseGenuiSpec(raw: string): GenuiSpec | null;

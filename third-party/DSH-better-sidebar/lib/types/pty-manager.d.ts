@@ -33,11 +33,12 @@ export interface SidebarPty {
 export declare class PtyManager {
     private readonly shell;
     private readonly maxPerSession;
+    private readonly shellArgs;
     /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
     private readonly nodePty;
     private readonly sessions;
     private readonly pendingCloses;
-    constructor(shell: string, maxPerSession: number, 
+    constructor(shell: string, maxPerSession: number, shellArgs?: string[], 
     /** The loaded node-pty module (injected so a broken install degrades instead of crashing the plugin). */
     nodePty?: NodePtyModule);
     /** All live terminal keys of one session. */
@@ -60,7 +61,7 @@ export declare class PtyManager {
      * @returns the live handle.
      * @throws {SidebarError} pty-error when the per-session cap is reached.
      */
-    open(sessionId: string, tabId: string, cwd: string, cols: number, rows: number): SidebarPty;
+    open(sessionId: string, tabId: string, cwd: string, cols: number, rows: number, shell?: string, shellArgs?: string[]): SidebarPty;
     /**
      * Schedule the terminal's destruction after `delayMs`. A tab close sends
      * delay 0 (release the quota immediately); a bare socket drop (refresh,
@@ -113,8 +114,17 @@ export interface ShellResolutionOptions {
  */
 export declare function defaultShell(options?: ShellResolutionOptions): string;
 /**
+ * A short display name for a shell executable, used as the terminal tab
+ * title. `/bin/zsh` → `zsh`, `C:\...\powershell.exe` → `powershell`.
+ * Falls back to the raw value when no basename can be derived.
+ */
+export declare function shellDisplayName(shell: string): string;
+/**
  * Spawn arguments that make the shell behave like a terminal-emulator tab:
  * POSIX shells start as login shells (`-l`) so they read the profile files
  * (`~/.profile`, `~/.zprofile`); Windows PowerShell takes no login flag.
+ *
+ * When explicit `configured` args are supplied they REPLACE the platform
+ * defaults entirely, giving deployments full control over shell startup.
  */
-export declare function shellSpawnArgs(): string[];
+export declare function shellSpawnArgs(configured?: string[]): string[];

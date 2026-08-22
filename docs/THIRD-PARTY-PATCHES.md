@@ -13,8 +13,8 @@
 
 **插件**:dsh-vision-toolkit
 **目标文件**:`third-party/dsh-vision-toolkit/src/exposure.ts`、`third-party/dsh-vision-toolkit/lib/exposure.js`
-**目的**:视觉工具不再全部依赖 vision-tools skill 加载后才注入;高频核心工具常驻,任何会话创建即可直接调用。
-**登记日期**:2026-08-16(已对照上游 v0.1.24/`86fcf71` 重放并入库补丁文件)
+**目的**:视觉工具不再全部依赖 vision-skills skill 加载后才注入;高频核心工具常驻,任何会话创建即可直接调用。
+**登记日期**:2026-08-22(已对照上游 v0.1.38/`5a33bf6` 重适配:上游把立刻 `restrict` 改成 step/end 再隐藏,合集保留该延迟,只叠加常驻核心工具)
 
 **改动内容**:
 
@@ -25,10 +25,10 @@
    - `vision_pixel_diff`(像素对比)
 2. `attach()`:agent 创建时,历史已加载 skill → 完整激活;否则注册常驻核心子集(`activateCore`),激活工具保持可见。
 3. 新增 `activateCore()`:只注册 `ALWAYS_ON_TOOLS` 子集,不隐藏激活工具。
-4. `activate()`:幂等;已注册核心子集的 agent 补注册剩余工具,再隐藏激活工具(`restrict deny`)。
+4. `activate()`:幂等;已注册核心子集的 agent 补注册剩余工具。隐藏引导工具沿用上游:live 会话等到 `step/end` 再 `restrict deny`,避免同一步里仍在飞行的激活调用变成 UNKNOWN_TOOL。
 
-**行为**:新会话工具目录直接出现 4 个核心视觉工具 + `vision_toolkit_activate`;加载 vision-tools
-skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已加载 skill 的会话直接完整激活。
+**行为**:新会话工具目录直接出现 4 个核心视觉工具 + `vision_toolkit_activate`;加载 vision-skills
+skill(或调用激活工具)后剩余工具注入、激活工具在 step/end 消失;历史已加载 skill 的会话直接完整激活。
 
 **重放失败时的处理**:上游若已重构 exposure.js(如版本升级),补丁冲突 → 手动按上面 4 条改动适配新文件,
 更新补丁后重新提交。
@@ -38,7 +38,7 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 **插件**:dsh-vision-toolkit
 **目标文件**:`third-party/dsh-vision-toolkit/src/runtime-install.ts`、`lib/runtime-install.js`、`tests/runtime-install.spec.ts`
 **目的**:Windows 微软商店版 Python 在 `USERPROFILE`/`LOCALAPPDATA` 被指到隔离 home 时,`python -m venv` 调 `ensurepip` 会以 101 退出,设置页显示「运行环境尚未就绪」。Windows 上不再重定向这两项,用户站点隔离仍靠 `PYTHONNOUSERSITE`。
-**登记日期**:2026-08-16
+**登记日期**:2026-08-22(已对照上游 v0.1.38/`5a33bf6` 重放)
 
 **重放失败时的处理**:上游若已改隔离环境策略,按当前 Windows Store Python 行为适配后再更新本补丁。
 
@@ -78,24 +78,16 @@ skill(或调用激活工具)后剩余工具注入、激活工具消失;历史已
 
 **重放失败时的处理**:上游若已改官方字段,按各渠道当前 API 适配后再更新本补丁。
 
-### `patches/dsh-gui-customization-keyed-slot.patch`
-
-**插件**:dsh-gui-customization
-**目标文件**:`third-party/dsh-gui-customization/src/client/index.ts`、`third-party/dsh-gui-customization/lib/client.js`
-**目的**:适配 DSH 新版 slot 契约——`settings.plugin.item` 为 keyed slot,`slots.register` 的 descriptor 必须带 `key`;v0.6.2 旧式注册缺 `key`,导致插件树加载直接报
-`keyed slot "settings.plugin.item" requires options.key`。两处同步补 `key: 'gui-customization'`(源码 + 编译产物,运行时实际加载 `lib/client.js`)。
-**登记日期**:2026-08-18
-
-**重放失败时的处理**:上游若已适配新 slot 契约或重构 client 入口,按当前 `slots.register("settings.plugin.item", ...)` 调用形态补齐/删除本补丁后更新登记。
-
 ### `patches/dsh-notification-peer-ranges.patch`
 
 **插件**:dsh-notification
 **目标文件**:`third-party/dsh-notification/package.json`
-**目的**:修复合集安装必现的 `ERR_PNPM_NO_MATCHING_VERSION`。该快照的全部 `@deepseek-ai/*` peer 依赖为 `*`,与合集内其它插件(better-sidebar / vision-toolkit / genui)的 `^0.1.0-rc.6` 合并解析时,会被 pnpm 解析为 `>=0.1.0 <0.2.0` 一类区间;而 `@deepseek-ai/dsh-*` 只发布了 `0.1.0-rc.*`,导致 `dsh plugin add file:<仓库>` 找不到版本。把 peer 范围显式收敛为与合集其它插件一致:`cordis@^4.0.1`,其余 DSH 子包 `^0.1.0-rc.6`(匹配当前 `0.1.0-rc.7`)。
-**登记日期**:2026-08-18
+**目的**:修复合集安装必现的 `ERR_PNPM_NO_MATCHING_VERSION`。该快照的全部 `@deepseek-ai/*` peer 依赖为 `*`,与合集内其它插件(better-sidebar / vision-toolkit / genui)的 rc 范围合并解析时,会被 pnpm 解析为 `>=0.1.0 <0.2.0` 一类区间;而 `@deepseek-ai/dsh-*` 只发布了 `0.1.0-rc.*` / `0.1.1-rc.*`,导致 `dsh plugin add file:<仓库>` 找不到版本。把 peer 范围显式收敛为:`cordis@^4.0.1`,其余 DSH 子包 `^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0`(覆盖 rc.6~rc.8 与整个 0.1.1-rc 列车)。
+**登记日期**:2026-08-22(对照上游 v0.1.3/`ddec603`;上游仍用 `*`)
 
 **重放失败时的处理**:上游若已收敛 peer 范围,删除本补丁并更新登记;冲突则按当前框架版本重写对应 peer 范围后再提交。
+
+> `dsh-gui-customization-keyed-slot.patch` 已删除:上游 v0.6.3 对 `settings.plugin.item` 做了 `id` + `key` 双协议,合集不再需要本地补丁。
 
 ## 重放工具
 

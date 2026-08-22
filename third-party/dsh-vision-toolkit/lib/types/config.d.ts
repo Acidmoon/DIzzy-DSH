@@ -32,9 +32,9 @@ export interface VisionToolkitConfig {
     language?: 'zh' | 'en';
     /** Single remote/upstream call budget in milliseconds. */
     timeoutMs?: number;
-    /** Maximum accepted input image size in bytes. */
+    /** Maximum input image size in bytes; larger images are auto-compressed (lossless first). */
     maxImageBytes?: number;
-    /** Maximum decoded pixel count per input image. */
+    /** Maximum decoded pixel count per input image; larger images are auto-downscaled to fit. */
     maxImagePixels?: number;
     /** In-flight tool execution cap per session. */
     concurrency?: number;
@@ -68,6 +68,15 @@ export interface VisionToolkitConfig {
          * keeps the path-only takeover instead (default true).
          */
         autoSwitch?: boolean;
+        /**
+         * Transparent routing: variant routes keep the upstream provider and model
+         * display names, and the browser integration hides the upstream text-only
+         * entries that have a variant twin, so the model selector shows one entry
+         * per model and sessions stay on the image-capable variant without users
+         * seeing or switching a `(Vision Toolkit)` route. On by default; disable
+         * to restore the explicit sibling entries.
+         */
+        hidden?: boolean;
     };
 }
 /** Configuration schema with the documented P0 defaults. */
@@ -97,6 +106,7 @@ export interface ResolvedVisionToolkitConfig {
         enabled: boolean;
         providers: string[];
         autoSwitch: boolean;
+        hidden: boolean;
     };
 }
 /**

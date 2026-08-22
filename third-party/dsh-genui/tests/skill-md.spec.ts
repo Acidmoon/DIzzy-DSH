@@ -4,14 +4,10 @@
 // ("charts: callouts", "prose: 要点") which the parser rejects as compact
 // nested mappings — the skill was invisible from install until quoted.
 // This test pins the file against the SAME parser the host uses.
-import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-
-const dshRoot = process.env.DSH_ROOT ?? resolve(process.cwd(), '../../.dsh/source/current')
-const require = createRequire(join(dshRoot, 'packages/skill/skill-filesystem/lib/index.js'))
-const { parse } = require('yaml') as { parse: (text: string) => unknown }
+import { parse } from 'yaml'
 
 /** Replicate skill-filesystem's parseFrontmatter: leading `---`, body until the
  * next `---` line. */

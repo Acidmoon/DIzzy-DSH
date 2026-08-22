@@ -1,4 +1,4 @@
-# vision-tools
+# vision-skills
 
 Ten native DSH tools give a text-only agent eyes. Use these structured tools
 directly; do not shell out to the bundled Python scripts or reproduce their
@@ -7,7 +7,7 @@ plugin, so tool calls do not receive credentials.
 
 The visual execution schemas are mounted only for the current Agent after this
 Skill is loaded. A normal `skill` call activates them for the next model step.
-If this content arrived through a direct `/vision-tools` invocation and the
+If this content arrived through a direct `/vision-skills` invocation and the
 visual tools are still absent, call `vision_toolkit_activate` once. Do not call
 that bootstrap when the visual tools are already present.
 
@@ -239,12 +239,13 @@ significant colours and their shares. Candidate mode scores each supplied
 value against the pixels and returns the winner. Take the value from here,
 never from `vision_glance` prose.
 
-## Work from a durable path, not a temp path
+## Prefer a durable path; platform temp paths are supported
 
-If an image lives in a temporary directory, copy it into durable workspace
-storage before the first visual call and run everything against that copy.
-The exception is when the user explicitly asked for the image to stay in a
-temporary folder. All paths must remain in the session workspace or a
+Use workspace storage when the image or a derived artifact must remain
+available later. Temporary inputs are also valid: the DSH adapter authorizes
+the current platform temporary directory automatically. On Windows, a model-
+generated `/tmp/...` path is mapped to `%TEMP%\...`; on POSIX systems, use
+`/tmp/...` directly. Other paths must remain in the session workspace or a
 configured `allowedDirs` entry.
 
 ## When you have a description instead of the image

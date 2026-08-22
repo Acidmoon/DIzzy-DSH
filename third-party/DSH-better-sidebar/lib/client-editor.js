@@ -2324,10 +2324,10 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			for (let i = 0; i < this.config.dynamicSlots.length; i++) ensureAddr(this, i << 1);
 			this.computeSlot = null;
 		}
-		field(field, require = true) {
+		field(field, require$1 = true) {
 			let addr = this.config.address[field.id];
 			if (addr == null) {
-				if (require) throw new RangeError("Field is not present in this state");
+				if (require$1) throw new RangeError("Field is not present in this state");
 				return;
 			}
 			ensureAddr(this, addr);
@@ -3656,7 +3656,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		return name;
 	}
 	//#endregion
-	//#region node_modules/.pnpm/@codemirror+view@6.43.8/node_modules/@codemirror/view/dist/index.js
+	//#region node_modules/.pnpm/@codemirror+view@6.43.9/node_modules/@codemirror/view/dist/index.js
 	let nav = typeof navigator != "undefined" ? navigator : {
 		userAgent: "",
 		vendor: "",
@@ -10398,8 +10398,9 @@ globalThis.__dshChunks__["editor"] = (require) => {
 								let diff = ((scrollAnchorPos < 0 ? this.viewState.heightMap.height : this.viewState.lineBlockAt(scrollAnchorPos).top) - scrollAnchorHeight) / this.scaleY;
 								if ((diff > 1 || diff < -1) && !(browser.ios && this.inputState.lastIOSMomentumScroll > Date.now() - 100) && (scroll == this.scrollDOM || this.hasFocus || Math.max(this.inputState.lastWheelEvent, this.inputState.lastTouchTime) > Date.now() - 100)) {
 									scrollOffset = scrollOffset + diff;
-									if (scroll) scroll.scrollTop += diff;
-									else this.win.scrollBy(0, diff);
+									if (!scroll) this.win.scrollBy(0, diff);
+									else if (scrollAnchorPos < 0) scroll.scrollTop = scroll.scrollHeight;
+									else scroll.scrollTop += diff;
 									scrollAnchorHeight = -1;
 									continue;
 								}
@@ -16186,7 +16187,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}
 	Direction.RTL, Direction.LTR;
 	//#endregion
-	//#region node_modules/.pnpm/@codemirror+commands@6.10.4/node_modules/@codemirror/commands/dist/index.js
+	//#region node_modules/.pnpm/@codemirror+commands@6.11.0/node_modules/@codemirror/commands/dist/index.js
 	/**
 	Comment or uncomment the current selection. Will use line comments
 	if available, otherwise falling back to block comments.
@@ -17013,7 +17014,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	Expand the selection to cover entire lines.
 	*/
 	const selectLine = ({ state, dispatch }) => {
-		let ranges = selectedLineBlocks(state).map(({ from, to }) => EditorSelection.range(from, Math.min(to + 1, state.doc.length)));
+		let ranges = selectedLineBlocks(state).map(({ from, to }) => EditorSelection.undirectionalRange(from, Math.min(to + 1, state.doc.length)));
 		dispatch(state.update({
 			selection: EditorSelection.create(ranges),
 			userEvent: "select"
@@ -17035,7 +17036,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			}
 			for (let cur = stack; cur; cur = cur.next) {
 				let { node } = cur;
-				if ((node.from < range.from && node.to >= range.to || node.to > range.to && node.from <= range.from) && cur.next) return EditorSelection.range(node.to, node.from);
+				if ((node.from < range.from && node.to >= range.to || node.to > range.to && node.from <= range.from) && cur.next) return EditorSelection.undirectionalRange(node.from, node.to);
 			}
 			return range;
 		});
@@ -17805,7 +17806,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	- Shift-Ctrl-k (Shift-Cmd-k on macOS): [`deleteLine`](https://codemirror.net/6/docs/ref/#commands.deleteLine)
 	- Shift-Ctrl-\\ (Shift-Cmd-\\ on macOS): [`cursorMatchingBracket`](https://codemirror.net/6/docs/ref/#commands.cursorMatchingBracket)
 	- Ctrl-/ (Cmd-/ on macOS): [`toggleComment`](https://codemirror.net/6/docs/ref/#commands.toggleComment).
-	- Shift-Alt-a: [`toggleBlockComment`](https://codemirror.net/6/docs/ref/#commands.toggleBlockComment).
+	- Shift-Alt-a (Shift-Ctrl-a on macOS): [`toggleBlockComment`](https://codemirror.net/6/docs/ref/#commands.toggleBlockComment).
 	- Ctrl-m (Alt-Shift-m on macOS): [`toggleTabFocusMode`](https://codemirror.net/6/docs/ref/#commands.toggleTabFocusMode).
 	*/
 	const defaultKeymap = /*@__PURE__*/ [
@@ -17889,6 +17890,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		},
 		{
 			key: "Alt-A",
+			mac: "Ctrl-A",
 			run: toggleBlockComment
 		},
 		{
@@ -17941,6 +17943,36 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		if (!response.ok || parsed === null || parsed.ok !== true || parsed.value === void 0) throw new SidebarApiError(parsed?.error?.code ?? "http", parsed?.error?.message ?? `HTTP ${response.status}`);
 		return parsed.value;
 	}
+	/**
+	* Upload one file to the sidebar's raw upload route: the File goes straight
+	* into the POST body (no JSON/base64 re-encoding — the host streams it into
+	* the workspace). Failure surfaces as {@link SidebarApiError} with the wire
+	* code, exactly like every `/sidebar/api` call. An aborted `signal` rejects
+	* with the DOMException as-is (the caller decides whether that is an error).
+	*/
+	async function fetchUpload(scope, dir, relativePath, body, signal) {
+		const params = new URLSearchParams({
+			sessionId: scope.sessionId,
+			dir,
+			relativePath
+		});
+		if (scope.cwd !== void 0 && scope.cwd !== "") params.set("cwd", scope.cwd);
+		let response;
+		try {
+			response = await fetch(`/sidebar/upload?${params.toString()}`, {
+				method: "POST",
+				headers: { "content-type": "application/octet-stream" },
+				body,
+				signal
+			});
+		} catch (error) {
+			if (error instanceof DOMException && error.name === "AbortError") throw error;
+			throw new SidebarApiError("network", error instanceof Error ? error.message : String(error));
+		}
+		const parsed = await response.json().catch(() => null);
+		if (!response.ok || parsed === null || parsed.ok !== true || parsed.value === void 0) throw new SidebarApiError(parsed?.error?.code ?? "http", parsed?.error?.message ?? `HTTP ${response.status}`);
+		return parsed.value;
+	}
 	/** Fold a scope into a JSON payload ({cwd} only when present). */
 	function scopePayload(scope, extra) {
 		return {
@@ -17953,11 +17985,17 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	const api = {
 		sessionCwd: (scope, signal) => call("session.cwd", scopePayload(scope, {}), signal),
 		fsTree: (scope, path, signal) => call("fs.tree", scopePayload(scope, { path }), signal),
+		/** Global recursive file-name search rooted at the session cwd (the editor
+		*  side panel's search box); matches are cwd-relative '/'-separated paths. */
+		fsSearch: (scope, query, signal) => call("fs.search", scopePayload(scope, { query }), signal),
 		fsRead: (scope, path, signal) => call("fs.read", scopePayload(scope, { path }), signal),
 		fsWrite: (scope, path, content) => call("fs.write", scopePayload(scope, {
 			path,
 			content
 		})),
+		/** Upload one file's raw bytes into `dir` (keeps the folder tree via
+		*  `relativePath`); the host streams it under the session workspace. */
+		uploadFile: (scope, dir, relativePath, body, signal) => fetchUpload(scope, dir, relativePath, body, signal),
 		gitStatus: (scope, signal) => call("git.status", scopePayload(scope, {}), signal),
 		gitDiff: (scope, path, staged, signal) => call("git.diff", scopePayload(scope, {
 			...path !== void 0 ? { path } : {},
@@ -18002,6 +18040,32 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			id,
 			...reason !== void 0 ? { reason } : {}
 		})),
+		/**
+		* One batch live-preview fetch for the whole Subagent tree. The payload is
+		* the already-resolved topology ROOT (not a session scope); the host
+		* enumerates descendants once and folds running children's activity.
+		*/
+		subagentsLive: (rootSessionId, signal) => call("subagents.live", { rootSessionId }, signal),
+		/** Create a Side Chat thread: a child session seeded with the parent's
+		*  full log up to now. Empty question = immediate create (Codex-style):
+		*  the thread opens empty, the first prompt carries the boundary. */
+		sidechatStart: (sessionId, question) => call("sidechat.start", {
+			sessionId,
+			question: question ?? ""
+		}),
+		/** Deliver one follow-up message to a Side Chat thread. */
+		sidechatPrompt: (childId, text) => call("sidechat.prompt", {
+			childId,
+			text
+		}),
+		/** Abort a Side Chat thread's running turn (queued work is preserved). */
+		sidechatCancel: (childId) => call("sidechat.cancel", { childId }),
+		/** Release a Side Chat thread's live agent (history stays persisted). */
+		sidechatDispose: (childId) => call("sidechat.dispose", { childId }),
+		/** Live state + agent identity (provider/model/preset) of a thread. */
+		sidechatInfo: (childId) => call("sidechat.info", { childId }),
+		/** The effective terminal shell and its display name (plugin-global). */
+		shellGet: () => call("shell.get", {}),
 		/** Read the side card preferences (plugin-global, no session scope). */
 		settingsGet: () => call("settings.get", {}),
 		/** Merge a patch into the side card preferences (revision-guarded). */
@@ -20584,7 +20648,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			type: "keyword"
 		})
 	]);
-	const cache$2 = /*@__PURE__*/ new NodeWeakMap();
+	const cache$3 = /*@__PURE__*/ new NodeWeakMap();
 	const ScopeNodes$2 = /*@__PURE__*/ new Set([
 		"Script",
 		"Block",
@@ -20618,7 +20682,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		__proto__: null
 	};
 	function getScope$2(doc, node) {
-		let cached = cache$2.get(node);
+		let cached = cache$3.get(node);
 		if (cached) return cached;
 		let completions = [], top = true;
 		function def(node, type) {
@@ -20638,7 +20702,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				return false;
 			}
 		});
-		cache$2.set(node, completions);
+		cache$3.set(node, completions);
 		return completions;
 	}
 	const Identifier$4 = /^[\w$\xa1-\uffff][\w$\d\xa1-\uffff]*$/;
@@ -26456,7 +26520,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	});
 	//#endregion
 	//#region node_modules/.pnpm/@codemirror+lang-python@6.2.1/node_modules/@codemirror/lang-python/dist/index.js
-	const cache$1 = /*@__PURE__*/ new NodeWeakMap();
+	const cache$2 = /*@__PURE__*/ new NodeWeakMap();
 	const ScopeNodes$1 = /*@__PURE__*/ new Set([
 		"Script",
 		"Body",
@@ -26504,7 +26568,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		__proto__: null
 	};
 	function getScope$1(doc, node) {
-		let cached = cache$1.get(node);
+		let cached = cache$2.get(node);
 		if (cached) return cached;
 		let completions = [], top = true;
 		function def(node, type) {
@@ -26524,7 +26588,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				return false;
 			}
 		});
-		cache$1.set(node, completions);
+		cache$2.set(node, completions);
 		return completions;
 	}
 	const Identifier$3 = /^[\w\xa1-\uffff][\w\d\xa1-\uffff]*$/;
@@ -29810,7 +29874,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			type: "keyword"
 		})
 	];
-	const cache = /*@__PURE__*/ new NodeWeakMap();
+	const cache$1 = /*@__PURE__*/ new NodeWeakMap();
 	const ScopeNodes = /*@__PURE__*/ new Set([
 		"SourceFile",
 		"Block",
@@ -29853,7 +29917,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		__proto__: null
 	};
 	function getScope(doc, node) {
-		let cached = cache.get(node);
+		let cached = cache$1.get(node);
 		if (cached) return cached;
 		let completions = [], top = true;
 		function def(node, type) {
@@ -29873,7 +29937,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				return false;
 			}
 		});
-		cache.set(node, completions);
+		cache$1.set(node, completions);
 		return completions;
 	}
 	const Identifier = /^[\w$\xa1-\uffff][\w$\d\xa1-\uffff]*$/;
@@ -32710,10 +32774,25 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	*/
 	/** The zh dictionary (also registered into the DSH locale registry under {@link LOCALE_NS}). */
 	const zh = {
+		files: "文件",
 		explorer: "资源管理器",
 		git: "源代码管理",
 		terminal: "终端",
 		editor: "编辑器",
+		editorExplorer: "文件打开方式",
+		editorExplorerDesc: "控制文件打开方式",
+		editorExplorerMerged: "合并",
+		editorExplorerMergedDesc: "文件在同一窗口内原地切换；新窗口默认展开文件树",
+		editorExplorerSplit: "独立",
+		editorExplorerSplitDesc: "无路径窗口即资源管理器（仅文件树）；文件各自新开窗口（带文件树，默认收起）",
+		editorTreeToggle: "文件树面板",
+		editorPathPlaceholder: "输入文件路径（相对会话目录或绝对路径），Enter 打开",
+		editorSearchPlaceholder: "按文件名搜索…",
+		editorSearchNoResults: "无匹配文件",
+		editorSearchTruncated: "结果过多，仅显示部分匹配",
+		editorEmptyHint: "从右侧文件树或上方路径输入框选择文件开始预览",
+		openFileNewTab: "在新 Tab 中打开",
+		openFileSide: "在侧边打开",
 		newTab: "新建标签页",
 		openExplorer: "资源管理器",
 		brokenSymlink: "失效的软链接",
@@ -32733,6 +32812,11 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		terminalDepsProfile: "（检测到 profile：{profile}）",
 		preview: "预览",
 		edit: "编辑",
+		mermaidError: "Mermaid 渲染失败",
+		mermaidZoomIn: "放大",
+		mermaidZoomOut: "缩小",
+		mermaidZoomReset: "重置",
+		mermaidZoomHint: "滚轮缩放 · 拖拽平移 · Esc 关闭",
 		refresh: "刷新",
 		save: "保存",
 		saved: "已保存",
@@ -32808,6 +32892,19 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		copyRelative: "复制相对地址",
 		copyAbsolute: "复制绝对地址",
 		download: "下载",
+		uploadFiles: "上传文件",
+		uploadFolder: "上传文件夹",
+		uploadHere: "上传到此处",
+		uploadDropHint: "拖拽文件/文件夹到此处上传",
+		uploadDropChat: "拖放到聊天区：添加图片到对话",
+		uploadTo: "上传到 {dir}",
+		uploadingTo: "正在上传到 {dir}…",
+		uploadProgress: "正在上传 {done}/{total}: {name}",
+		uploadDone: "已上传 {count} 个文件",
+		uploadFailed: "上传失败：{error}",
+		uploadFailedUnknown: "未知错误",
+		uploadTooLarge: "文件过大，超出上传上限",
+		uploadCancelled: "上传已取消",
 		settingsNav: "侧边卡片",
 		settingsIntro: "管理侧边卡片的显示内容与默认行为",
 		settingsPopupDesc: "为「{feature}」配置相关选项",
@@ -32820,9 +32917,19 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		settingsOpenPathTitle: "聊天区文件在侧边栏打开",
 		settingsOpenPathDesc: "在聊天里点击文件链接（工具行、产物列表、文件提及）时，在侧边栏编辑器中打开，不再调用系统默认应用",
 		settingsTitleBarTitle: "位置兼容模式",
-		settingsTitleBarDesc: "为 Windows 右上角的原生标题栏预留空间：侧边栏按钮与侧边栏内容整体下移，避免被标题栏遮挡",
+		settingsTitleBarDesc: "选择顶栏兼容方案：自动检测（默认，保守）/ DSH官方Web / 已知桌面壳 / 自定义方案（下移距离 + 自定义 CSS）",
 		settingsTitleBarStripTitle: "下移距离",
-		settingsTitleBarStripDesc: "标题栏条带高度：侧边栏按钮与内容下移的像素数（0–120，默认 40）",
+		settingsTitleBarStripDesc: "标题栏条带高度：侧边栏按钮与内容下移的像素数（0–120，默认 40；自定义方案下生效）",
+		settingsSchemeAutoTitle: "自动检测",
+		settingsSchemeAutoDesc: "保守方案：仅在 Window Controls Overlay 标准 API 可用时按真实标题栏高度让位；网页环境下不做任何修改",
+		settingsSchemeWebTitle: "DSH官方Web",
+		settingsSchemeWebDesc: "显式声明运行在官方网页版：不做任何适配（连标准 WCO 几何也不适用）",
+		settingsSchemeCustomTitle: "自定义方案",
+		settingsSchemeCustomDesc: "完全由你控制：注入自定义 CSS（可覆盖内置样式），并指定标题栏下移距离",
+		settingsSchemeDetectedSuffix: "已检测",
+		settingsCustomCssTitle: "自定义 CSS",
+		settingsCustomCssDesc: "追加到页面末尾的样式（同优先级下后写胜出；覆盖 JS 内联变量需用 !important）",
+		settingsCustomCssPlaceholder: "/* 例：为自绘标题栏的壳预留 36px */\nhtml[data-dsh-title-bar-height=\"36\"] {\n  --dsh-title-bar-strip: 36px !important;\n}",
 		settingsSaveFailed: "保存失败",
 		settingsConflict: "设置已被其他窗口修改，请重试",
 		binaryNoPreview: "此文件类型不支持预览",
@@ -32841,6 +32948,12 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		settingsFontSizeTitle: "终端字号",
 		settingsFontSizeDesc: "终端字号（9–32，默认 13）",
 		settingsFontSizeSuffix: "px",
+		settingsShellTitle: "Shell 路径",
+		settingsShellDesc: "UI 与模型终端启动的 shell（绝对路径或可执行名）。留空按既有顺序解析：yaml 的 config.shell → $SHELL / 登录 shell / Windows 的 powershell.exe。对之后打开的终端生效",
+		settingsShellPlaceholder: "如 /bin/zsh（留空自动解析）",
+		settingsShellArgsTitle: "Shell 参数",
+		settingsShellArgsDesc: "显式 shell 启动参数，空格分隔；非空时完全替换默认参数（与 yaml 的 shellArgs 契约一致）",
+		settingsShellArgsPlaceholder: "如 -l（留空用默认参数）",
 		settingsTabsTitle: "侧边栏内容",
 		settingsViewersTitle: "文件预览",
 		settingsGeneralTitle: "常规",
@@ -32897,6 +33010,29 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		subagentDiagUnsupported: "不支持的条目",
 		subagentDiagUnavailable: "不可用",
 		subagentThinking: "思考中…",
+		sideChat: "侧边对话(beta)",
+		sideChatNew: "新建对话",
+		sideChatUntitled: "新对话",
+		sideChatEmpty: "暂无侧边对话",
+		sideChatEmptyDesc: "每个侧边对话是标签栏里的独立 Tab，继承当前会话的上下文运行，不会进入主会话",
+		sideChatCreating: "正在创建侧边对话…",
+		sideChatRetry: "重试",
+		sideChatThreads: "切换线程 / 新建",
+		sideChatSave: "保存为新会话",
+		sideChatSaveTitle: "把该线程提升为顶层会话，出现在主会话列表中",
+		sideChatSaved: "已保存为新会话",
+		sideChatNoTurn: "至少完成一轮对话后才能保存",
+		sideChatPendingDrop: "最后一条未完成的追问不会包含在新会话中",
+		sideChatFirstPlaceholder: "输入第一个问题，已继承当前会话上下文…",
+		sideChatComposerPlaceholder: "追问…",
+		sideChatThinking: "正在深入…",
+		sideChatThink: "思考过程",
+		sideChatSend: "发送",
+		sideChatCancel: "停止",
+		sideChatCancelTitle: "中止当前回合（保留队列）",
+		sideChatClose: "关闭线程",
+		sideChatCloseTitle: "释放线程的 agent（历史保留）",
+		sideChatError: "侧边对话出错：{message}",
 		jobs: "后台任务",
 		jobsCount: "{count} 个后台任务",
 		jobsCountRunning: "{count} 个后台任务 · {running} 运行中",
@@ -32924,22 +33060,44 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		addPluginsTabDesc: "侧边栏页面（Tab）可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。",
 		addPluginsViewerDesc: "文件预览器可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。",
 		addPluginsBrowseMore: "在 GitHub 上浏览更多插件（topic: dsh-better-sidebar）",
+		addPluginsSearch: "搜索插件名称 / 描述…",
+		addPluginsNoMatch: "没有匹配的插件",
 		addPluginsRecommended: "推荐插件",
 		addPluginsEmpty: "暂未收录插件，欢迎在 GitHub topic 下发布你的插件",
 		openPlugin: "跳转",
 		copyInstall: "复制安装命令",
 		pluginOfficeDesc: "为 better-sidebar 编辑器提供 Office 三件套预览（.docx / .xlsx / .pptx），把重型 Office 渲染库拆出主包、按需安装",
+		pluginFlowglassDesc: "实时会话流程图：三列泳道展示用户、助手与工具调用，支持并行分组、子代理支线、逐层钻取和实时状态；安装 better-sidebar 后注册原生「流镜」Tab，未安装时保留独立抽屉",
+		pluginGitForgeDesc: "better-sidebar「Git 凭据」Tab：GitHub/Gitea 等 Forge 账号库 + 按项目授权 + push 策略硬拦；token 仅存本地 secrets，不进模型上下文；提供只读 GitForge 工具与 agent HTTPS credential helper",
 		pluginGitRemotesDesc: "better-sidebar Git 远程 Tab：看分支/上游/ahead-behind，fetch（可 prune）、ff-only pull、确认后才 push。不替换内置 Git 的暂存/提交，也不提供 force-push 或模型自动推送",
 		pluginSentinelDesc: "条件驱动的 agent 唤醒系统：文件/进程/端口/HTTP/命令/webhook 传感器，条件达成自动唤醒休眠会话；注册「哨兵」Tab 展示服务器全局监控表",
 		pluginSidebarQaDesc: "基于 better-sidebar 的划选提问tab分页: 对话划选 → 右侧面板提问 → 同工作区独立追问会话（❓追问·主题）：快速无思考模型压缩主对话上下文后与引文一起注入，不打断主对话；追问可嵌套、可继续、可归档",
-		pluginVideoPreviewDesc: "在 better-sidebar 编辑器内联预览视频文件（.mp4/.webm/.mov/.mkv/.avi 等），自带支持 HTTP Range（206）的 /video 宿主路由，可拖动进度条、不受 20MB mediaLimit 限制"
+		pluginSshTunnelDesc: "better-sidebar「SSH 隧道」Tab：多机主机清单 + 按项目授权 + 密钥本地保管；模型工具 SSHManager（exec/SFTP/会话策略）；中央交互终端与双栏 SFTP",
+		pluginTurnReviewDesc: "对「刚刚这一回合」的 diff 做 Approve / Request changes 的人闸门：只审上一回合，不 fork 会话；文件按主会话/子代理/未归因分组，按文件勾选打回 + 可选评语，点文件先看回合开始快照 vs 现在的 diff。不是 /rewind",
+		pluginVideoPreviewDesc: "在 better-sidebar 编辑器内联预览视频文件（.mp4/.webm/.mov/.mkv/.avi 等），自带支持 HTTP Range（206）的 /video 宿主路由，可拖动进度条、不受 20MB mediaLimit 限制",
+		pluginDocsPanelDesc: "DSH 侧边栏里的「全局文档」：全局 Markdown 笔记，任何工作区随时可读——列表点选阅读、悬浮大纲跳转、Chrome / VS Code 外部打开、代码复制，目录可配置（默认 ~/.dsh/docs）"
 	};
 	/** The en dictionary (key-set-equal to zh, enforced by the type annotation). */
 	const en = {
+		files: "Files",
 		explorer: "Explorer",
 		git: "Source Control",
 		terminal: "Terminal",
 		editor: "Editor",
+		editorExplorer: "File open behavior",
+		editorExplorerDesc: "Controls how files open",
+		editorExplorerMerged: "Merged",
+		editorExplorerMergedDesc: "Files switch in place in the same window; new windows start with the tree open",
+		editorExplorerSplit: "Separate",
+		editorExplorerSplitDesc: "Path-less windows are the standalone explorer (tree only); each file opens its own window (tree docked, closed by default)",
+		editorTreeToggle: "File tree panel",
+		editorPathPlaceholder: "File path (relative to the session directory or absolute), Enter to open",
+		editorSearchPlaceholder: "Search files by name…",
+		editorSearchNoResults: "No matching files",
+		editorSearchTruncated: "Too many results — showing a partial list",
+		editorEmptyHint: "Pick a file from the tree panel or the path input above to start previewing",
+		openFileNewTab: "Open in New Tab",
+		openFileSide: "Open to the Side",
 		newTab: "New tab",
 		openExplorer: "Explorer",
 		brokenSymlink: "Broken symlink",
@@ -32959,6 +33117,11 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		terminalDepsProfile: " (detected profile: {profile})",
 		preview: "Preview",
 		edit: "Edit",
+		mermaidError: "Mermaid render failed",
+		mermaidZoomIn: "Zoom in",
+		mermaidZoomOut: "Zoom out",
+		mermaidZoomReset: "Reset",
+		mermaidZoomHint: "Scroll to zoom · drag to pan · Esc to close",
 		refresh: "Refresh",
 		save: "Save",
 		saved: "Saved",
@@ -33034,6 +33197,19 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		copyRelative: "Copy relative path",
 		copyAbsolute: "Copy absolute path",
 		download: "Download",
+		uploadFiles: "Upload files",
+		uploadFolder: "Upload folder",
+		uploadHere: "Upload here",
+		uploadDropHint: "Drop files/folders here to upload",
+		uploadDropChat: "Drop onto the chat to add images",
+		uploadTo: "Upload into {dir}",
+		uploadingTo: "Uploading into {dir}…",
+		uploadProgress: "Uploading {done}/{total}: {name}",
+		uploadDone: "Uploaded {count} file(s)",
+		uploadFailed: "Upload failed: {error}",
+		uploadFailedUnknown: "Unknown error",
+		uploadTooLarge: "File too large (over the upload limit)",
+		uploadCancelled: "Upload cancelled",
 		settingsNav: "Side card",
 		settingsIntro: "Manage what the side card shows and how it behaves",
 		settingsPopupDesc: "Configure related options for {feature}",
@@ -33046,9 +33222,19 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		settingsOpenPathTitle: "Open chat files in the sidebar",
 		settingsOpenPathDesc: "Open file links in the chat (tool rows, produced files, mentions) in the sidebar editor instead of the system default app",
 		settingsTitleBarTitle: "Position compatibility mode",
-		settingsTitleBarDesc: "Reserve space for the native Windows title bar at the top-right so the sidebar buttons and content sit below it instead of underneath",
+		settingsTitleBarDesc: "Pick the title-bar compatibility scheme: auto-detect (default, conservative) / DSH official web / known desktop shells / custom (shift distance + custom CSS)",
 		settingsTitleBarStripTitle: "Shift distance",
-		settingsTitleBarStripDesc: "Title-bar strip height: how far the sidebar buttons and content move down in px (0–120, default 40)",
+		settingsTitleBarStripDesc: "Title-bar strip height: how far the sidebar buttons and content move down in px (0–120, default 40; applies under the custom scheme)",
+		settingsSchemeAutoTitle: "Auto-detect",
+		settingsSchemeAutoDesc: "Conservative: only the standard Window Controls Overlay API contributes (real caption-overlay height); plain web environments get no modification",
+		settingsSchemeWebTitle: "DSH official web",
+		settingsSchemeWebDesc: "Explicitly declare the official web UI: no adaptation at all (not even standard WCO geometry)",
+		settingsSchemeCustomTitle: "Custom",
+		settingsSchemeCustomDesc: "Full control: inject custom CSS (can override built-in styles) and set the title-bar shift distance",
+		settingsSchemeDetectedSuffix: "detected",
+		settingsCustomCssTitle: "Custom CSS",
+		settingsCustomCssDesc: "Styles appended at the end of the page (later in the cascade wins ties; use !important to override JS-written inline variables)",
+		settingsCustomCssPlaceholder: "/* e.g. reserve 36px for a shell with a custom-drawn title bar */\nhtml[data-dsh-title-bar-height=\"36\"] {\n  --dsh-title-bar-strip: 36px !important;\n}",
 		settingsSaveFailed: "Failed to save",
 		settingsConflict: "The setting changed in another window — please retry",
 		binaryNoPreview: "This file type cannot be previewed",
@@ -33065,6 +33251,12 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		settingsFontFamilyDesc: "Custom terminal font family (a CSS font-family stack like \"JetBrains Mono\", monospace; leave empty to follow the theme's monospace font)",
 		settingsFontFamilyPlaceholder: "\"JetBrains Mono\", monospace",
 		settingsFontSizeTitle: "Terminal font size",
+		settingsShellTitle: "Shell path",
+		settingsShellDesc: "Shell spawned for UI and model terminals (absolute path or bare executable). Empty keeps the legacy order: yaml config.shell → $SHELL / login shell / Windows powershell.exe. Applies to terminals opened afterwards",
+		settingsShellPlaceholder: "e.g. /bin/zsh (empty = auto)",
+		settingsShellArgsTitle: "Shell arguments",
+		settingsShellArgsDesc: "Explicit shell arguments, space-separated; when non-empty they fully replace the defaults (same contract as the yaml shellArgs)",
+		settingsShellArgsPlaceholder: "e.g. -l (empty = defaults)",
 		settingsFontSizeDesc: "Terminal font size in px (9–32, default 13)",
 		settingsFontSizeSuffix: "px",
 		settingsTabsTitle: "Sidebar content",
@@ -33123,6 +33315,29 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		subagentDiagUnsupported: "Unsupported",
 		subagentDiagUnavailable: "Unavailable",
 		subagentThinking: "Thinking…",
+		sideChat: "Side Chat (beta)",
+		sideChatNew: "New thread",
+		sideChatUntitled: "New thread",
+		sideChatEmpty: "No side conversations",
+		sideChatEmptyDesc: "Every side conversation is its own tab in the tab strip — it inherits the current session's context and never enters the main conversation",
+		sideChatCreating: "Creating side conversation…",
+		sideChatRetry: "Retry",
+		sideChatThreads: "Switch thread / new",
+		sideChatSave: "Save as new session",
+		sideChatSaveTitle: "Promote this thread to a top-level session in the main session list",
+		sideChatSaved: "Saved as a new session",
+		sideChatNoTurn: "Save is available after the first completed turn",
+		sideChatPendingDrop: "The last unanswered follow-up will not be included in the saved session",
+		sideChatFirstPlaceholder: "Ask the first question — context inherited…",
+		sideChatComposerPlaceholder: "Ask a follow-up…",
+		sideChatThinking: "Deep diving…",
+		sideChatThink: "Thinking",
+		sideChatSend: "Send",
+		sideChatCancel: "Stop",
+		sideChatCancelTitle: "Abort the running turn (queued work is kept)",
+		sideChatClose: "Close thread",
+		sideChatCloseTitle: "Release the thread's agent (history is kept)",
+		sideChatError: "Side Chat error: {message}",
 		jobs: "Background jobs",
 		jobsCount: "{count} background jobs",
 		jobsCountRunning: "{count} background jobs · {running} running",
@@ -33150,15 +33365,22 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		addPluginsTabDesc: "Sidebar pages (tabs) can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.",
 		addPluginsViewerDesc: "File previewers can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.",
 		addPluginsBrowseMore: "Browse more plugins on GitHub (topic: dsh-better-sidebar)",
+		addPluginsSearch: "Search by plugin name or description…",
+		addPluginsNoMatch: "No plugins match",
 		addPluginsRecommended: "Recommended plugins",
 		addPluginsEmpty: "No plugins curated yet — publish yours under the GitHub topic",
 		openPlugin: "Open",
 		copyInstall: "Copy install command",
 		pluginOfficeDesc: "Office-suite preview (.docx / .xlsx / .pptx) for the better-sidebar editor, keeping the heavy Office render libraries out of the core bundle",
+		pluginFlowglassDesc: "Live session flowgraph with three lanes for user, assistant, and tool calls, plus parallel groups, sub-agent branches, drill-down, and live status; registers a native Flowglass tab when better-sidebar is installed and keeps its standalone drawer as a fallback",
+		pluginGitForgeDesc: "Git Forge tab: GitHub/Gitea (and other forge) account library + per-project grants + hard push policy; tokens stay in local secrets (never in model context); read-only GitForge tool and agent HTTPS credential helper",
 		pluginGitRemotesDesc: "Git Remotes tab: branch/upstream/ahead-behind, fetch (optional prune), ff-only pull, and push only after an in-tab confirm. Does not replace the built-in Git stage/commit tab, and does not offer force-push or a model auto-push tool",
 		pluginSentinelDesc: "Condition-driven agent wakeup: file/process/port/http/command/webhook sensors wake dormant sessions when conditions fire; registers a \"Sentinel\" tab with the server-wide watch table",
 		pluginSidebarQaDesc: "Select-and-ask: Select conversation text → ask in the right-side panel → a dedicated follow-up session (❓追问) in the same workspace; a fast no-thinking model compresses the main context and injects it with the quote, without interrupting the main conversation. Follow-ups nest, continue, and archive",
-		pluginVideoPreviewDesc: "Inline video preview (.mp4/.webm/.mov/.mkv/.avi etc.) for the better-sidebar editor, backed by a dedicated /video host route with HTTP Range (206) support — scrubbing works and files are not capped by the 20MB mediaLimit"
+		pluginSshTunnelDesc: "SSH Tunnel tab: multi-host inventory + per-project grants + local secrets; SSHManager tool (exec/SFTP/session strategies); center interactive terminal and dual-pane SFTP",
+		pluginTurnReviewDesc: "A human gate on the just-finished turn: Approve / Request changes per path with an optional comment; paths grouped by main session / subagent / unattributed; inline snapshot-vs-now diff before you decide. No fork, no /rewind",
+		pluginVideoPreviewDesc: "Inline video preview (.mp4/.webm/.mov/.mkv/.avi etc.) for the better-sidebar editor, backed by a dedicated /video host route with HTTP Range (206) support — scrubbing works and files are not capped by the 20MB mediaLimit",
+		pluginDocsPanelDesc: "Global docs in the DSH sidebar: read your own Markdown notes from any workspace — a file list, an outline, open in Chrome / VS Code, and copy buttons; the docs directory is configurable (default ~/.dsh/docs)"
 	};
 	/**
 	* The active locale id ('zh' | 'en'): the DSH locale service's snapshot when
@@ -33175,7 +33397,7 @@ globalThis.__dshChunks__["editor"] = (require) => {
 	}
 	//#endregion
 	//#region \0dsh-css:/home/runner/work/DSH-better-sidebar/DSH-better-sidebar/src/client/sidebar.module.css.mjs
-	const css = ".nArs4W_toggleCluster{z-index:45;flex-direction:row;gap:4px;display:flex;position:fixed;top:3px;right:10px}.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:72px}.nArs4W_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.nArs4W_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_toggleButton:disabled{opacity:.4;cursor:default}.nArs4W_panel{z-index:40;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;top:0;bottom:0;right:0}.nArs4W_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.nArs4W_panel[data-dragging]{transition:none}.nArs4W_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.nArs4W_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_panelBody{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_bottomPanel{z-index:40;background:var(--dsw-alias-bg-layer-1);border-top:1px solid var(--dsw-alias-border-l2);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:fixed;bottom:0}.nArs4W_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.nArs4W_bottomPanel[data-dragging]{transition:none}.nArs4W_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.nArs4W_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.nArs4W_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_bottomPanel .nArs4W_tabBar{padding-right:40px}body[data-dsh-title-bar-compat] .nArs4W_toggleCluster{top:calc(var(--dsh-title-bar-strip,40px) + 3px)}body[data-dsh-title-bar-compat] .nArs4W_panel{padding-top:var(--dsh-title-bar-strip,40px)}.nArs4W_cornerHandle{left:-6px;bottom:calc(var(--dsh-sidebar-height,0px) + 6px);z-index:2;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:absolute}.nArs4W_cornerHandle:hover,.nArs4W_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_iconButton:disabled{opacity:.4;cursor:default}.nArs4W_workbench,.nArs4W_split{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_splitRow{flex-direction:row}.nArs4W_splitCol{flex-direction:column}.nArs4W_splitChild{display:flex;position:relative;overflow:hidden}.nArs4W_divider{z-index:3;touch-action:none;flex:none;position:relative}.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.nArs4W_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.nArs4W_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.nArs4W_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.nArs4W_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.nArs4W_divider:hover:after,.nArs4W_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.nArs4W_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.nArs4W_dropLeft{width:25%;top:0;bottom:0;left:0}.nArs4W_dropRight{width:25%;top:0;bottom:0;right:0}.nArs4W_dropUp{height:25%;top:0;left:0;right:0}.nArs4W_dropDown{height:25%;bottom:0;left:0;right:0}.nArs4W_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.nArs4W_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.nArs4W_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_paneTabHidden{display:none}.nArs4W_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.nArs4W_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.nArs4W_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.nArs4W_paneCard:disabled{opacity:.45;cursor:default}.nArs4W_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.nArs4W_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.nArs4W_tabList::-webkit-scrollbar{display:none}.nArs4W_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.nArs4W_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.nArs4W_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_tabBadge{min-width:16px;height:15px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary);border-radius:8px;flex:none;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.nArs4W_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.nArs4W_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow-y:auto}.nArs4W_explorerRow{width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.nArs4W_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_explorerDir{font:var(--dsw-font-s-strong-14)}.nArs4W_explorerHidden{opacity:.45}.nArs4W_explorerSymlink{color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerBroken .nArs4W_explorerName{color:var(--dsw-alias-state-error-primary)}.nArs4W_explorerName{text-overflow:ellipsis;overflow:hidden}.nArs4W_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.nArs4W_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorerRow:hover .nArs4W_explorerRef,.nArs4W_explorerRow:focus-within .nArs4W_explorerRef{display:inline-flex}.nArs4W_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes nArs4W_dsh-row-in{0%{opacity:0}}.nArs4W_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_editor{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.nArs4W_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.nArs4W_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorStatusError{color:var(--dsw-alias-state-error-primary)}.nArs4W_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.nArs4W_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.nArs4W_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.nArs4W_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.nArs4W_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.nArs4W_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.nArs4W_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.nArs4W_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.nArs4W_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.nArs4W_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.nArs4W_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.nArs4W_sandboxStatusOff .nArs4W_sandboxDot{background:var(--dsw-alias-state-error-primary)}.nArs4W_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.nArs4W_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browser{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.nArs4W_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.nArs4W_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.nArs4W_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.nArs4W_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.nArs4W_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.nArs4W_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.nArs4W_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.nArs4W_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.nArs4W_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.nArs4W_editorCmHidden{display:none}.nArs4W_editorCm .cm-editor{height:100%}.nArs4W_editorCm .cm-editor.cm-focused{outline:none}.nArs4W_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.nArs4W_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.nArs4W_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.nArs4W_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.nArs4W_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.nArs4W_editorImage{object-fit:contain;max-width:100%;max-height:100%}.nArs4W_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.nArs4W_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.nArs4W_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.nArs4W_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.nArs4W_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_editorPdfFrameBlocked{pointer-events:none}.nArs4W_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.nArs4W_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .nArs4W_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .nArs4W_editorPdfDragShield{pointer-events:auto!important}.nArs4W_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.nArs4W_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.nArs4W_terminal .xterm{height:100%}.nArs4W_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.nArs4W_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.nArs4W_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.nArs4W_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.nArs4W_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_terminalDepsBanner{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-direction:column;flex:none;gap:6px;padding:10px;display:flex}.nArs4W_terminalDepsTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-state-warn-primary)}.nArs4W_terminalDepsHint{opacity:.9}.nArs4W_terminalDepsCommandRow{align-items:flex-start;gap:8px;display:flex}.nArs4W_terminalRepairCommand{white-space:pre-wrap;word-break:break-all;user-select:text;min-width:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:4px;flex:1;max-height:160px;margin:0;padding:6px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto}.nArs4W_terminalDepsNote{opacity:.85}.nArs4W_terminalDepsActions{align-items:center;gap:8px;display:flex}.nArs4W_tabBoundaryError{min-height:0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;flex:1;align-items:flex-start;gap:8px;padding:12px 16px;display:flex;overflow:auto}.nArs4W_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.nArs4W_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.nArs4W_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.nArs4W_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.nArs4W_gitLink:hover:not(:disabled){text-decoration:underline}.nArs4W_gitLink:disabled{opacity:.4;cursor:default}.nArs4W_gitRow{min-height:34px;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.nArs4W_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.nArs4W_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.nArs4W_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.nArs4W_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.nArs4W_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.nArs4W_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.nArs4W_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.nArs4W_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.nArs4W_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.nArs4W_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.nArs4W_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.nArs4W_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.nArs4W_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.nArs4W_gitDiffCode{flex:1;min-width:0;overflow:visible}.nArs4W_gitDiffCtx{color:var(--dsw-alias-label-primary)}.nArs4W_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.nArs4W_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.nArs4W_gitDiffMeta{padding-left:2px}.nArs4W_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.nArs4W_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.nArs4W_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.nArs4W_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.nArs4W_gitCommitInput{flex:1;min-width:0}.nArs4W_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.nArs4W_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.nArs4W_gitCommitButton:disabled{opacity:.45;cursor:default}.nArs4W_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.nArs4W_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.nArs4W_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.nArs4W_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.nArs4W_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.nArs4W_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_gitLogMore:disabled{opacity:.5;cursor:default}.nArs4W_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.nArs4W_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.nArs4W_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_toggleButton:focus-visible,.nArs4W_bottomClose:focus-visible,.nArs4W_iconButton:focus-visible,.nArs4W_tab:focus-visible,.nArs4W_tabClose:focus-visible,.nArs4W_tabBarPlus:focus-visible,.nArs4W_paneCard:focus-visible,.nArs4W_explorerRow:focus-visible,.nArs4W_explorerRef:focus-visible,.nArs4W_gitRowMain:focus-visible,.nArs4W_gitLink:focus-visible,.nArs4W_gitCommitButton:focus-visible,.nArs4W_gitLogRow:focus-visible,.nArs4W_gitLogMore:focus-visible,.nArs4W_gitDiffExpand:focus-visible,.nArs4W_terminalRetry:focus-visible,.nArs4W_editorModeButton:focus-visible,.nArs4W_editorDownloadLink:focus-visible,.nArs4W_editorPptxButton:focus-visible,.nArs4W_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.nArs4W_panel,.nArs4W_panelHidden,.nArs4W_bottomPanel,.nArs4W_bottomPanelHidden,.nArs4W_toggleCluster,.nArs4W_toggleButton,.nArs4W_tab,.nArs4W_tabBarPlus,.nArs4W_paneCard,.nArs4W_explorerRow,.nArs4W_gitRow,.nArs4W_divider,.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:40px}.nArs4W_tab{min-width:48px;max-width:128px}}";
+	const css = "[data-dsh-panel-host]{z-index:40;pointer-events:none;position:fixed;inset:0}[data-dsh-panel-host][data-dsh-panel-host-degraded]{position:absolute;top:0;left:0}.nArs4W_toggleCluster{top:calc(3px + env(safe-area-inset-top));z-index:45;pointer-events:auto;flex-direction:row;gap:4px;display:flex;position:absolute;right:10px}.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:72px}.nArs4W_toggleButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), color var(--ds-transition-duration-slow) var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;display:flex}.nArs4W_toggleButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_toggleButton:disabled{opacity:.4;cursor:default}.nArs4W_panel{z-index:40;pointer-events:auto;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);padding-bottom:env(safe-area-inset-bottom);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:absolute;top:0;bottom:0;right:0}.nArs4W_panelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), width var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translate(102%)}.nArs4W_panel[data-dragging]{transition:none}.nArs4W_panelResize{cursor:col-resize;z-index:2;touch-action:none;width:8px;position:absolute;top:0;bottom:0;left:-4px}.nArs4W_panelResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_panelBody{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_bottomPanel{z-index:40;background:var(--dsw-alias-bg-layer-1);border-top:1px solid var(--dsw-alias-border-l2);pointer-events:auto;padding-bottom:env(safe-area-inset-bottom);transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out);flex-direction:column;display:flex;position:absolute;bottom:0}.nArs4W_bottomPanelHidden{pointer-events:none;visibility:hidden;transition:transform var(--ds-transition-duration-slow) var(--ds-ease-in-out), height var(--ds-transition-duration-slow) var(--ds-ease-in-out), visibility 0s linear var(--ds-transition-duration-slow);transform:translateY(102%)}.nArs4W_bottomPanel[data-dragging]{transition:none}.nArs4W_panel,.nArs4W_bottomPanel{contain:layout style}body[data-dsh-sidebar-dragging] .nArs4W_panel,body[data-dsh-sidebar-dragging] .nArs4W_bottomPanel{will-change:transform}.nArs4W_bottomResize{cursor:row-resize;z-index:2;touch-action:none;height:8px;position:absolute;top:-4px;left:0;right:0}.nArs4W_bottomResizeActive{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_bottomClose{z-index:4;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:3px;right:6px}.nArs4W_bottomClose:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_bottomPanel .nArs4W_tabBar{padding-right:40px}.nArs4W_toggleCluster,.nArs4W_toggleButton,.nArs4W_tabBar{-webkit-app-region:no-drag}body[data-dsh-title-bar-compat] .nArs4W_toggleCluster{top:calc(var(--dsh-title-bar-strip,40px) + 3px)}body[data-dsh-title-bar-compat] .nArs4W_panel{padding-top:var(--dsh-title-bar-strip,40px)}.nArs4W_cornerHandle{left:-6px;bottom:calc(var(--dsh-sidebar-height,0px) + 6px);z-index:2;cursor:nwse-resize;touch-action:none;width:12px;height:12px;position:absolute}.nArs4W_cornerHandle:hover,.nArs4W_cornerHandle[data-dragging]{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_iconButton{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_iconButton:disabled{opacity:.4;cursor:default}.nArs4W_workbench,.nArs4W_split{flex:1;min-width:0;min-height:0;display:flex}.nArs4W_splitRow{flex-direction:row}.nArs4W_splitCol{flex-direction:column}.nArs4W_splitChild{display:flex;position:relative;overflow:hidden}.nArs4W_divider{z-index:3;touch-action:none;flex:none;position:relative}.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{content:\"\";background:var(--dsw-alias-border-l2);transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out);position:absolute}.nArs4W_dividerRow{cursor:col-resize;width:7px;margin:0 -2px}.nArs4W_dividerRow:after{width:1px;top:0;bottom:0;left:50%;transform:translate(-50%)}.nArs4W_dividerCol{cursor:row-resize;height:7px;margin:-2px 0}.nArs4W_dividerCol:after{height:1px;top:50%;left:0;right:0;transform:translateY(-50%)}.nArs4W_divider:hover:after,.nArs4W_dividerActive:after{background:var(--dsw-alias-interactive-bg-hover-accent)}.nArs4W_pane{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.nArs4W_paneDrop{outline:1px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_dropOverlay{z-index:6;pointer-events:none;background:var(--dsw-alias-interactive-bg-hover-accent);opacity:.5;position:absolute}.nArs4W_dropLeft{width:25%;top:0;bottom:0;left:0}.nArs4W_dropRight{width:25%;top:0;bottom:0;right:0}.nArs4W_dropUp{height:25%;top:0;left:0;right:0}.nArs4W_dropDown{height:25%;bottom:0;left:0;right:0}.nArs4W_dropCenter{outline:2px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-2px;background:0 0;inset:25%}.nArs4W_paneContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.nArs4W_paneTab{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_paneTabHidden{display:none}.nArs4W_paneEmptyCards{flex:1;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:8px;min-height:0;padding:12px;display:grid;overflow:hidden}.nArs4W_paneCard{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;text-align:center;border-radius:8px;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px 8px;display:flex}.nArs4W_paneCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}.nArs4W_paneCard:disabled{opacity:.45;cursor:default}.nArs4W_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);flex:none;align-items:stretch;height:34px;display:flex}.nArs4W_tabBarDrop{outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_tabList{scrollbar-width:none;flex:1;min-width:0;display:flex;overflow-x:auto}.nArs4W_tabList::-webkit-scrollbar{display:none}.nArs4W_tab{min-width:64px;max-width:160px;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);border-right:1px solid var(--dsw-alias-border-l1);cursor:pointer;user-select:none;background:0 0;flex:none;align-items:center;gap:4px;padding:0 4px 0 10px;display:flex}.nArs4W_tab:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_tabActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.nArs4W_tabTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_tabBadge{min-width:16px;height:15px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-brand-primary);border-radius:8px;flex:none;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.nArs4W_tabClose{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.nArs4W_tabClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_tabBarPlus{background:var(--dsw-alias-bg-layer-1);width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;border:none;border-radius:5px;flex:none;justify-content:center;align-self:center;align-items:center;margin:0 6px;padding:0;display:inline-flex;position:sticky;right:0}.nArs4W_tabBarPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorer{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_explorerHeader{flex:none;justify-content:space-between;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_explorerRoot{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_explorerBody{flex:1;min-height:0;padding:2px 6px 8px;overflow:hidden auto}.nArs4W_explorerRow{box-sizing:border-box;width:100%;max-width:100%;height:34px;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;white-space:nowrap;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.nArs4W_explorerRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_explorerDir{font:var(--dsw-font-s-strong-14)}.nArs4W_explorerHidden{opacity:.45}.nArs4W_explorerSymlink{color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerBroken .nArs4W_explorerName{color:var(--dsw-alias-state-error-primary)}.nArs4W_explorerName{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.nArs4W_explorerRef{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:20px;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;align-items:center;padding:0 8px;display:none}.nArs4W_explorerRef:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_explorerRow:hover .nArs4W_explorerRef,.nArs4W_explorerRow:focus-within .nArs4W_explorerRef{display:inline-flex}.nArs4W_explorerCopied{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_explorerError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);cursor:default}@keyframes nArs4W_dsh-row-in{0%{opacity:0}}.nArs4W_explorerEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_explorerRowDropTarget{background:var(--dsw-alias-interactive-bg-hover);outline:1px dashed var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}.nArs4W_uploadDropZone{z-index:1001;pointer-events:none;border:2px dashed var(--dsw-alias-interactive-bg-hover-accent);box-shadow:0 0 0 200vmax var(--dsw-alias-bg-mask-drop);animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);border-radius:10px;justify-content:center;align-items:flex-start;padding:12px;display:flex;position:fixed}.nArs4W_uploadDropHero{flex-direction:column;align-items:center;gap:10px;max-width:100%;padding-top:8px;display:flex}.nArs4W_uploadDropZonePill{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:100%;box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);border-radius:999px;align-items:center;gap:6px;padding:6px 12px;display:flex}.nArs4W_uploadDropZoneText{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.nArs4W_uploadDropChatHint{z-index:1002;pointer-events:none;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);justify-content:center;align-items:center;padding:24px;display:flex;position:fixed;top:0;bottom:0;left:0}.nArs4W_uploadDropChatCard{text-align:center;max-width:100%;color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14);flex-direction:column;align-items:center;gap:12px;display:flex}.nArs4W_uploadOverlay{z-index:30;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);justify-content:center;align-items:center;display:flex;position:absolute;inset:0}.nArs4W_uploadOverlayCard{border:1px solid var(--dsw-alias-border-inverted);background:var(--dsw-alias-bg-layer-2);min-width:280px;max-width:min(420px,100% - 48px);box-shadow:var(--dsw-shadow-lv3);border-radius:24px;flex-direction:column;gap:12px;padding:20px 24px;display:flex}.nArs4W_uploadOverlayTitle{font:var(--dsw-font-s-strong-14);color:var(--dsw-alias-label-primary);align-items:center;gap:8px;display:flex}.nArs4W_uploadOverlayTitle>svg{flex:none}.nArs4W_uploadOverlayTitle>span{white-space:nowrap;text-overflow:ellipsis;min-width:0;overflow:hidden}.nArs4W_uploadOverlayProgress{background:var(--dsw-alias-border-l2);border-radius:3px;height:6px;overflow:hidden}.nArs4W_uploadOverlayProgressFill{background:var(--dsw-alias-interactive-bg-hover-accent);height:100%;transition:width .15s var(--ds-ease-in-out);border-radius:3px}.nArs4W_uploadOverlayStatus{min-height:1em;font:var(--dsw-font-xxs-12);font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.nArs4W_uploadOverlayCancel{border:1px solid var(--dsw-alias-border-l2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;background:0 0;border-radius:8px;align-self:flex-end;padding:0 14px}.nArs4W_uploadOverlayCancel:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.nArs4W_uploadOverlayCancel:disabled{opacity:.4;cursor:default}.nArs4W_editor{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.nArs4W_editorTitle{min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}.nArs4W_editorPathInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.nArs4W_editorPathInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.nArs4W_editorTreeToggleActive{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-active)}.nArs4W_editorBody{flex:1;min-height:0;display:flex}.nArs4W_editorMain{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex}.nArs4W_editorTreeDock{border-left:1px solid var(--dsw-alias-border-l1);flex:none;min-height:0;display:flex;position:relative}.nArs4W_editorTreeResize{cursor:col-resize;touch-action:none;z-index:3;width:6px;position:absolute;top:0;bottom:0;left:0}.nArs4W_editorTreeResize:hover{background:var(--dsw-alias-border-l2)}.nArs4W_editorTreePanel{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;position:relative}.nArs4W_editorTreePanelFull{flex:1}.nArs4W_editorTreeSearch{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.nArs4W_editorSearchInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.nArs4W_editorSearchInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.nArs4W_editorSearchHint{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:8px 12px}.nArs4W_editorSearchResult{width:100%;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);text-align:left;cursor:pointer;text-overflow:ellipsis;white-space:nowrap;background:0 0;border:none;border-radius:6px;padding:4px 8px;display:block;overflow:hidden}.nArs4W_editorSearchResult:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorStatus{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorStatusError{color:var(--dsw-alias-state-error-primary)}.nArs4W_dirtyDot{background:var(--dsw-alias-state-warn-primary);border-radius:50%;flex:none;width:7px;height:7px}.nArs4W_editorPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;flex:1;justify-content:center;align-items:center;padding:16px;display:flex}.nArs4W_orphanedType{opacity:.7;overflow-wrap:anywhere;margin-top:8px;font-size:12px;display:block}.nArs4W_editorBinary{text-align:center;flex-direction:column;flex:1;justify-content:center;align-items:center;gap:12px;padding:24px 16px;display:flex}.nArs4W_editorBinaryNotice{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_editorDownloadLink{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-strong-12);cursor:pointer;transition:background var(--ds-transition-duration-slow) var(--ds-ease-in-out), border-color var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:6px;align-items:center;gap:6px;padding:6px 14px;text-decoration:none;display:inline-flex}.nArs4W_editorDownloadLink:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}.nArs4W_editorError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);padding:12px 16px}.nArs4W_editorBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_sandboxStatus{font:var(--dsw-font-xxxs-11);flex:none;align-items:center;gap:8px;padding:4px 10px;display:flex}.nArs4W_sandboxStatusOn{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}.nArs4W_sandboxStatusOff{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent)}.nArs4W_sandboxDot{background:var(--dsw-alias-state-success-primary);border-radius:50%;flex:none;width:6px;height:6px}.nArs4W_sandboxStatusOff .nArs4W_sandboxDot{background:var(--dsw-alias-state-error-primary)}.nArs4W_sandboxStatusText{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.nArs4W_sandboxAction{border:1px solid var(--dsw-alias-border-l2);font:inherit;color:inherit;cursor:pointer;background:0 0;border-radius:6px;flex:none;padding:2px 8px}.nArs4W_sandboxAction:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorHtml{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browser{flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_browserBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:4px;padding:6px 8px;display:flex}.nArs4W_browserInput{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);min-width:0;height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 10px}.nArs4W_browserInput:focus{border-color:var(--dsw-alias-border-l2);outline:none}.nArs4W_browserMessage{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex:none;padding:4px 12px}.nArs4W_browserFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_browserStart{text-align:center;min-height:0;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary);flex:1;justify-content:center;align-items:center;padding:20px;display:flex}.nArs4W_browserBlocked{text-align:center;min-height:0;color:var(--dsw-alias-state-warn-primary);flex-direction:column;flex:1;justify-content:center;align-items:center;gap:6px;padding:24px;display:flex}.nArs4W_browserBlockedTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary)}.nArs4W_browserBlockedDesc{max-width:280px;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-secondary)}.nArs4W_browserBlockedActions{gap:8px;margin-top:6px;display:flex}.nArs4W_browserBlockedButton{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-11);cursor:pointer;border-radius:6px;padding:4px 12px}.nArs4W_browserBlockedButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorCm{background:0 0;flex:1;min-height:0;overflow:hidden}.nArs4W_editorCmHidden{display:none}.nArs4W_editorCm .cm-editor{height:100%}.nArs4W_editorCm .cm-editor.cm-focused{outline:none}.nArs4W_editorModeToggle{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;flex:none;align-items:center;gap:2px;padding:2px;display:inline-flex}.nArs4W_editorModeButton{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;padding:2px 8px}.nArs4W_editorModeButton:hover{color:var(--dsw-alias-label-primary)}.nArs4W_editorModeActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.nArs4W_editorImageWrap{flex:1;justify-content:center;align-items:center;min-height:0;padding:12px;display:flex;overflow:auto}.nArs4W_editorImage{object-fit:contain;max-width:100%;max-height:100%}.nArs4W_editorMd{min-height:0;font:var(--dsw-font-xs-13);flex:1;padding:10px 14px;overflow-y:auto}.nArs4W_mermaidWrap{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:6px;margin:6px 0;overflow:hidden}.nArs4W_mermaidHeader{border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);justify-content:space-between;align-items:center;gap:6px;padding:4px 8px;display:flex}.nArs4W_mermaidInfo{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_mermaidCopy{height:20px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-11);cursor:pointer;background:0 0;border:none;border-radius:4px;align-items:center;gap:4px;padding:0 6px;display:inline-flex}.nArs4W_mermaidCopy:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_mermaidBody{cursor:zoom-in;justify-content:center;padding:10px;display:flex;overflow:auto}.nArs4W_mermaidBody svg{max-width:100%;height:auto}.nArs4W_mermaidError{border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-state-error-primary);font:var(--dsw-font-xxxs-11);padding:6px 10px}.nArs4W_mermaidCode{font:var(--dsw-font-xxxs-11);margin:0;padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:auto}.nArs4W_mermaidMarkdown .md-code-block[data-mermaid-processed]{display:contents}.nArs4W_mermaidModal{z-index:1000;background:var(--dsw-alias-bg-mask-1);backdrop-filter:blur(2px);flex-direction:column;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.nArs4W_mermaidModalToolbar{z-index:10;gap:8px;display:flex;position:absolute;top:16px;right:16px}.nArs4W_mermaidModalButton{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);width:36px;height:36px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xs-strong-13);cursor:pointer;border-radius:8px;justify-content:center;align-items:center;display:inline-flex}.nArs4W_mermaidModalButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_mermaidModalStage{justify-content:center;align-items:center;width:90vw;height:80vh;display:flex;position:relative;overflow:hidden}.nArs4W_mermaidModalStage svg{cursor:grab;transform-origin:50%;user-select:none;-webkit-user-drag:none;background:var(--dsw-alias-bg-layer-1);border-radius:12px;max-width:none;max-height:none;padding:16px}.nArs4W_mermaidModalStage svg:active{cursor:grabbing}.nArs4W_mermaidModalHint{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxxs-11);pointer-events:none;position:absolute;bottom:16px;left:50%;transform:translate(-50%)}.nArs4W_selectionPopup{z-index:60;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);height:28px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxxs-strong-11);white-space:nowrap;cursor:pointer;border-radius:6px;align-items:center;padding:0 10px;display:inline-flex;position:fixed;transform:translate(-50%,calc(-100% - 8px))}.nArs4W_selectionPopup:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_editorPdf{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex}.nArs4W_editorPdfToolbar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;justify-content:flex-end;padding:6px 8px;display:flex}.nArs4W_editorPdfStage{flex:1;min-height:0;display:flex;position:relative}.nArs4W_editorPdfFrame{background:var(--dsw-alias-bg-base);border:none;flex:1;width:100%;min-height:0}.nArs4W_editorPdfFrameBlocked{pointer-events:none}.nArs4W_editorPdfDragShield{z-index:4;pointer-events:none;background:0 0;position:absolute;inset:0}.nArs4W_editorPdfDragShieldActive{pointer-events:auto}body[data-dsh-tab-dragging] .nArs4W_editorPdfFrame{pointer-events:none!important}body[data-dsh-tab-dragging] .nArs4W_editorPdfDragShield{pointer-events:auto!important}.nArs4W_terminalWrap{background:var(--dsw-alias-bg-base);flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.nArs4W_terminal{flex:1;min-height:0;padding:6px 4px 6px 8px}.nArs4W_terminal .xterm{height:100%}.nArs4W_terminalBanner{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-wrap:wrap;flex:none;align-items:center;gap:8px;padding:3px 10px;display:flex}.nArs4W_terminalBannerUrl{word-break:break-all;opacity:.85;flex-basis:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.nArs4W_boundaryError{z-index:50;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;align-items:flex-start;gap:8px;padding:16px;display:flex;position:fixed;top:0;bottom:0;right:0;overflow:auto}.nArs4W_terminalRetry{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-strong-11);cursor:pointer;border-radius:999px;flex:none;padding:1px 8px}.nArs4W_terminalRetry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_terminalDepsBanner{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary);flex-direction:column;flex:none;gap:6px;padding:10px;display:flex}.nArs4W_terminalDepsTitle{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-state-warn-primary)}.nArs4W_terminalDepsHint{opacity:.9}.nArs4W_terminalDepsCommandRow{align-items:flex-start;gap:8px;display:flex}.nArs4W_terminalRepairCommand{white-space:pre-wrap;word-break:break-all;user-select:text;min-width:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:4px;flex:1;max-height:160px;margin:0;padding:6px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto}.nArs4W_terminalDepsNote{opacity:.85}.nArs4W_terminalDepsActions{align-items:center;gap:8px;display:flex}.nArs4W_tabBoundaryError{min-height:0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);flex-direction:column;flex:1;align-items:flex-start;gap:8px;padding:12px 16px;display:flex;overflow:auto}.nArs4W_git{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitHeader{flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitBranchSelect{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;height:26px;color:var(--dsw-alias-label-primary);font:var(--dsw-font-xxs-12);border-radius:6px;flex:1;padding:0 6px}.nArs4W_gitSection{border-top:1px solid var(--dsw-alias-border-l1)}.nArs4W_gitSectionHeader{font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-tertiary);text-transform:uppercase;justify-content:space-between;align-items:center;padding:6px 12px 4px;display:flex}.nArs4W_gitLink{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-brand-primary);cursor:pointer;background:0 0;border:none;padding:0}.nArs4W_gitLink:hover:not(:disabled){text-decoration:underline}.nArs4W_gitLink:disabled{opacity:.4;cursor:default}.nArs4W_gitRow{min-height:34px;animation:nArs4W_dsh-row-in .15s var(--ds-ease-in-out);border-radius:8px;align-items:center;gap:6px;margin:0 6px;padding:0 8px;display:flex}.nArs4W_gitRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitRowSelected{background:var(--dsw-alias-interactive-bg-active)}.nArs4W_gitRowMain{cursor:pointer;text-align:left;background:0 0;border:none;flex:1;align-items:center;gap:8px;min-width:0;padding:3px 0;display:flex}.nArs4W_gitBadge{width:20px;height:16px;font:var(--dsw-font-xxxs-strong-11);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.nArs4W_gitName{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitEmpty{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);padding:4px 12px 8px}.nArs4W_gitPlaceholder{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary);text-align:center;padding:16px}.nArs4W_gitError{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;padding:8px 12px}.nArs4W_gitDiff{border-top:1px solid var(--dsw-alias-border-l1);padding:8px}.nArs4W_gitDiffTab{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden auto}.nArs4W_gitDiffTabHeader{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:center;gap:8px;height:36px;padding:0 8px 0 12px;display:flex}.nArs4W_gitDiffTabTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitDiffFile{align-items:baseline;gap:6px;padding:8px 2px 2px;display:flex}.nArs4W_gitDiffFilePath{font:var(--dsw-font-xxs-strong-12);color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffFileOld{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}.nArs4W_gitDiffFileTag{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:0 6px}.nArs4W_gitDiffHunk{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);gap:8px;padding:3px 2px;display:flex}.nArs4W_gitDiffHunkHeader{color:var(--dsw-alias-label-secondary);flex:none}.nArs4W_gitDiffHunkSection{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_gitDiffLine{font:var(--dsw-font-markdown-code-block-small);white-space:pre-wrap;overflow-wrap:anywhere;align-items:stretch;min-width:0;line-height:20px;display:flex}.nArs4W_gitDiffNum{text-align:right;width:36px;color:var(--dsw-alias-label-tertiary);user-select:none;flex:none;padding-right:8px}.nArs4W_gitDiffCode{flex:1;min-width:0;overflow:visible}.nArs4W_gitDiffCtx{color:var(--dsw-alias-label-primary)}.nArs4W_gitDiffDel{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)}.nArs4W_gitDiffAdd{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)}.nArs4W_gitDiffMeta{padding-left:2px}.nArs4W_gitDiffMetaText{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary);font-style:italic}.nArs4W_gitDiffExpand{width:100%;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-brand-primary);cursor:pointer;text-align:center;background:0 0;border:none;margin:4px 0;display:block}.nArs4W_gitDiffExpand:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitConfirmDesc{font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);white-space:pre-wrap;margin:0}.nArs4W_gitCommit{border-top:1px solid var(--dsw-alias-border-l1);align-items:center;gap:6px;padding:8px 12px;display:flex}.nArs4W_gitCommitInput{flex:1;min-width:0}.nArs4W_gitCommitButton{background:var(--dsw-alias-button-primary-fill);height:26px;color:var(--dsw-alias-label-primary-inverted);font:var(--dsw-font-xxs-strong-12);cursor:pointer;border:none;border-radius:6px;flex:none;padding:0 12px}.nArs4W_gitCommitButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.nArs4W_gitCommitButton:disabled{opacity:.45;cursor:default}.nArs4W_gitLogRow{cursor:pointer;border-radius:8px;flex-direction:column;gap:2px;padding:5px 12px;display:flex}.nArs4W_gitLogRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.nArs4W_gitLogLine1{align-items:baseline;gap:8px;min-width:0;display:flex}.nArs4W_gitLogHash{font:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-tertiary);flex:none}.nArs4W_gitLogLine2{flex-wrap:wrap;align-items:center;gap:6px;min-width:0;display:flex}.nArs4W_gitLogRef{border:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxxs-strong-11);color:var(--dsw-alias-brand-primary);white-space:nowrap;border-radius:999px;flex:none;padding:0 5px}.nArs4W_gitLogSubject{text-overflow:ellipsis;white-space:nowrap;min-width:0;font:var(--dsw-font-s-14);color:var(--dsw-alias-label-primary);flex:1;overflow:hidden}.nArs4W_gitLogMeta{font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}.nArs4W_gitLogMore{border:1px solid var(--dsw-alias-border-l2);width:calc(100% - 24px);font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:6px;margin:4px 12px 8px;padding:6px 0;display:block}.nArs4W_gitLogMore:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_gitLogMore:disabled{opacity:.5;cursor:default}.nArs4W_producedRow{flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;display:flex}.nArs4W_producedLabel{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_producedChip{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-width:200px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12);cursor:pointer;border-radius:999px;align-items:center;gap:4px;padding:2px 8px;display:inline-flex;overflow:hidden}.nArs4W_producedChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.nArs4W_producedChip span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nArs4W_producedMore{font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}.nArs4W_toggleButton:focus-visible,.nArs4W_bottomClose:focus-visible,.nArs4W_iconButton:focus-visible,.nArs4W_tab:focus-visible,.nArs4W_tabClose:focus-visible,.nArs4W_tabBarPlus:focus-visible,.nArs4W_paneCard:focus-visible,.nArs4W_explorerRow:focus-visible,.nArs4W_explorerRef:focus-visible,.nArs4W_gitRowMain:focus-visible,.nArs4W_gitLink:focus-visible,.nArs4W_gitCommitButton:focus-visible,.nArs4W_gitLogRow:focus-visible,.nArs4W_gitLogMore:focus-visible,.nArs4W_gitDiffExpand:focus-visible,.nArs4W_terminalRetry:focus-visible,.nArs4W_editorModeButton:focus-visible,.nArs4W_editorDownloadLink:focus-visible,.nArs4W_editorPptxButton:focus-visible,.nArs4W_editorDocxZoomRange:focus-visible{outline:2px solid var(--dsw-alias-interactive-bg-hover-accent);outline-offset:-1px}@media (prefers-reduced-motion:reduce){.nArs4W_panel,.nArs4W_panelHidden,.nArs4W_bottomPanel,.nArs4W_bottomPanelHidden,.nArs4W_toggleCluster,.nArs4W_toggleButton,.nArs4W_tab,.nArs4W_tabBarPlus,.nArs4W_paneCard,.nArs4W_explorerRow,.nArs4W_gitRow,.nArs4W_divider,.nArs4W_dividerRow:after,.nArs4W_dividerCol:after{transition:none;animation:none}}@media (width<=767px){.nArs4W_panel:not(.nArs4W_panelHidden) .nArs4W_tabBar{padding-right:40px}.nArs4W_tab{min-width:48px;max-width:128px}}";
 	const tagId = "dsh-better-sidebar/sidebar.module.css";
 	if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 		const tag = document.createElement("style");
@@ -33185,179 +33407,218 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		document.head.appendChild(tag);
 	}
 	var sidebar_module_css_default = {
-		"sandboxStatus": "nArs4W_sandboxStatus",
-		"bottomResizeActive": "nArs4W_bottomResizeActive",
-		"paneTab": "nArs4W_paneTab",
-		"editorCmHidden": "nArs4W_editorCmHidden",
-		"tabBar": "nArs4W_tabBar",
-		"bottomResize": "nArs4W_bottomResize",
-		"dsh-row-in": "nArs4W_dsh-row-in",
-		"paneCard": "nArs4W_paneCard",
-		"editorBinaryNotice": "nArs4W_editorBinaryNotice",
-		"cornerHandle": "nArs4W_cornerHandle",
-		"split": "nArs4W_split",
-		"tabList": "nArs4W_tabList",
-		"tab": "nArs4W_tab",
-		"gitDiffFile": "nArs4W_gitDiffFile",
-		"splitChild": "nArs4W_splitChild",
-		"explorerRow": "nArs4W_explorerRow",
-		"gitDiffLine": "nArs4W_gitDiffLine",
-		"iconButton": "nArs4W_iconButton",
-		"browserBlockedTitle": "nArs4W_browserBlockedTitle",
-		"editorPlaceholder": "nArs4W_editorPlaceholder",
-		"tabBadge": "nArs4W_tabBadge",
-		"gitDiffFilePath": "nArs4W_gitDiffFilePath",
-		"gitDiffExpand": "nArs4W_gitDiffExpand",
-		"gitLogSubject": "nArs4W_gitLogSubject",
-		"editorHeader": "nArs4W_editorHeader",
-		"editorBanner": "nArs4W_editorBanner",
-		"editorDocxZoomRange": "nArs4W_editorDocxZoomRange",
-		"gitDiffTabHeader": "nArs4W_gitDiffTabHeader",
-		"paneTabHidden": "nArs4W_paneTabHidden",
-		"browserBlockedButton": "nArs4W_browserBlockedButton",
-		"browserBlockedDesc": "nArs4W_browserBlockedDesc",
-		"boundaryError": "nArs4W_boundaryError",
-		"gitDiffTab": "nArs4W_gitDiffTab",
-		"browserMessage": "nArs4W_browserMessage",
-		"git": "nArs4W_git",
-		"gitBranchSelect": "nArs4W_gitBranchSelect",
-		"explorerRoot": "nArs4W_explorerRoot",
-		"panelResizeActive": "nArs4W_panelResizeActive",
-		"workbench": "nArs4W_workbench",
-		"editorPptxButton": "nArs4W_editorPptxButton",
-		"explorerName": "nArs4W_explorerName",
-		"producedMore": "nArs4W_producedMore",
-		"explorerHeader": "nArs4W_explorerHeader",
-		"explorerCopied": "nArs4W_explorerCopied",
-		"dividerCol": "nArs4W_dividerCol",
-		"gitSectionHeader": "nArs4W_gitSectionHeader",
-		"gitDiffHunk": "nArs4W_gitDiffHunk",
-		"panelBody": "nArs4W_panelBody",
-		"editor": "nArs4W_editor",
-		"tabBoundaryError": "nArs4W_tabBoundaryError",
-		"sandboxAction": "nArs4W_sandboxAction",
 		"splitRow": "nArs4W_splitRow",
-		"dividerActive": "nArs4W_dividerActive",
-		"gitRowSelected": "nArs4W_gitRowSelected",
-		"paneDrop": "nArs4W_paneDrop",
-		"panelHidden": "nArs4W_panelHidden",
-		"bottomPanel": "nArs4W_bottomPanel",
-		"gitDiffHunkHeader": "nArs4W_gitDiffHunkHeader",
-		"terminal": "nArs4W_terminal",
-		"terminalRetry": "nArs4W_terminalRetry",
-		"editorImage": "nArs4W_editorImage",
-		"dropUp": "nArs4W_dropUp",
-		"editorPdfToolbar": "nArs4W_editorPdfToolbar",
-		"gitRow": "nArs4W_gitRow",
-		"tabBarDrop": "nArs4W_tabBarDrop",
-		"paneEmptyCards": "nArs4W_paneEmptyCards",
-		"gitRowMain": "nArs4W_gitRowMain",
-		"gitPlaceholder": "nArs4W_gitPlaceholder",
-		"browserStart": "nArs4W_browserStart",
-		"gitDiffTabTitle": "nArs4W_gitDiffTabTitle",
-		"editorPdfDragShield": "nArs4W_editorPdfDragShield",
-		"gitLogMeta": "nArs4W_gitLogMeta",
-		"explorerHidden": "nArs4W_explorerHidden",
-		"editorImageWrap": "nArs4W_editorImageWrap",
-		"gitLogLine2": "nArs4W_gitLogLine2",
-		"tabActive": "nArs4W_tabActive",
-		"explorerBody": "nArs4W_explorerBody",
-		"tabBarPlus": "nArs4W_tabBarPlus",
-		"editorModeButton": "nArs4W_editorModeButton",
-		"editorPdfDragShieldActive": "nArs4W_editorPdfDragShieldActive",
-		"toggleButton": "nArs4W_toggleButton",
-		"gitEmpty": "nArs4W_gitEmpty",
-		"gitDiffFileTag": "nArs4W_gitDiffFileTag",
-		"terminalRepairCommand": "nArs4W_terminalRepairCommand",
-		"editorStatus": "nArs4W_editorStatus",
-		"producedLabel": "nArs4W_producedLabel",
-		"sandboxStatusOn": "nArs4W_sandboxStatusOn",
-		"sandboxDot": "nArs4W_sandboxDot",
-		"browserBlockedActions": "nArs4W_browserBlockedActions",
-		"editorModeToggle": "nArs4W_editorModeToggle",
-		"gitDiff": "nArs4W_gitDiff",
-		"gitName": "nArs4W_gitName",
-		"gitLogHash": "nArs4W_gitLogHash",
-		"dropRight": "nArs4W_dropRight",
-		"orphanedType": "nArs4W_orphanedType",
-		"browserBar": "nArs4W_browserBar",
-		"gitLogRow": "nArs4W_gitLogRow",
-		"terminalBannerUrl": "nArs4W_terminalBannerUrl",
-		"tabClose": "nArs4W_tabClose",
-		"gitError": "nArs4W_gitError",
-		"gitLogLine1": "nArs4W_gitLogLine1",
-		"terminalWrap": "nArs4W_terminalWrap",
-		"gitCommitButton": "nArs4W_gitCommitButton",
-		"gitCommitInput": "nArs4W_gitCommitInput",
-		"producedChip": "nArs4W_producedChip",
-		"gitDiffMeta": "nArs4W_gitDiffMeta",
-		"explorer": "nArs4W_explorer",
-		"gitDiffHunkSection": "nArs4W_gitDiffHunkSection",
-		"explorerBroken": "nArs4W_explorerBroken",
-		"terminalDepsCommandRow": "nArs4W_terminalDepsCommandRow",
-		"dropOverlay": "nArs4W_dropOverlay",
-		"toggleCluster": "nArs4W_toggleCluster",
-		"dropLeft": "nArs4W_dropLeft",
-		"editorBinary": "nArs4W_editorBinary",
-		"dividerRow": "nArs4W_dividerRow",
-		"editorDownloadLink": "nArs4W_editorDownloadLink",
-		"dropDown": "nArs4W_dropDown",
-		"terminalDepsTitle": "nArs4W_terminalDepsTitle",
-		"splitCol": "nArs4W_splitCol",
-		"gitHeader": "nArs4W_gitHeader",
-		"divider": "nArs4W_divider",
-		"explorerRef": "nArs4W_explorerRef",
-		"gitCommit": "nArs4W_gitCommit",
-		"gitLogMore": "nArs4W_gitLogMore",
-		"browser": "nArs4W_browser",
-		"bottomPanelHidden": "nArs4W_bottomPanelHidden",
-		"gitDiffAdd": "nArs4W_gitDiffAdd",
-		"editorPdf": "nArs4W_editorPdf",
+		"uploadOverlayProgress": "nArs4W_uploadOverlayProgress",
 		"terminalDepsActions": "nArs4W_terminalDepsActions",
-		"dropCenter": "nArs4W_dropCenter",
-		"gitDiffNum": "nArs4W_gitDiffNum",
-		"editorStatusError": "nArs4W_editorStatusError",
-		"gitBadge": "nArs4W_gitBadge",
-		"gitLogRef": "nArs4W_gitLogRef",
-		"dirtyDot": "nArs4W_dirtyDot",
-		"explorerEmpty": "nArs4W_explorerEmpty",
-		"panelResize": "nArs4W_panelResize",
-		"editorPdfFrameBlocked": "nArs4W_editorPdfFrameBlocked",
-		"browserInput": "nArs4W_browserInput",
-		"terminalDepsNote": "nArs4W_terminalDepsNote",
-		"gitDiffDel": "nArs4W_gitDiffDel",
-		"editorTitle": "nArs4W_editorTitle",
+		"terminalBannerUrl": "nArs4W_terminalBannerUrl",
+		"producedLabel": "nArs4W_producedLabel",
+		"editorPptxButton": "nArs4W_editorPptxButton",
+		"editorTreeToggleActive": "nArs4W_editorTreeToggleActive",
+		"editorTreePanelFull": "nArs4W_editorTreePanelFull",
+		"tabBarPlus": "nArs4W_tabBarPlus",
+		"editorCmHidden": "nArs4W_editorCmHidden",
+		"uploadOverlay": "nArs4W_uploadOverlay",
 		"editorPdfFrame": "nArs4W_editorPdfFrame",
-		"pane": "nArs4W_pane",
-		"terminalBanner": "nArs4W_terminalBanner",
-		"tabTitle": "nArs4W_tabTitle",
-		"editorPdfStage": "nArs4W_editorPdfStage",
-		"editorHtml": "nArs4W_editorHtml",
-		"gitSection": "nArs4W_gitSection",
-		"terminalDepsBanner": "nArs4W_terminalDepsBanner",
-		"gitDiffCtx": "nArs4W_gitDiffCtx",
-		"browserBlocked": "nArs4W_browserBlocked",
+		"gitDiffHunkSection": "nArs4W_gitDiffHunkSection",
+		"editorStatus": "nArs4W_editorStatus",
+		"uploadOverlayTitle": "nArs4W_uploadOverlayTitle",
+		"browser": "nArs4W_browser",
+		"explorerHidden": "nArs4W_explorerHidden",
+		"terminal": "nArs4W_terminal",
 		"gitDiffCode": "nArs4W_gitDiffCode",
-		"sandboxStatusOff": "nArs4W_sandboxStatusOff",
-		"explorerError": "nArs4W_explorerError",
-		"bottomClose": "nArs4W_bottomClose",
-		"gitLink": "nArs4W_gitLink",
-		"editorModeActive": "nArs4W_editorModeActive",
-		"gitDiffFileOld": "nArs4W_gitDiffFileOld",
-		"editorError": "nArs4W_editorError",
-		"producedRow": "nArs4W_producedRow",
-		"selectionPopup": "nArs4W_selectionPopup",
-		"editorCm": "nArs4W_editorCm",
-		"browserFrame": "nArs4W_browserFrame",
-		"gitDiffMetaText": "nArs4W_gitDiffMetaText",
-		"explorerDir": "nArs4W_explorerDir",
-		"panel": "nArs4W_panel",
 		"explorerSymlink": "nArs4W_explorerSymlink",
-		"paneContent": "nArs4W_paneContent",
-		"terminalDepsHint": "nArs4W_terminalDepsHint",
+		"tabBadge": "nArs4W_tabBadge",
+		"editorCm": "nArs4W_editorCm",
+		"mermaidHeader": "nArs4W_mermaidHeader",
+		"editorPdf": "nArs4W_editorPdf",
+		"editorModeActive": "nArs4W_editorModeActive",
+		"gitCommitButton": "nArs4W_gitCommitButton",
+		"browserStart": "nArs4W_browserStart",
+		"tab": "nArs4W_tab",
+		"editorBanner": "nArs4W_editorBanner",
+		"browserBlocked": "nArs4W_browserBlocked",
+		"gitDiffDel": "nArs4W_gitDiffDel",
 		"gitConfirmDesc": "nArs4W_gitConfirmDesc",
+		"explorerCopied": "nArs4W_explorerCopied",
+		"mermaidModalStage": "nArs4W_mermaidModalStage",
+		"gitRowSelected": "nArs4W_gitRowSelected",
+		"gitHeader": "nArs4W_gitHeader",
+		"explorerRowDropTarget": "nArs4W_explorerRowDropTarget",
+		"editorPdfDragShield": "nArs4W_editorPdfDragShield",
+		"sandboxStatus": "nArs4W_sandboxStatus",
+		"mermaidError": "nArs4W_mermaidError",
+		"editorDownloadLink": "nArs4W_editorDownloadLink",
+		"explorerBroken": "nArs4W_explorerBroken",
+		"tabList": "nArs4W_tabList",
+		"gitDiffMetaText": "nArs4W_gitDiffMetaText",
+		"gitLogHash": "nArs4W_gitLogHash",
+		"gitName": "nArs4W_gitName",
+		"gitDiffFileOld": "nArs4W_gitDiffFileOld",
+		"editorBody": "nArs4W_editorBody",
+		"gitDiff": "nArs4W_gitDiff",
+		"explorerName": "nArs4W_explorerName",
+		"bottomPanel": "nArs4W_bottomPanel",
+		"editorSearchHint": "nArs4W_editorSearchHint",
+		"gitDiffFilePath": "nArs4W_gitDiffFilePath",
 		"editorMd": "nArs4W_editorMd",
-		"sandboxStatusText": "nArs4W_sandboxStatusText"
+		"editorImage": "nArs4W_editorImage",
+		"panelBody": "nArs4W_panelBody",
+		"mermaidModalToolbar": "nArs4W_mermaidModalToolbar",
+		"dividerCol": "nArs4W_dividerCol",
+		"editorError": "nArs4W_editorError",
+		"gitCommitInput": "nArs4W_gitCommitInput",
+		"editorMain": "nArs4W_editorMain",
+		"editorPdfToolbar": "nArs4W_editorPdfToolbar",
+		"editorBinary": "nArs4W_editorBinary",
+		"explorerError": "nArs4W_explorerError",
+		"gitLink": "nArs4W_gitLink",
+		"gitDiffExpand": "nArs4W_gitDiffExpand",
+		"tabBar": "nArs4W_tabBar",
+		"gitDiffLine": "nArs4W_gitDiffLine",
+		"explorerHeader": "nArs4W_explorerHeader",
+		"browserBlockedTitle": "nArs4W_browserBlockedTitle",
+		"producedChip": "nArs4W_producedChip",
+		"mermaidWrap": "nArs4W_mermaidWrap",
+		"dropCenter": "nArs4W_dropCenter",
+		"cornerHandle": "nArs4W_cornerHandle",
+		"gitBranchSelect": "nArs4W_gitBranchSelect",
+		"terminalDepsHint": "nArs4W_terminalDepsHint",
+		"dropDown": "nArs4W_dropDown",
+		"browserBlockedButton": "nArs4W_browserBlockedButton",
+		"editor": "nArs4W_editor",
+		"gitDiffTabTitle": "nArs4W_gitDiffTabTitle",
+		"paneTab": "nArs4W_paneTab",
+		"selectionPopup": "nArs4W_selectionPopup",
+		"dividerRow": "nArs4W_dividerRow",
+		"browserMessage": "nArs4W_browserMessage",
+		"explorerDir": "nArs4W_explorerDir",
+		"dropLeft": "nArs4W_dropLeft",
+		"browserBlockedActions": "nArs4W_browserBlockedActions",
+		"editorPdfStage": "nArs4W_editorPdfStage",
+		"toggleCluster": "nArs4W_toggleCluster",
+		"panel": "nArs4W_panel",
+		"tabTitle": "nArs4W_tabTitle",
+		"editorHtml": "nArs4W_editorHtml",
+		"terminalDepsBanner": "nArs4W_terminalDepsBanner",
+		"producedMore": "nArs4W_producedMore",
+		"browserBlockedDesc": "nArs4W_browserBlockedDesc",
+		"panelHidden": "nArs4W_panelHidden",
+		"explorerRow": "nArs4W_explorerRow",
+		"editorTreeSearch": "nArs4W_editorTreeSearch",
+		"gitDiffTab": "nArs4W_gitDiffTab",
+		"gitDiffHunkHeader": "nArs4W_gitDiffHunkHeader",
+		"editorStatusError": "nArs4W_editorStatusError",
+		"bottomResizeActive": "nArs4W_bottomResizeActive",
+		"gitLogMore": "nArs4W_gitLogMore",
+		"uploadDropZone": "nArs4W_uploadDropZone",
+		"editorPdfDragShieldActive": "nArs4W_editorPdfDragShieldActive",
+		"gitDiffNum": "nArs4W_gitDiffNum",
+		"gitLogMeta": "nArs4W_gitLogMeta",
+		"mermaidModalButton": "nArs4W_mermaidModalButton",
+		"dropRight": "nArs4W_dropRight",
+		"gitLogLine2": "nArs4W_gitLogLine2",
+		"dropOverlay": "nArs4W_dropOverlay",
+		"browserBar": "nArs4W_browserBar",
+		"explorer": "nArs4W_explorer",
+		"editorPdfFrameBlocked": "nArs4W_editorPdfFrameBlocked",
+		"gitRowMain": "nArs4W_gitRowMain",
+		"gitEmpty": "nArs4W_gitEmpty",
+		"editorHeader": "nArs4W_editorHeader",
+		"paneEmptyCards": "nArs4W_paneEmptyCards",
+		"browserInput": "nArs4W_browserInput",
+		"git": "nArs4W_git",
+		"gitLogLine1": "nArs4W_gitLogLine1",
+		"uploadOverlayProgressFill": "nArs4W_uploadOverlayProgressFill",
+		"editorDocxZoomRange": "nArs4W_editorDocxZoomRange",
+		"gitError": "nArs4W_gitError",
+		"editorSearchInput": "nArs4W_editorSearchInput",
+		"terminalBanner": "nArs4W_terminalBanner",
+		"bottomPanelHidden": "nArs4W_bottomPanelHidden",
+		"editorTreeDock": "nArs4W_editorTreeDock",
+		"gitBadge": "nArs4W_gitBadge",
+		"gitDiffFile": "nArs4W_gitDiffFile",
+		"gitDiffFileTag": "nArs4W_gitDiffFileTag",
+		"gitLogRow": "nArs4W_gitLogRow",
+		"dropUp": "nArs4W_dropUp",
+		"workbench": "nArs4W_workbench",
+		"mermaidModal": "nArs4W_mermaidModal",
+		"terminalRepairCommand": "nArs4W_terminalRepairCommand",
+		"sandboxStatusOn": "nArs4W_sandboxStatusOn",
+		"tabBarDrop": "nArs4W_tabBarDrop",
+		"gitPlaceholder": "nArs4W_gitPlaceholder",
+		"paneDrop": "nArs4W_paneDrop",
+		"explorerRoot": "nArs4W_explorerRoot",
+		"explorerEmpty": "nArs4W_explorerEmpty",
+		"uploadDropHero": "nArs4W_uploadDropHero",
+		"toggleButton": "nArs4W_toggleButton",
+		"browserFrame": "nArs4W_browserFrame",
+		"mermaidMarkdown": "nArs4W_mermaidMarkdown",
+		"gitSection": "nArs4W_gitSection",
+		"iconButton": "nArs4W_iconButton",
+		"panelResize": "nArs4W_panelResize",
+		"uploadOverlayCard": "nArs4W_uploadOverlayCard",
+		"editorSearchResult": "nArs4W_editorSearchResult",
+		"boundaryError": "nArs4W_boundaryError",
+		"terminalDepsCommandRow": "nArs4W_terminalDepsCommandRow",
+		"mermaidModalHint": "nArs4W_mermaidModalHint",
+		"bottomResize": "nArs4W_bottomResize",
+		"gitSectionHeader": "nArs4W_gitSectionHeader",
+		"paneContent": "nArs4W_paneContent",
+		"uploadDropChatHint": "nArs4W_uploadDropChatHint",
+		"paneTabHidden": "nArs4W_paneTabHidden",
+		"terminalDepsTitle": "nArs4W_terminalDepsTitle",
+		"explorerBody": "nArs4W_explorerBody",
+		"sandboxDot": "nArs4W_sandboxDot",
+		"gitDiffTabHeader": "nArs4W_gitDiffTabHeader",
+		"uploadDropChatCard": "nArs4W_uploadDropChatCard",
+		"editorModeButton": "nArs4W_editorModeButton",
+		"splitCol": "nArs4W_splitCol",
+		"editorImageWrap": "nArs4W_editorImageWrap",
+		"tabBoundaryError": "nArs4W_tabBoundaryError",
+		"divider": "nArs4W_divider",
+		"sandboxStatusOff": "nArs4W_sandboxStatusOff",
+		"sandboxAction": "nArs4W_sandboxAction",
+		"tabClose": "nArs4W_tabClose",
+		"dirtyDot": "nArs4W_dirtyDot",
+		"sandboxStatusText": "nArs4W_sandboxStatusText",
+		"panelResizeActive": "nArs4W_panelResizeActive",
+		"pane": "nArs4W_pane",
+		"paneCard": "nArs4W_paneCard",
+		"editorTitle": "nArs4W_editorTitle",
+		"mermaidCopy": "nArs4W_mermaidCopy",
+		"explorerRef": "nArs4W_explorerRef",
+		"orphanedType": "nArs4W_orphanedType",
+		"editorPathInput": "nArs4W_editorPathInput",
+		"uploadDropZonePill": "nArs4W_uploadDropZonePill",
+		"mermaidCode": "nArs4W_mermaidCode",
+		"terminalRetry": "nArs4W_terminalRetry",
+		"terminalDepsNote": "nArs4W_terminalDepsNote",
+		"split": "nArs4W_split",
+		"splitChild": "nArs4W_splitChild",
+		"dsh-row-in": "nArs4W_dsh-row-in",
+		"uploadOverlayStatus": "nArs4W_uploadOverlayStatus",
+		"editorTreeResize": "nArs4W_editorTreeResize",
+		"editorBinaryNotice": "nArs4W_editorBinaryNotice",
+		"gitDiffCtx": "nArs4W_gitDiffCtx",
+		"gitDiffAdd": "nArs4W_gitDiffAdd",
+		"editorPlaceholder": "nArs4W_editorPlaceholder",
+		"terminalWrap": "nArs4W_terminalWrap",
+		"gitDiffMeta": "nArs4W_gitDiffMeta",
+		"gitLogRef": "nArs4W_gitLogRef",
+		"gitLogSubject": "nArs4W_gitLogSubject",
+		"producedRow": "nArs4W_producedRow",
+		"gitCommit": "nArs4W_gitCommit",
+		"bottomClose": "nArs4W_bottomClose",
+		"dividerActive": "nArs4W_dividerActive",
+		"tabActive": "nArs4W_tabActive",
+		"editorTreePanel": "nArs4W_editorTreePanel",
+		"uploadOverlayCancel": "nArs4W_uploadOverlayCancel",
+		"uploadDropZoneText": "nArs4W_uploadDropZoneText",
+		"mermaidBody": "nArs4W_mermaidBody",
+		"mermaidInfo": "nArs4W_mermaidInfo",
+		"gitDiffHunk": "nArs4W_gitDiffHunk",
+		"editorModeToggle": "nArs4W_editorModeToggle",
+		"gitRow": "nArs4W_gitRow"
 	};
 	//#endregion
 	//#region src/client/SandboxStatusBar.tsx
@@ -33504,6 +33765,327 @@ globalThis.__dshChunks__["editor"] = (require) => {
 			end: lineAt(source, at + Math.max(text.length - 1, 0))
 		};
 	}
+	//#endregion
+	//#region src/client/chunk-loader.ts
+	/**
+	* The platform externals a chunk bundle may require (mirror of
+	* CLIENT_EXTERNALS in tsdown.config.ts — the chunk builds keep these
+	* external and the loader resolves them here). A superset is safe: the
+	* require only answers what the chunk actually asks for. The shell's static
+	* module table seeds React, Cordis, and the UI libraries (primitives/slots);
+	* `dsh-client-runtime/client` normalizes onto the runtime package row
+	* (stripClientSuffix). dsh-client-web-react / dsh-client-schema-form were
+	* dropped in DSH 0.1.0-rc.8 (no rc.8 publish, nothing requires them) — the
+	* chunks never asked for them, so they no longer belong here.
+	*/
+	const CHUNK_EXTERNALS = [
+		"react",
+		"react/jsx-runtime",
+		"react-dom",
+		"react-dom/client",
+		"cordis",
+		"@deepseek-ai/dsh-client-ui-slots",
+		"@deepseek-ai/dsh-client-ui-primitives",
+		"@deepseek-ai/dsh-client-runtime/client"
+	];
+	/** Chunk script endpoint served by the plugin host half (src/bundle-route.ts). */
+	const CHUNK_URL = (name) => `/sidebar/bundle/${name}.js`;
+	/** Bound on the revalidation HEAD round-trip. A timeout fails open (drop +
+	*  re-fetch on the next open) so a stuck bundle route can never wedge lazy
+	*  chunk loads behind the revalidation barrier. */
+	const CHUNK_REVALIDATE_TIMEOUT_MS = 5e3;
+	/**
+	* Plugin-owned page global carrying the injected module system across
+	* bundle copies: the lazy chunk bundles (client-editor.js etc.) inline their
+	* own chunk-loader instance, and rc.8 no longer exposes the shell module
+	* system as a page global — so the core bundle's injection must be visible
+	* to the chunk copies through a namespace of our own.
+	*/
+	const MODULE_SYSTEM_GLOBAL = "__dshSidebarModuleSystem__";
+	/** Resolve the shell-installed module system (injected, then the plugin
+	*  global shared with chunk-bundle copies, then the rc.7 page global). */
+	function moduleSystem() {
+		const g = globalThis;
+		return g[MODULE_SYSTEM_GLOBAL] ?? g.__DSH_MODULES__;
+	}
+	function chunkRegistry() {
+		const g = globalThis;
+		return g.__dshChunks__ ??= {};
+	}
+	const defaultScriptLoader = (src) => new Promise((resolve, reject) => {
+		const el = document.createElement("script");
+		el.async = true;
+		el.src = src;
+		el.addEventListener("load", () => {
+			el.remove();
+			resolve();
+		}, { once: true });
+		el.addEventListener("error", () => {
+			el.remove();
+			reject(/* @__PURE__ */ new Error(`[dsh-better-sidebar] chunk script ${src} failed to load`));
+		}, { once: true });
+		document.head.append(el);
+	});
+	let scriptLoader = defaultScriptLoader;
+	/** Test/dev hook: resolve a chunk without fetching a script (e.g. vitest). */
+	const testLoaders = /* @__PURE__ */ new Map();
+	/** Memoized externals require, resolved once per page from the seed table. */
+	let externalsRequire;
+	async function buildExternalsRequire(modules) {
+		if (externalsRequire !== void 0) return externalsRequire;
+		const entries = await Promise.all(CHUNK_EXTERNALS.map(async (spec) => {
+			try {
+				return [spec, await modules.import(spec)];
+			} catch {
+				return [spec, void 0];
+			}
+		}));
+		const table = new Map(entries);
+		externalsRequire = (spec) => {
+			if (!table.has(spec)) throw new Error(`[dsh-better-sidebar] chunk require('${spec}') missed the module table`);
+			return table.get(spec);
+		};
+		return externalsRequire;
+	}
+	/** In-flight/memoized chunk loads; a failure removes its entry so a retry re-fetches. */
+	const cache = /* @__PURE__ */ new Map();
+	/** Chunk names whose exports are currently cached (loaded successfully). */
+	const loadedChunks = /* @__PURE__ */ new Set();
+	/** ETags observed for loaded chunks (HEAD revalidation, see
+	*  {@link revalidateChunksOnReactivate}). */
+	const chunkEtags = /* @__PURE__ */ new Map();
+	/** Best-effort ETag capture for revalidation. The script tag itself exposes
+	*  no response headers, so after a successful load we HEAD the bundle route
+	*  once. Failures (including a stuck route — bounded by the timeout) are
+	*  ignored — revalidation then fails open (re-fetch). */
+	async function recordEtag(name) {
+		try {
+			const etag = (await fetch(CHUNK_URL(name), {
+				method: "HEAD",
+				cache: "no-cache",
+				signal: AbortSignal.timeout(CHUNK_REVALIDATE_TIMEOUT_MS)
+			})).headers.get("etag");
+			if (etag !== null && etag !== "") chunkEtags.set(name, etag);
+		} catch {
+			chunkEtags.delete(name);
+		}
+	}
+	/**
+	* Load (once) and materialize a lazy chunk, returning its module exports.
+	* Concurrent callers share one in-flight load; a failure clears the cache
+	* entry so the next call retries (the script re-executes and overwrites its
+	* global registry slot — assignments are idempotent).
+	* @param name - the chunk to load.
+	*/
+	async function loadChunk(name) {
+		const cached = cache.get(name);
+		if (cached !== void 0) return cached;
+		let task;
+		task = (async () => {
+			const test = testLoaders.get(name);
+			if (test !== void 0) return test();
+			const modules = moduleSystem();
+			if (modules === void 0) throw new Error(`[dsh-better-sidebar] chunk "${name}": client module system unavailable`);
+			await scriptLoader(CHUNK_URL(name));
+			const factory = chunkRegistry()[name];
+			if (typeof factory !== "function") throw new Error(`[dsh-better-sidebar] chunk "${name}" script did not register its factory`);
+			const exports = factory(await buildExternalsRequire(modules));
+			if (cache.get(name) !== void 0) {
+				loadedChunks.add(name);
+				recordEtag(name);
+			}
+			return exports;
+		})();
+		cache.set(name, task);
+		task.catch(() => {
+			cache.delete(name);
+			loadedChunks.delete(name);
+			chunkEtags.delete(name);
+		});
+		return task;
+	}
+	//#endregion
+	//#region src/client/lazy-chunk.tsx
+	/**
+	* Lazy chunk view wrapper: mounts a component that lives in a lazy chunk,
+	* showing a loading placeholder while the chunk script loads and an error +
+	* retry affordance on failure. Used by the built-in tab/viewer descriptors.
+	*
+	* Contract note: {@link lazyChunkComponent} returns a plain render-prop
+	* function — the descriptor contract is `component: (props) => ReactNode`,
+	* and the repo renders descriptors BOTH ways: Sidebar calls
+	* `descriptor.component(props)` directly, EditorHost renders it via
+	* `createElement`. The wrapper function body therefore contains no hooks;
+	* all state lives in the inner {@link LazyChunkView} component.
+	*/
+	function LazyChunkView({ chunk, pick, props }) {
+		const [attempt, setAttempt] = (0, react.useState)(0);
+		const [state, setState] = (0, react.useState)({ status: "loading" });
+		(0, react.useEffect)(() => {
+			let cancelled = false;
+			setState({ status: "loading" });
+			loadChunk(chunk).then((mod) => {
+				if (cancelled) return;
+				const Comp = pick(mod);
+				if (Comp === void 0) {
+					setState({
+						status: "error",
+						message: `[dsh-better-sidebar] chunk "${chunk}" is missing its component`
+					});
+					return;
+				}
+				setState({
+					status: "ready",
+					Comp
+				});
+			}).catch((error) => {
+				if (cancelled) return;
+				setState({
+					status: "error",
+					message: error instanceof Error ? error.message : String(error)
+				});
+			});
+			return () => {
+				cancelled = true;
+			};
+		}, [
+			chunk,
+			pick,
+			attempt
+		]);
+		if (state.status === "loading") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			className: sidebar_module_css_default.editorPlaceholder,
+			children: t("loading")
+		});
+		if (state.status === "error") return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: sidebar_module_css_default.editorError,
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: state.message }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: sidebar_module_css_default.terminalRetry,
+				onClick: () => {
+					setAttempt((current) => current + 1);
+				},
+				children: t("terminalRetry")
+			})]
+		});
+		return (0, react.createElement)(state.Comp, props);
+	}
+	/**
+	* Build a descriptor-compatible lazy wrapper for a chunk-resident component.
+	* The returned function is the descriptor `component` itself: it returns an
+	* element and never calls hooks, so both invocation styles (plain function
+	* call and createElement/JSX render) work. `pick` must be a module-level
+	* function (stable identity) — an inline lambda would re-trigger the load
+	* effect on every render.
+	* @param chunk - the chunk name (see chunk-loader.ts).
+	* @param pick - select the component from the chunk's exports.
+	*/
+	function lazyChunkComponent(chunk, pick) {
+		return (props) => (0, react.createElement)(LazyChunkView, {
+			chunk,
+			pick,
+			props
+		});
+	}
+	//#endregion
+	//#region src/client/mermaid-blocks.ts
+	/** CommonMark opening fence: 0-3 spaces indent + a run of 3+ backticks or tildes. */
+	const OPEN_FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+	/** A closing-fence line: 0-3 spaces indent + 3+ backticks/tildes + trailing spaces only. */
+	const CLOSE_FENCE_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+	/** Parse the info string from the line tail after the fence run; null when invalid. */
+	function fenceInfo(rest, fence) {
+		const info = rest.trimStart().split(/\s+/)[0] ?? "";
+		if (fence.charAt(0) === "`" && info.includes("`")) return null;
+		return info;
+	}
+	/** True when the fence info string names mermaid (bare or `mermaid{...}`). */
+	function isMermaidInfo(info) {
+		const word = info.toLowerCase();
+		return word === "mermaid" || word.startsWith("mermaid{");
+	}
+	/**
+	* Split markdown source into md/mermaid blocks for detection: only fences
+	* whose info string names mermaid are lifted; every other line stays in the
+	* markdown stream untouched. CommonMark fence rules are honored — opening
+	* fences of 3+ backticks OR tildes, and a closing fence must use the same
+	* character with at least as many characters as the opening fence. An
+	* unterminated mermaid fence swallows the rest of the file (the same
+	* recovery CommonMark applies to open fences).
+	*/
+	function splitMermaidBlocks(text) {
+		if (text === "") return [];
+		const lines = text.split("\n");
+		const blocks = [];
+		let markdown = [];
+		let index = 0;
+		const flushMarkdown = () => {
+			if (markdown.length === 0) return;
+			blocks.push({
+				kind: "markdown",
+				text: markdown.join("\n")
+			});
+			markdown = [];
+		};
+		while (index < lines.length) {
+			const line = lines[index] ?? "";
+			const fenceMatch = OPEN_FENCE_RE.exec(line);
+			if (fenceMatch === null) {
+				markdown.push(line);
+				index += 1;
+				continue;
+			}
+			const fence = fenceMatch[1];
+			const info = fenceInfo(line.slice(fenceMatch.index + fenceMatch[0].length), fence);
+			if (info === null || !isMermaidInfo(info)) {
+				markdown.push(line);
+				index += 1;
+				continue;
+			}
+			flushMarkdown();
+			const char = fence.charAt(0);
+			const length = fence.length;
+			const code = [];
+			index += 1;
+			while (index < lines.length) {
+				const candidate = lines[index] ?? "";
+				const close = CLOSE_FENCE_RE.exec(candidate);
+				if (close !== null && close[1].charAt(0) === char && close[1].length >= length) break;
+				code.push(candidate);
+				index += 1;
+			}
+			index += 1;
+			blocks.push({
+				kind: "mermaid",
+				code: code.join("\n")
+			});
+		}
+		flushMarkdown();
+		return blocks;
+	}
+	//#endregion
+	//#region src/client/TextEditor.tsx
+	/**
+	* The code/markdown file viewer: a CodeMirror 6 editor with line wrapping,
+	* syntax highlighting (extension-keyed language), a dirty dot and Ctrl/Cmd+S
+	* save, and a preview/edit toggle for markdown files. Registered as the
+	* `code` (catch-all) and `markdown` built-in viewers; the editor tab host
+	* fetches the content through the fsRead strategy and passes it in props,
+	* so this component never fetches or dispatches — it only edits.
+	*
+	* The toolbar (mode toggle / dirty dot / save / status) renders as its own
+	* row below the host's title bar, VSCode-style — unless the host passes
+	* `toolbar: 'host'` (the merged editor-explorer mode), in which case this
+	* component skips the row and reports state + registers commands through
+	* the FileViewerProps toolbar callbacks so the host's path-input header
+	* renders the controls instead.
+	*/
+	/**
+	* The chunk-resident markdown preview renderer (mermaid lazy chunk): one
+	* MarkdownText pass over the whole source, with rendered mermaid fences
+	* swapped for diagrams. Module-level `pick` keeps the load effect stable.
+	*/
+	const LazyMermaidMarkdown = lazyChunkComponent("mermaid", (mod) => mod.MermaidMarkdown);
 	function TextEditor(props) {
 		const { ctx, scope, path, viewerId, content, truncated } = props;
 		const [mode, setMode] = (0, react.useState)("preview");
@@ -33661,6 +34243,20 @@ globalThis.__dshChunks__["editor"] = (require) => {
 		};
 		const markdown = viewerId === "markdown";
 		const html = viewerId === "html";
+		/** The markdown source the preview renders (draft wins over saved content). */
+		const mdText = draft ?? content ?? "";
+		/** md/mermaid block split for the preview (mermaid fences lift out). Split
+		*  only in preview mode: edit-mode keystrokes must not re-scan the source. */
+		const mdBlocks = (0, react.useMemo)(() => markdown && mode === "preview" ? splitMermaidBlocks(mdText) : [], [
+			markdown,
+			mode,
+			mdText
+		]);
+		const hasMermaid = (0, react.useMemo)(() => mdBlocks.some((block) => block.kind === "mermaid"), [mdBlocks]);
+		const codeLabels = {
+			copyLabel: t("copy"),
+			copiedLabel: t("copied")
+		};
 		/**
 		* Selection popup for the markdown preview: a mouse-up inside the preview
 		* container anchors the floating "add to conversation" button above the
@@ -33686,15 +34282,41 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				return;
 			}
 			const rect = sel.getRangeAt(0).getBoundingClientRect();
-			const lines = linesOfSelection(draft ?? content ?? "", text);
+			const lines = linesOfSelection(mdText, text);
 			showPopup(buildSelectionInsert(path, scope.cwd, lines ?? void 0, text), rect.left + rect.width / 2, rect.top);
 		};
 		const editable = content !== void 0;
 		const saveLabel = saveState === "saving" ? t("loading") : saveState === "saved" ? t("saved") : saveState === "failed" ? t("saveFailed") : "";
 		const [localUnlock, setLocalUnlock] = (0, react.useState)(() => props.store?.getPrefs().htmlViewerDefaultUnsafe === true);
 		const htmlNoSandbox = props.store?.getPrefs().htmlViewerNoSandbox === true || localUnlock;
+		const hostToolbar = props.toolbar === "host";
+		const lastToolbarRef = (0, react.useRef)("");
+		(0, react.useEffect)(() => {
+			if (!hostToolbar) return;
+			const state = {
+				modes: markdown || html,
+				mode,
+				dirty,
+				editable,
+				saveState
+			};
+			const key = JSON.stringify(state);
+			if (lastToolbarRef.current === key) return;
+			lastToolbarRef.current = key;
+			props.onToolbarState?.(state);
+		});
+		(0, react.useEffect)(() => {
+			if (!hostToolbar) return;
+			props.onToolbarControls?.({
+				setMode,
+				save
+			});
+			return () => {
+				props.onToolbarControls?.(null);
+			};
+		}, [hostToolbar]);
 		return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			!hostToolbar && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: sidebar_module_css_default.editorHeader,
 				children: [
 					(markdown || html) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -33745,12 +34367,12 @@ globalThis.__dshChunks__["editor"] = (require) => {
 				ref: mdRef,
 				onMouseUp: handlePreviewMouseUp,
 				onScroll: hidePopup,
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, {
-					text: draft ?? content ?? "",
-					codeLabels: {
-						copyLabel: t("copy"),
-						copiedLabel: t("copied")
-					}
+				children: hasMermaid ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LazyMermaidMarkdown, {
+					text: mdText,
+					codeLabels
+				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, {
+					text: mdText,
+					codeLabels
 				})
 			}),
 			html && mode === "preview" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SandboxStatusBar, {

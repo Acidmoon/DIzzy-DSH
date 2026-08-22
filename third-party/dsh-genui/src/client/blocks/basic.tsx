@@ -3,8 +3,9 @@
  * (the actionable-button chip). Used by the render dispatcher.
  * @module @omdsh-dev/dsh-genui/client/blocks/basic
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import css from '../GenuiBlock.module.css'
+import type { GenuiAudio, GenuiVideo } from '../spec.ts'
 
 /** Deterministic avatar color by name hash. Host static tokens ONLY —
  * design system v2: no off-brand hexes, the palette always matches the
@@ -45,19 +46,71 @@ export function ClickFeedbackButton({ className, disabled, onClick, children }: 
     }
   }, [])
   return (
-    <button
-      type="button"
-      className={className}
-      disabled={disabled}
-      onClick={onClick === undefined ? undefined : () => {
-        onClick()
-        if (timer.current !== null) clearTimeout(timer.current)
-        setSent(true)
-        timer.current = setTimeout(() => setSent(false), 1400)
-      }}
-    >
-      {children}
-      {sent && <span className={css.btnSent}>✓ 已触发</span>}
-    </button>
+    <>
+      <button
+        type="button"
+        className={className}
+        disabled={disabled}
+        onClick={onClick === undefined ? undefined : () => {
+          onClick()
+          if (timer.current !== null) clearTimeout(timer.current)
+          setSent(true)
+          timer.current = setTimeout(() => setSent(false), 1400)
+        }}
+      >
+        {children}
+        {sent && <span className={css.btnSent} aria-hidden>✓ 已触发</span>}
+      </button>
+      {/* Live-region sibling: button content is atomic to screen readers, so
+       * the "已触发" confirmation announces from a hidden status region. */}
+      <span className={css.visuallyHidden} role="status">{sent ? '已触发' : ''}</span>
+    </>
   )
 }
+
+/** Native controls intentionally own play/pause/seek/volume. Model-authored
+ * autoplay and controls hints are ignored: media starts only after the user
+ * asks for it. */
+export const AudioNode = memo(function AudioNode({ node }: { node: GenuiAudio }): ReactNode {
+  const [failed, setFailed] = useState(false)
+  return (
+    <figure className={css.media}>
+      {node.alt !== undefined && <figcaption className={css.mediaLabel}>{node.alt}</figcaption>}
+      {failed
+        ? <div className={css.mediaError} role="alert">音频无法播放</div>
+        : <audio
+            className={css.mediaPlayer}
+            src={node.src}
+            aria-label={node.alt ?? '音频'}
+            controls
+            preload="metadata"
+            loop={node.loop === true}
+            onError={() => setFailed(true)}
+          />}
+    </figure>
+  )
+})
+
+export const VideoNode = memo(function VideoNode({ node }: { node: GenuiVideo }): ReactNode {
+  const [failed, setFailed] = useState(false)
+  return (
+    <figure className={css.media}>
+      {node.alt !== undefined && <figcaption className={css.mediaLabel}>{node.alt}</figcaption>}
+      {failed
+        ? <div className={css.mediaError} role="alert">视频无法播放</div>
+        : <video
+            className={`${css.mediaPlayer} ${css.videoPlayer}`}
+            src={node.src}
+            poster={node.poster}
+            aria-label={node.alt ?? '视频'}
+            controls
+            preload="metadata"
+            playsInline
+            loop={node.loop === true}
+            muted={node.muted === true}
+            style={node.aspectRatio === undefined ? undefined : { aspectRatio: node.aspectRatio.replace(':', ' / ') }}
+            onError={() => setFailed(true)}
+          />}
+    </figure>
+  )
+})

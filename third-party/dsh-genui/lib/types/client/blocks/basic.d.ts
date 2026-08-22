@@ -4,6 +4,7 @@
  * @module @omdsh-dev/dsh-genui/client/blocks/basic
  */
 import { type ReactNode } from 'react';
+import type { GenuiAudio, GenuiVideo } from '../spec.ts';
 export declare function avatarColor(name: string): string;
 /** Button with LOCAL click feedback: clicking an actionable button shows a
  * brief "✓ 已触发" chip so the user sees the click registered even while the
@@ -15,3 +16,12 @@ export declare function ClickFeedbackButton({ className, disabled, onClick, chil
     onClick?: (() => void) | undefined;
     children: ReactNode;
 }): import("react").JSX.Element;
+/** Native controls intentionally own play/pause/seek/volume. Model-authored
+ * autoplay and controls hints are ignored: media starts only after the user
+ * asks for it. */
+export declare const AudioNode: import("react").NamedExoticComponent<{
+    node: GenuiAudio;
+}>;
+export declare const VideoNode: import("react").NamedExoticComponent<{
+    node: GenuiVideo;
+}>;

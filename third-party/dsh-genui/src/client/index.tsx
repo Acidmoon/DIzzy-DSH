@@ -120,10 +120,11 @@ export function apply(ctx: Context): () => void {
   // ships it (contract line), the DOM observer otherwise (pristine line).
   // One plugin build serves both deployments.
   const registerFn = (primitives as unknown as HostFenceExt).registerFenceRenderer
+  const channel = typeof registerFn === 'function' ? 'registry' : 'dom'
+  console.info(`[genui] client active; fence-channel=${channel}`)
   const disposers: Array<() => void> = typeof registerFn === 'function'
     ? [registerFn('dsh-ui', renderGenuiFence)]
-    : (console.info('[genui] fence-registry 扩展点不存在（原版 DSH）——启用 DOM 渲染通道'),
-      [installDomFenceRenderer(ctx, (sessionId, action, payload) => sendInlineGenuiAction(ctx, sessionId, action, payload))])
+    : [installDomFenceRenderer(ctx, (sessionId, action, payload) => sendInlineGenuiAction(ctx, sessionId, action, payload))]
   // Idle prefetch of the lazy engine assets: the browser downloads them at
   // LOW priority whenever the page is idle, so the first mermaid/3D node in
   // a session usually hits a warm cache instead of paying the fetch on first
