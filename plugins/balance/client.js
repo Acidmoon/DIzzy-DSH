@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
       }
 
       function BalanceBadge(props) {
-        const sessionId = props.sessionId
+        const sessionId = props.session?.sessionId ?? props.sessionId
         const [selection, setSelection] = React.useState(null)
         const [balance, setBalance] = React.useState(null)
         const [dsError, setDsError] = React.useState(null)
@@ -53,8 +53,11 @@ window.__ModuleLoader__.load({
         }, [sessionId, models])
 
         const provider = selection === null || selection === undefined ? null : selection.provider ?? null
-        const isDeepSeek = provider === 'deepseek-official'
-        const isGrok = provider === 'grok'
+        const baseProvider = typeof provider === 'string' && provider.startsWith('vision-toolkit-')
+          ? provider.slice('vision-toolkit-'.length)
+          : provider
+        const isDeepSeek = baseProvider === 'deepseek-official'
+        const isGrok = baseProvider === 'grok'
 
         React.useEffect(() => {
           if (!isDeepSeek) return
