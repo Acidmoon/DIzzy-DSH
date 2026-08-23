@@ -1,0 +1,45 @@
+# dsh-plugin-memory-tencentdb — TencentDB Agent Memory 适配层
+#
+# 由 `dsh plugin --profile <name> add <本包>` 自动挂载为 bundle 层。
+# 下面的 config 是插件默认值；用户可在 settings.yaml 的 tdai-memory
+# 命名空间里覆盖任意字段（热生效，无需重启）。
+
+- insert:
+    - id: memory-tencentdb
+      name: 'dsh-plugin-memory-tencentdb'
+      config:
+        server:
+          url: http://127.0.0.1:8420
+          apiKey: local
+          credentialName: ''
+          instanceId: default
+          teamId: personal
+          agentId: personal-agent
+          userId: personal-user
+          autoIdentity: true
+          timeoutMs: 30000
+          rejectUnauthorized: true
+        recall:
+          enabled: true
+          autoInject: true
+          maxResults: 5
+          refreshIntervalMs: 60000
+        capture:
+          enabled: true
+          onlyUserSource: true
+          flushIntervalMs: 2000
+          skipFailedTurns: true
+        knowledge:
+          enabled: true
+          url: http://127.0.0.1:8421
+          serviceId: default
+          timeoutMs: 30000
+        runtime:
+          manageSidecars: true
+          gatewayDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore
+          knowledgeDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge
+          gatewayPort: 8420
+          knowledgePort: 8421
+          llmBaseUrl: https://api.deepseek.com/v1
+          llmModel: deepseek-chat
+          llmMaxTokens: 8192

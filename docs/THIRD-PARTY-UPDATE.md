@@ -27,6 +27,7 @@ better-sidebar(npm)、subscription-auth(有本地补丁的拷贝)本来就不是
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | 25f21ae | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local + reasoning-effort |
 | dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.3 | 9945cdb | 无 |
+| dsh-plugin-memory-tencentdb | third-party/dsh-plugin-memory-tencentdb | https://github.com/TencentCloud/TencentDB-Agent-Memory（本地适配层，代码库 /home/Acidmoon/Coding/dsh-plugin-memory-tencentdb） | local | 0.1.0 | 9e8aa6f | 无 |
 
 各上游形态备注:
 
@@ -52,6 +53,13 @@ better-sidebar(npm)、subscription-auth(有本地补丁的拷贝)本来就不是
   `packages/dsh-gui-customization/`;本快照只收录该子包(含已构建 `lib/` 与内置背景图)。
   默认分支 `master`。0.6.3 已吸收 keyed-slot 双协议,无本地补丁。monorepo 无法对子包直接 subtree,继续 sparse 覆盖
   (见下方「gui-customization 更新」)或 `npm pack`。
+- **dsh-plugin-memory-tencentdb**:本地适配层快照,逻辑仓库为
+  `/home/Acidmoon/Coding/dsh-plugin-memory-tencentdb`;底层记忆/知识引擎来自
+  [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)。
+  更新 = 从本地适配层仓库覆盖 `third-party/dsh-plugin-memory-tencentdb`(排除
+  `.git` / `node_modules` / `package-lock.json`),保持 Dizzy 根 `cordis.patch.yml`
+  里的 entry 配置同步。sidecar 运行路径由该 entry 的 `runtime.*Dir` 指定,
+  当前指向本机源码 checkout。
 
 ## 一次性迁移(已完成,2026-08-16)
 

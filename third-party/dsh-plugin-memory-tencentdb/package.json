@@ -1,0 +1,42 @@
+{
+  "name": "dsh-plugin-memory-tencentdb",
+  "version": "0.1.0",
+  "description": "DSH adapter plugin for TencentDB Agent Memory: tools + auto-capture + profile injection, backed by the standalone MemoryCore Gateway.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@tencentdb-agent-memory/memory-sdk-ts-v2": "^1.0.0-beta.1",
+    "schemastery": "^3.18.0"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs"
+  }
+}

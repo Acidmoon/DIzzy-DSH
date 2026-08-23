@@ -75,3 +75,47 @@
     # 单独安装会撞 duplicate loader entry id,先 remove 那份再挂本行。
     - id: ui-gui-customization
       name: 'dsh-gui-customization'
+
+    # TencentDB Agent Memory 个人记忆插件(本地适配层快照)。
+    # 上游:https://github.com/TencentCloud/TencentDB-Agent-Memory
+    # 能力:L0-L3 记忆工具 + Wiki/CodeGraph 工具 + 自动捕获/召回/画像
+    #       + conversation.view「记忆」页 + Memory/Knowledge sidecar 托管。
+    # runtime 路径默认指向本机源码 checkout;换机时需同步调整或改为 sidecar 包。
+    - id: memory-tencentdb
+      name: 'dsh-plugin-memory-tencentdb'
+      config:
+        server:
+          url: http://127.0.0.1:8420
+          apiKey: local
+          credentialName: ''
+          instanceId: default
+          teamId: personal
+          agentId: personal-agent
+          userId: personal-user
+          autoIdentity: true
+          timeoutMs: 30000
+          rejectUnauthorized: true
+        recall:
+          enabled: true
+          autoInject: true
+          maxResults: 5
+          refreshIntervalMs: 60000
+        capture:
+          enabled: true
+          onlyUserSource: true
+          flushIntervalMs: 2000
+          skipFailedTurns: true
+        knowledge:
+          enabled: true
+          url: http://127.0.0.1:8421
+          serviceId: default
+          timeoutMs: 30000
+        runtime:
+          manageSidecars: true
+          gatewayDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore
+          knowledgeDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge
+          gatewayPort: 8420
+          knowledgePort: 8421
+          llmBaseUrl: https://api.deepseek.com/v1
+          llmModel: deepseek-chat
+          llmMaxTokens: 8192
