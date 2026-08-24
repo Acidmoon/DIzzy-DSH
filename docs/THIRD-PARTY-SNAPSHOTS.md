@@ -11,7 +11,7 @@
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | 25f21ae | 2026-08-16 | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 2026-08-15 | 有:local + reasoning-effort(见 THIRD-PARTY-PATCHES.md) |
 | dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.3 | 9945cdb | 2026-08-22 | 无(0.6.3 已吸收 keyed-slot) |
-| dsh-plugin-memory-tencentdb | third-party/dsh-plugin-memory-tencentdb | https://github.com/TencentCloud/TencentDB-Agent-Memory（本地适配层，代码库 /home/Acidmoon/Coding/dsh-plugin-memory-tencentdb） | local | 0.1.0 | 9e8aa6f | 2026-08-24 | 无 |
+| dsh-plugin-memory-tencentdb | third-party/dsh-plugin-memory-tencentdb | https://github.com/TencentCloud/TencentDB-Agent-Memory（适配层 + engines/ 稀疏快照） | feat/server_team | 0.1.2 | 97f9465 | 2026-08-25 | 有:personal-sidecar |
 
 ## 各上游更新形态(决定更新源)
 
@@ -27,6 +27,6 @@
 ## 记录格式约定
 
 - 收录版本:快照内 package.json 的 `version` 字段(不是 npm 最新版);
-- 上游 commit:收录时上游 `main` 的 HEAD 短 hash;
+- 上游 commit:收录时跟随分支的 HEAD 短 hash(多数是 `main`;记忆插件是 `feat/server_team`);
 - 手工补丁:该快照是否在 `THIRD-PARTY-PATCHES.md` 登记(有 → 更新后必须重放);
 - 更新流程与适配检查:见 `THIRD-PARTY-UPDATE.md`。

@@ -85,7 +85,7 @@ export function buildKnowledgeTools({ current, getKnowledgeClient }) {
       properties: {
         code_graph_id: { type: 'string', description: 'code_graph_id（cg- 前缀）' },
         query: { type: 'string', description: '符号名、文件路径或关键词' },
-        kind: { type: 'string', enum: ['symbol', 'file', 'any'], description: '缺省 any' },
+        kind: { type: 'string', enum: ['function', 'method', 'class', 'interface', 'type', 'variable', 'route', 'component'], description: '可选节点类型；省略则不过滤' },
         limit: { type: 'integer', minimum: 1, maximum: 100, description: '默认 10' },
       },
       required: ['code_graph_id', 'query'],

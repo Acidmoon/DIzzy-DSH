@@ -2,11 +2,11 @@
 # 重启当前 DSH web（默认 profile=web, 端口 3080）。
 #
 # 用法:
-#   /home/Acidmoon/Coding/dsh-restart.sh                 # 立即重启
-#   RESTART_DELAY_SECONDS=20 /home/Acidmoon/Coding/dsh-restart.sh &   # 延迟 20s 后台重启
+#   ./scripts/dsh-restart.sh
+#   RESTART_DELAY_SECONDS=20 ./scripts/dsh-restart.sh &
 #
 # 行为:
-#   1. 精确匹配 `node /usr/local/node/bin/dsh --profile web` 进程
+#   1. 匹配 `--profile web` 的 dsh 进程
 #   2. SIGTERM 优雅停止(最多等 20s，超时 SIGKILL)
 #   3. 等待 3080 释放
 #   4. setsid + nohup 重新拉起，日志写入 ~/.dsh/logs/dsh-web.log
@@ -16,7 +16,11 @@ set -euo pipefail
 
 PROFILE="${DSH_PROFILE:-web}"
 PORT="${DSH_PORT:-3080}"
-BIN="/usr/local/node/bin/dsh"
+BIN="${DSH_BIN:-$(command -v dsh || true)}"
+if [ -z "${BIN}" ]; then
+  echo "找不到 dsh，请把 Node/dsh 加入 PATH 或设 DSH_BIN" >&2
+  exit 1
+fi
 LOG_DIR="$HOME/.dsh/logs"
 LOG="$LOG_DIR/dsh-web.log"
 PID_FILE="$LOG_DIR/dsh-web.pid"
@@ -76,9 +80,13 @@ done
 # 记忆与知识服务由 dsh-plugin-memory-tencentdb 作为子进程托管，
 # 随本脚本启动的 DSH 一起拉起/回收，无需在此单独启动。
 
-echo "[restart-dsh] starting new dsh web (profile=$PROFILE, port=$PORT), log=$LOG"
+START_ARGS=(--profile "$PROFILE" --port "$PORT")
+if [ -n "${DSH_TRUSTED_HOST:-}" ]; then
+  START_ARGS+=(--trusted-host "$DSH_TRUSTED_HOST")
+fi
+echo "[restart-dsh] starting new dsh web (${START_ARGS[*]}), log=$LOG"
 cd "$HOME"
-setsid nohup "$BIN" --profile "$PROFILE" >> "$LOG" 2>&1 < /dev/null &
+setsid nohup "$BIN" "${START_ARGS[@]}" >> "$LOG" 2>&1 < /dev/null &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 

@@ -39,8 +39,10 @@ export const Config = Schema.object({
   runtime: Schema.object({
     /** true 时插件以子进程方式托管 MemoryCore / MemoryKnowledge。 */
     manageSidecars: Schema.boolean().default(true),
-    gatewayDir: Schema.string().default('/home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore'),
-    knowledgeDir: Schema.string().default('/home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge'),
+    /** 空 = 使用包内 engines/MemoryCore。相对路径相对插件根目录。自定义目录不会被 npm install。 */
+    gatewayDir: Schema.string().default(''),
+    /** 空 = 使用包内 engines/MemoryKnowledge。相对路径相对插件根目录。自定义目录不会被 npm install。 */
+    knowledgeDir: Schema.string().default(''),
     gatewayPort: Schema.number().default(8420),
     knowledgePort: Schema.number().default(8421),
     llmBaseUrl: Schema.string().default('https://api.deepseek.com/v1'),

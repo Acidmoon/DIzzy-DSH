@@ -28,7 +28,7 @@
 |  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器 / 侧边对话,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.15.0) |
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
 |  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.6.3) |
-|  **记忆与知识** `dsh-plugin-memory-tencentdb` | 个人长期记忆(L0 对话 / L1 原子记忆 / L2 场景 / L3 画像)+ LLM-Wiki + CodeGraph;自动捕获、每轮召回、画像注入;MemoryCore / MemoryKnowledge 以 sidecar 随 DSH 启停 | 对话区右侧「记忆」Tab 可查看/编辑各层记忆与知识库;模型工具 `tdai_memory_*` / `tdai_knowledge_*` | ✅ 稳定(v0.1.0,本地适配层) |
+|  **记忆与知识** `dsh-plugin-memory-tencentdb` | 个人长期记忆(L0 对话 / L1 原子记忆 / L2 场景 / L3 画像)+ LLM-Wiki + CodeGraph;自动捕获、每轮召回、画像注入;MemoryCore / MemoryKnowledge **打进插件** `engines/`,sidecar 随 DSH 启停 | 对话区右侧「记忆」Tab;模型工具 `tdai_memory_*` / `tdai_knowledge_*`;CodeGraph 需本机有 git | ✅ 稳定(v0.1.2,内置引擎) |
 
 ### 自有预设(agent preset)
 
@@ -60,7 +60,7 @@ registry。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/T
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 | dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
 | dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.6.3 | 仓库快照(插件包子目录) |
-| dsh-plugin-memory-tencentdb | [TencentCloud](https://github.com/TencentCloud) + 本地适配层 | TencentDB-Agent-Memory | https://github.com/TencentCloud/TencentDB-Agent-Memory | 0.1.0 | 仓库快照(本地适配层) |
+| dsh-plugin-memory-tencentdb | [TencentCloud](https://github.com/TencentCloud) + 本地适配层 | TencentDB-Agent-Memory | https://github.com/TencentCloud/TencentDB-Agent-Memory | 0.1.2 | 适配层 + engines/ 稀疏快照(Core+Knowledge) + 本地补丁 |
 
 ##  快速开始
 
@@ -78,7 +78,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
 
 > ⚠️ 首次安装如遇 `ERR_PNPM_IGNORED_BUILDS: node-pty / protobufjs`:在
 > `~/.dsh/profiles/web/pnpm-workspace.yaml` 的 `allowBuilds` 里把两者设为
-> `true`,重新 add 即可。
+> `true`,重新 add 即可。记忆引擎依赖由 sidecar 首次启动时在 `engines/` 里 `npm install`。
 
 **卸载**:`dsh plugin --profile web remove dizzy-dsh`(自有与收录插件随依赖一起移除)
 

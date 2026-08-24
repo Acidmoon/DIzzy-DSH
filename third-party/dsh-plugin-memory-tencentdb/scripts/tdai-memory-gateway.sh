@@ -14,12 +14,20 @@
 
 set -euo pipefail
 
-MEMORY_CORE_DIR="/home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MEMORY_CORE_DIR="${MEMORY_CORE_DIR:-$PLUGIN_ROOT/engines/MemoryCore}"
 GATEWAY_CONFIG="${TDAI_GATEWAY_CONFIG:-$MEMORY_CORE_DIR/tdai-gateway.standalone.yaml}"
 BASE_URL="${TDAI_LLM_BASE_URL:-https://api.deepseek.com/v1}"
 MODEL="${TDAI_LLM_MODEL:-deepseek-chat}"
 PROTOCOL="${TDAI_LLM_PROTOCOL:-openai}"
-NODE_BIN="${NODE_BIN:-/usr/local/node/bin/node}"
+if [ -n "${NODE_BIN:-}" ]; then
+  :
+elif command -v node >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+else
+  NODE_BIN="node"
+fi
 LOG_DIR="$HOME/.dsh/logs"
 LOG="$LOG_DIR/tdai-gateway.log"
 PID_FILE="$LOG_DIR/tdai-gateway.pid"
@@ -34,6 +42,9 @@ read_key() {
 
 export_env() {
   export TDAI_GATEWAY_CONFIG="$GATEWAY_CONFIG"
+  export TDAI_GATEWAY_PORT="$PORT"
+  export TDAI_GATEWAY_HOST="$HOST"
+  export TDAI_GATEWAY_API_KEY="${TDAI_GATEWAY_API_KEY:-local}"
   export TDAI_LLM_BASE_URL="$BASE_URL"
   export TDAI_LLM_API_KEY="$(read_key)"
   export TDAI_LLM_MODEL="$MODEL"

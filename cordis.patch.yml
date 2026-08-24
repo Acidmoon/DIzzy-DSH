@@ -76,11 +76,11 @@
     - id: ui-gui-customization
       name: 'dsh-gui-customization'
 
-    # TencentDB Agent Memory 个人记忆插件(本地适配层快照)。
+    # TencentDB Agent Memory 个人记忆插件(适配层 + 内置 MemoryCore/MemoryKnowledge)。
     # 上游:https://github.com/TencentCloud/TencentDB-Agent-Memory
     # 能力:L0-L3 记忆工具 + Wiki/CodeGraph 工具 + 自动捕获/召回/画像
     #       + conversation.view「记忆」页 + Memory/Knowledge sidecar 托管。
-    # runtime 路径默认指向本机源码 checkout;换机时需同步调整或改为 sidecar 包。
+    # sidecar 默认跑包内 engines/;gatewayDir/knowledgeDir 留空即换机即用。
     - id: memory-tencentdb
       name: 'dsh-plugin-memory-tencentdb'
       config:
@@ -112,8 +112,6 @@
           timeoutMs: 30000
         runtime:
           manageSidecars: true
-          gatewayDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore
-          knowledgeDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge
           gatewayPort: 8420
           knowledgePort: 8421
           llmBaseUrl: https://api.deepseek.com/v1

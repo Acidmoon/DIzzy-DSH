@@ -36,8 +36,6 @@
           timeoutMs: 30000
         runtime:
           manageSidecars: true
-          gatewayDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryCore
-          knowledgeDir: /home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge
           gatewayPort: 8420
           knowledgePort: 8421
           llmBaseUrl: https://api.deepseek.com/v1

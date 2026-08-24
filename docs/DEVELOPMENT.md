@@ -87,6 +87,8 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recur
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-kimi-webbridge -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-plugin-memory-tencentdb -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/@tencentdb-agent-memory -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@anionex -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@dsh-external -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@omdsh-dev -Recurse -Force

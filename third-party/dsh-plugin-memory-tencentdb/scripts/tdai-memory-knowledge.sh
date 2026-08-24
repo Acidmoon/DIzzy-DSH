@@ -3,13 +3,21 @@
 # 用法: serve | start | stop | status
 set -euo pipefail
 
-KS_DIR="/home/Acidmoon/Coding/TencentDB-Agent-Memory/MemoryKnowledge"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KS_DIR="${KS_DIR:-$PLUGIN_ROOT/engines/MemoryKnowledge}"
 LOG_DIR="$HOME/.dsh/logs"
 LOG="$LOG_DIR/tdai-knowledge.log"
 PID_FILE="$LOG_DIR/tdai-knowledge.pid"
 PORT="${KNOWLEDGE_PORT:-8421}"
 HOST="127.0.0.1"
-NODE_BIN="${NODE_BIN:-/usr/local/node/bin/node}"
+if [ -n "${NODE_BIN:-}" ]; then
+  :
+elif command -v node >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+else
+  NODE_BIN="node"
+fi
 
 mkdir -p "$LOG_DIR"
 
@@ -18,6 +26,7 @@ read_key() {
 }
 
 export_env() {
+  export HOST="$HOST"
   export PORT="$PORT"
   export API_PREFIX="/v3"
   export LOG_LEVEL="info"

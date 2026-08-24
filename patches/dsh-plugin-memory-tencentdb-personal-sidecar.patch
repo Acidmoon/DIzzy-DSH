@@ -1,0 +1,83 @@
+diff --git a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/config.ts b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/config.ts
+--- a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/config.ts
++++ b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/config.ts
+@@ -54,6 +54,11 @@
+ export interface ServiceConfig {
+   /** HTTP server port. */
+   port: number;
++  /**
++   * Bind address. Default 127.0.0.1 so a personal sidecar is not exposed on LAN.
++   * Dizzy-DSH patch: upstream omitted hostname and bound all interfaces.
++   */
++  host: string;
+   /** Data root directory for knowledge assets (git clones, wiki dirs, SQLite). */
+   dataDir: string;
+   /** SQLite database file path. */
+@@ -148,6 +153,7 @@
+ 
+   return {
+     port: envInt("PORT", 8421),
++    host: env("HOST", "127.0.0.1"),
+     dataDir: expandHome(env("KNOWLEDGE_DATA_DIR", "./data")),
+     dbPath: expandHome(env("KNOWLEDGE_DB_PATH", "./data/knowledge.db")),
+     logLevel: env("LOG_LEVEL", "debug"),
+diff --git a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/server.ts b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/server.ts
+--- a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/server.ts
++++ b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/src/server.ts
+@@ -14,7 +14,7 @@
+ import { serve } from "@hono/node-server";
+ import { swaggerUI } from "@hono/swagger-ui";
+ import { readFileSync } from "node:fs";
+-import { fileURLToPath } from "node:url";
++import { fileURLToPath, pathToFileURL } from "node:url";
+ import { dirname, join } from "node:path";
+ 
+ import { loadConfig } from "./config.js";
+@@ -117,14 +117,14 @@
+   const { app, config, knowledgeTelemetry } = createApp();
+   await knowledgeTelemetry.initialize();
+ 
+-  log.info(`Starting knowledge service on port ${config.port}`);
++  log.info(`Starting knowledge service on ${config.host}:${config.port}`);
+   log.info(`Data dir: ${config.dataDir}`);
+   log.info(`DB path: ${config.dbPath}`);
+   log.info(`API prefix: ${config.apiPrefix}`);
+   log.info(`ClickHouse telemetry: ${config.clickhouse.enabled ? "enabled" : "disabled"}`);
+ 
+-  const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
+-    log.info(`Knowledge service listening on http://localhost:${info.port}`);
++  const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
++    log.info(`Knowledge service listening on http://${config.host}:${info.port}`);
+   });
+ 
+   let shuttingDown = false;
+@@ -139,8 +139,8 @@
+   process.once("SIGINT", () => void shutdown("SIGINT"));
+ }
+ 
+-// Start server when run directly
+-if (import.meta.url === `file://${process.argv[1]}`) {
++// Start server when run directly (pathToFileURL so relative/Windows argv 也能对上)
++if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+   void startServer().catch((err) => {
+     log.error("Knowledge service failed to start", {
+       error: err instanceof Error ? err.message : String(err),
+diff --git a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/package.json b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/package.json
+--- a/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/package.json
++++ b/third-party/dsh-plugin-memory-tencentdb/engines/MemoryKnowledge/package.json
+@@ -50,6 +50,7 @@
+     "minisearch": "^7.2.0",
+     "p-limit": "^6.2.0",
+     "simple-git": "^3.36.0",
++    "tsx": "^4.21.0",
+     "yaml": "^2.8.3",
+     "zod": "^4.4.3"
+   },
+@@ -59,7 +60,6 @@
+     "@vitest/coverage-v8": "^4.1.2",
+     "drizzle-kit": "^0.31.0",
+     "tsdown": "^0.21.10",
+-    "tsx": "^4.21.0",
+     "typescript": "^6.0.2",
+     "vitest": "^4.1.2"
+   },

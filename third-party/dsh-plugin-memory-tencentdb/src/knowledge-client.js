@@ -36,7 +36,7 @@ export function makeKnowledgeClient(current, warn) {
   let fingerprint = ''
   return async () => {
     const cfg = current()?.knowledge ?? {}
-    if (!cfg.enabled) return null
+    if (cfg.enabled === false) return null
     const fp = JSON.stringify([cfg.url, cfg.serviceId, cfg.timeoutMs])
     if (cached && fp === fingerprint) return cached
     cached = new KnowledgeClient(cfg)

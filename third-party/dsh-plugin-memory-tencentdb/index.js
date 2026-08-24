@@ -1,13 +1,13 @@
 /**
  * dsh-plugin-memory-tencentdb — DSH 适配层插件
  *
- * 架构（路径一：不修改 TencentDB 源码）：
+ * 架构：适配层不修改 TencentDB 源码；引擎快照在 engines/。
  *
  *   dsh (Cordis host)
  *     └─ 本插件：工具注册 + 系统提示词注入 + session/event 捕获
  *          │ @tencentdb-agent-memory/memory-sdk-ts-v2
  *          ▼ HTTP /v3/*
- *   MemoryCore Gateway :8420（独立运行的 TencentDB Agent Memory 服务）
+ *   MemoryCore :8420 + MemoryKnowledge :8421（包内 engines/ sidecar）
  *          └─ L0 对话 → 后台提取 → L1 记忆 → L2 场景 → L3 画像
  *
  * 安装：
@@ -15,7 +15,7 @@
  *
  * 配置：
  *   settings.yaml 的 tdai-memory 命名空间（见 README.md）；
- *   默认连接 http://127.0.0.1:8420，team/agent/user 均为 "default"。
+ *   默认连接 http://127.0.0.1:8420，个人模式 team/agent/user。
  */
 import { Config, SETTINGS_NS } from './src/schema.js'
 import { makeClientFactory } from './src/client.js'

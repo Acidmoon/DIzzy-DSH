@@ -27,7 +27,7 @@ better-sidebar(npm)、subscription-auth(有本地补丁的拷贝)本来就不是
 | dsh-anchored-standard | third-party/dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | main | 0.1.0 | 25f21ae | 无 |
 | dsh-subscription-auth | third-party/dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | main | 0.2.1 | 338c02e | 有:local + reasoning-effort |
 | dsh-gui-customization | third-party/dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | master | 0.6.3 | 9945cdb | 无 |
-| dsh-plugin-memory-tencentdb | third-party/dsh-plugin-memory-tencentdb | https://github.com/TencentCloud/TencentDB-Agent-Memory（本地适配层，代码库 /home/Acidmoon/Coding/dsh-plugin-memory-tencentdb） | local | 0.1.0 | 9e8aa6f | 无 |
+| dsh-plugin-memory-tencentdb | third-party/dsh-plugin-memory-tencentdb | https://github.com/TencentCloud/TencentDB-Agent-Memory（适配层 + engines/ 稀疏快照） | feat/server_team | 0.1.2 | 97f9465 | 有:personal-sidecar |
 
 各上游形态备注:
 
@@ -53,13 +53,12 @@ better-sidebar(npm)、subscription-auth(有本地补丁的拷贝)本来就不是
   `packages/dsh-gui-customization/`;本快照只收录该子包(含已构建 `lib/` 与内置背景图)。
   默认分支 `master`。0.6.3 已吸收 keyed-slot 双协议,无本地补丁。monorepo 无法对子包直接 subtree,继续 sparse 覆盖
   (见下方「gui-customization 更新」)或 `npm pack`。
-- **dsh-plugin-memory-tencentdb**:本地适配层快照,逻辑仓库为
-  `/home/Acidmoon/Coding/dsh-plugin-memory-tencentdb`;底层记忆/知识引擎来自
-  [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)。
-  更新 = 从本地适配层仓库覆盖 `third-party/dsh-plugin-memory-tencentdb`(排除
-  `.git` / `node_modules` / `package-lock.json`),保持 Dizzy 根 `cordis.patch.yml`
-  里的 entry 配置同步。sidecar 运行路径由该 entry 的 `runtime.*Dir` 指定,
-  当前指向本机源码 checkout。
+- **dsh-plugin-memory-tencentdb**:DSH 适配层在本目录 `src/`;引擎是上游
+  [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
+  的稀疏快照 `engines/MemoryCore` + `engines/MemoryKnowledge`(commit 见登记表)。
+  **不要**拷 MemoryPanel / MemoryProxy / `assets/`。更新引擎见
+  `third-party/dsh-plugin-memory-tencentdb/UPSTREAM.md`。sidecar 默认用包内
+  `engines/`;`runtime.gatewayDir` / `knowledgeDir` 留空。`node_modules` 不入库。
 
 ## 一次性迁移(已完成,2026-08-16)
 
@@ -102,6 +101,20 @@ robocopy <tmp>\packages\dsh-gui-customization third-party\dsh-gui-customization 
 # 还原 UPSTREAM.md(robocopy /E 不删,若用 /MIR 则先备份);也可 npm pack dsh-gui-customization@<版本>(不含 src/)
 ```
 
+### dsh-plugin-memory-tencentdb 更新(适配层 + engines 稀疏快照,禁止 MIR)
+
+**不要**对 `third-party/dsh-plugin-memory-tencentdb` 做 `robocopy /MIR` 或整仓覆盖:
+上游是 TencentDB-Agent-Memory 仓库根,会冲掉 DSH 适配层 `src/` / `index.js` / `client.js`。
+只按 `third-party/dsh-plugin-memory-tencentdb/UPSTREAM.md` 稀疏覆盖 `engines/MemoryCore`
+与 `engines/MemoryKnowledge`,然后从合集根重放补丁:
+
+```sh
+node scripts/reapply-third-party-patches.mjs dsh-plugin-memory-tencentdb
+```
+
+rsync 额外排除:`node_modules` `dist` `.git` `hermes-plugin` `openclaw-plugin` `docker` `Dockerfile` `docker-compose.yml`。
+覆盖后若漏放补丁,Knowledge 会回到绑全网卡,且 `tsx` 仍在 devDependencies。
+
 ### better-sidebar 更新(npm registry)
 
 ```sh
@@ -143,6 +156,7 @@ git rm --cached third-party/dsh-genui/assets/demo.mp4 third-party/dsh-genui/pnpm
 | dsh-notification | 设置 > 通知 出现设置段;授权后测试通知可弹 |
 | dsh-subscription-auth | 设置 > 订阅服务 列出四个渠道;`GET /subscription-auth/providers` 返回 JSON;已登录渠道出现在模型选择器 |
 | dsh-gui-customization | 设置 → 界面设定 出现配色/氛围光/背景区块;选预设配色即时换肤;刷新后设置仍在 |
+| dsh-plugin-memory-tencentdb | `GET http://127.0.0.1:8420/health` 与 `GET http://127.0.0.1:8421/health` 返回 200;两个端口绑在 127.0.0.1 而不是 `*` |
 | 全部 | host 日志无挂载报错(duplicate entry / 缺 service) |
 
 ## 回滚

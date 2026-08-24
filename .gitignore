@@ -12,6 +12,7 @@ tmp/
 third-party/**/node_modules/
 third-party/**/__pycache__/
 third-party/**/*.tgz
+third-party/dsh-plugin-memory-tencentdb/engines/**/dist/
 
 # 第三方快照:演示视频与上游锁文件不入库
 third-party/dsh-genui/assets/demo.mp4

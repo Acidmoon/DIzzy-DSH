@@ -3,8 +3,9 @@
 DSH（DeepSeek Harness）适配层插件：把独立的 **TencentDB Agent Memory** 服务接入
 dsh，提供长期记忆工具、L3/L2 画像注入与 L0 会话自动捕获。
 
-> 路径一架构：本插件是纯客户端适配层，**不修改 TencentDB 源码**；
-> 记忆存储与 L1 提取全部在独立运行的 MemoryCore Gateway 中完成。
+> 适配层尽量不改 TencentDB 源码。MemoryCore / MemoryKnowledge 以稀疏快照放在
+> `engines/`，sidecar 默认用包内路径，换机即用。Knowledge 绑定本机与 `tsx`
+> 生产依赖见合集 `patches/dsh-plugin-memory-tencentdb-personal-sidecar.patch`。
 
 ## 架构
 
@@ -23,11 +24,9 @@ MemoryCore Gateway :8420（独立进程/容器）
 ## 前置条件
 
 1. Node.js >= 22.16（dsh 自带）。
-2. 一个运行中的 MemoryCore Gateway，默认 `http://127.0.0.1:8420`。启动方式见
-   [TencentDB-Agent-Memory/MemoryCore](https://github.com/TencentCloud/TencentDB-Agent-Memory/tree/main/MemoryCore)：
-   - SQLite + BM25 本地模式，无需 Redis / Docker；
-   - 需要一把 OpenAI-compatible LLM key 供后台 L1 提取使用。
-3. Gateway 中已存在要绑定的 team / agent / user（本地零配置时可用 `default`）。
+2. `DEEPSEEK_API_KEY`（L1 提取）；CodeGraph 另需本机 `git`。
+3. 默认由插件拉起包内 `engines/MemoryCore`（127.0.0.1:8420）与 `engines/MemoryKnowledge`（127.0.0.1:8421）。
+   Gateway Bearer 默认 `local`（`TDAI_GATEWAY_API_KEY`）。数据在 `~/.memory-tencentdb/`，不进仓库。
 
 ## 安装
 
@@ -109,14 +108,14 @@ tdai-memory:
 
 - 不做团队协作 / 会话初始化选择器；一个 DSH 安装对应一个个人记忆库。
 - L0 捕获只收真实用户文本与模型可见文本，不记录工具调用与工具结果。
-- 技能（Skill）/ 知识库（Wiki/CodeGraph）/ 团队面板不在此插件内，
-  这些能力由 TencentDB 的 MemoryProxy 体系提供。
+- 不收录 MemoryPanel / MemoryProxy；Wiki + CodeGraph 由内置 MemoryKnowledge sidecar 提供。
 
 ## Gateway 生命周期
 
-推荐用 systemd user service 托管（崩溃自动拉起、开机自启）：
+默认 `runtime.manageSidecars=true`，随 `dsh web` 启停。两个 sidecar 都绑 `127.0.0.1`。
+自定义 `runtime.gatewayDir` / `knowledgeDir` 可以指向已装好依赖的目录，但插件不会对非内置路径执行 `npm install`。兜底脚本：
 
 ```bash
-systemctl --user enable --now tdai-memory-gateway.service
-/home/Acidmoon/Coding/tdai-memory-gateway.sh status
+./scripts/tdai-memory-gateway.sh status
+./scripts/tdai-memory-knowledge.sh status
 ```

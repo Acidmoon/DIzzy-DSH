@@ -9,6 +9,7 @@ const fullConfig = {
   server: { url: 'http://127.0.0.1:8420', apiKey: 'local', credentialName: '', instanceId: 'default', teamId: 't', agentId: 'a', userId: 'u', timeoutMs: 30000, rejectUnauthorized: false },
   recall: { enabled: false, refreshIntervalMs: 60000 },
   capture: { enabled: false, onlyUserSource: true, flushIntervalMs: 500, skipFailedTurns: true },
+  runtime: { manageSidecars: false },
 }
 
 // 1) 插件整体 apply 不抛错，工具全部注册，dispose 正常。
