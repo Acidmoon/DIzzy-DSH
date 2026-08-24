@@ -1,7 +1,7 @@
 # 🌀 Dizzy-DSH —— DSH 插件合集
 
 一个「克隆即装」的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件合集:
-**一条命令装完,重启即用** —— 余额/额度、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏、界面换装,一次到位。
+**一条命令装完,重启即用** —— 余额/额度、用量、Agent 规则、浏览器控制、订阅登录、视觉识别、生成式 UI、桌面通知、IDE 侧边栏、界面换装,以及个人长期记忆与 Wiki/CodeGraph 知识库,一次到位。
 
 无需 npm 发布;仓库本身作为 bundle 层安装,重启后依然生效。
 
@@ -28,6 +28,7 @@
 |  **IDE 侧边栏** `dsh-better-sidebar` | VSCode 风格右侧侧边栏:资源管理器 / 编辑器 / 终端 / Git / 浏览器 / 侧边对话,按会话隔离 | 界面右侧的侧边栏图标,即点即用 | ✅ 稳定(v0.15.0) |
 |  **订阅登录** `dsh-subscription-auth` | 用订阅会员账号 OAuth 登录模型提供商,而不是 API key:ChatGPT Plus/Pro、Claude Pro/Max、Grok、Kimi Code;登录后自动发现模型并出现在模型选择器 | 设置 → 订阅服务 点「登录」;已登录渠道会出现在模型选择器,可选手动思考强度 | ✅ 稳定(v0.2.1,有本地补丁) |
 |  **界面设定** `dsh-gui-customization` | DSH Web UI 时装工坊:Nous 蓝默认配色(明暗双模式)+ 四预设 + 13 色自定义(明暗可分开编辑)、氛围光、图片/视频背景(含内置 deepseek娘 01/02/03)、配色导入导出、中英双语 | 设置 → 界面设定;配色/背景保存在本机浏览器,刷新与重启后仍在 | ✅ 稳定(v0.6.3) |
+|  **记忆与知识** `dsh-plugin-memory-tencentdb` | 个人长期记忆(L0 对话 / L1 原子记忆 / L2 场景 / L3 画像)+ LLM-Wiki + CodeGraph;自动捕获、每轮召回、画像注入;MemoryCore / MemoryKnowledge 以 sidecar 随 DSH 启停 | 对话区右侧「记忆」Tab 可查看/编辑各层记忆与知识库;模型工具 `tdai_memory_*` / `tdai_knowledge_*` | ✅ 稳定(v0.1.0,本地适配层) |
 
 ### 自有预设(agent preset)
 
@@ -59,6 +60,7 @@ registry。上游登记与更新方案见 [docs/THIRD-PARTY-SNAPSHOTS.md](docs/T
 | dsh-anchored-standard | [xiaobright](https://github.com/xiaobright) | dsh-anchored-standard | https://github.com/xiaobright/dsh-anchored-standard | 0.1.0 | 仓库快照(agent preset) |
 | dsh-subscription-auth | [Khellendros97](https://github.com/Khellendros97) | dsh-subscription-auth | https://github.com/Khellendros97/dsh-subscription-auth | 0.2.1 | 仓库快照 + 本地补丁 |
 | dsh-gui-customization | [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | dsh-gui-customization | https://github.com/LAN-TINA-WS/dsh-gui-customization | 0.6.3 | 仓库快照(插件包子目录) |
+| dsh-plugin-memory-tencentdb | [TencentCloud](https://github.com/TencentCloud) + 本地适配层 | TencentDB-Agent-Memory | https://github.com/TencentCloud/TencentDB-Agent-Memory | 0.1.0 | 仓库快照(本地适配层) |
 
 ##  快速开始
 
@@ -86,6 +88,8 @@ dsh plugin --profile web add file:<仓库绝对路径>
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh* -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/dsh-plugin-memory-tencentdb -Recurse -Force
+Remove-Item ~/.dsh/profiles/web/node_modules/@tencentdb-agent-memory -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@anionex -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@dsh-external -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@omdsh-dev -Recurse -Force
