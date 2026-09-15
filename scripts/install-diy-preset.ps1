@@ -6,7 +6,7 @@
 无 BOM 时中文按 ANSI 解读会直接解析失败(编辑器存盘注意保留 BOM)。
 
 agent preset 不走 dsh plugin add 机制,安装 = 把仓库 presets/diy/ 复制到
-用户预设根 ~/.dsh/.agent-presets/diy,并从本机 DSH 安装目录同步两份官方
+用户预设根 ~/.dsh/.agent-presets/diy,并从本机 DSH 官方预设目录同步两份
 创作技能快照(cordis-plugin-development / editing-cordis-compositions)
 到预设的 skills/ 下 —— 快照随部署版本走,不随仓库分发。
 
@@ -62,41 +62,53 @@ if (-not $Force -and $existing.Count -eq $files.Count) {
 
 # ── 同步官方创作技能快照(始终刷新,跟随本机部署版本)─────────────────────
 
-function Find-DshInstall {
-  $candidates = @()
+# 官方预设根随 DSH 版本漂移:老版在 <dsh>\config\agent-presets\cordis\skills,
+# 新版随包分发给 <dsh>\node_modules\@deepseek-ai\dsh-agent-presets\presets\cordis\skills。
+# 返回本机部署里 cordis 预设的 skills 目录;找不到返回 $null。
+function Find-DshSkills {
+  $roots = @()
   $cmd = Get-Command dsh -ErrorAction SilentlyContinue
   if ($cmd) {
     # dsh 启动器 shim 位于 npm 全局 bin,其同级 node_modules\@deepseek-ai\dsh 即安装根
-    $candidates += Join-Path (Split-Path -Parent $cmd.Source) 'node_modules\@deepseek-ai\dsh'
+    $roots += Join-Path (Split-Path -Parent $cmd.Source) 'node_modules\@deepseek-ai\dsh'
   }
   try {
     $npmRoot = (npm root -g 2>$null)
     if ($LASTEXITCODE -eq 0 -and $npmRoot) {
-      $candidates += Join-Path $npmRoot.Trim() '@deepseek-ai\dsh'
+      $roots += Join-Path $npmRoot.Trim() '@deepseek-ai\dsh'
     }
   } catch {
     # npm 不在 PATH 时无候选可追加;仅靠 dsh shim 探测
   }
-  foreach ($c in $candidates) {
-    if (Test-Path -LiteralPath (Join-Path $c 'config\agent-presets\cordis\skills\cordis-plugin-development\SKILL.md')) {
-      return $c
+  foreach ($root in $roots) {
+    foreach ($sub in @('config\agent-presets\cordis\skills', 'node_modules\@deepseek-ai\dsh-agent-presets\presets\cordis\skills')) {
+      $skills = Join-Path $root $sub
+      if (Test-Path -LiteralPath (Join-Path $skills 'cordis-plugin-development\SKILL.md')) {
+        return $skills
+      }
     }
   }
   return $null
 }
 
 $officialSkills = @('cordis-plugin-development', 'editing-cordis-compositions')
-$dshInstall = Find-DshInstall
-if ($dshInstall) {
+$dshSkills = Find-DshSkills
+if ($dshSkills) {
+  $synced = @()
   foreach ($s in $officialSkills) {
-    $src = Join-Path $dshInstall "config\agent-presets\cordis\skills\$s"
-    if (Test-Path -LiteralPath $src) {
+    $src = Join-Path $dshSkills $s
+    if (Test-Path -LiteralPath (Join-Path $src 'SKILL.md')) {
       Copy-Item -LiteralPath $src -Destination (Join-Path $target 'skills') -Recurse -Force
+      $synced += $s
     }
   }
-  Write-Host "已同步官方技能快照($($officialSkills -join ' / '))← $dshInstall"
+  if ($synced.Count -eq $officialSkills.Count) {
+    Write-Host "已同步官方技能快照($($synced -join ' / '))← $dshSkills"
+  } else {
+    Write-Warning "官方技能快照不完整,只同步了:$($synced -join ' / ');源目录 $dshSkills"
+  }
 } else {
-  Write-Warning '未找到本机 DSH 安装目录,跳过官方技能快照同步(dizzy-diy 主技能不受影响)。'
+  Write-Warning '未找到本机 DSH 官方预设目录,跳过官方技能快照同步(dizzy-diy 主技能不受影响)。'
 }
 
 Write-Host '重启 dsh web 后,新会话预设下拉选择「DIY 模式」。'

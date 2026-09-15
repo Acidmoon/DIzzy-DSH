@@ -4,10 +4,12 @@
  * 职责:聚合本地会话日志(sessionRoot,默认 ~/.dsh/sessions)的每日 token
  *      用量,提供 GET /dizzy/usage?month=YYYY-MM —— 用量视图的数据源。
  *
- * DeepSeek 官方 API 没有按天用量接口。DSH 0.1.1-rc.2 的 token-meter
- * 以每步 `assistant/chunk { type: 'usage' }` 为样本,同 turn/step 的
- * `assistant/message.usage` 覆盖该步;旧日志只有 message.usage 时仍按
- * 条累计。模型归属取 assistant/message 的 data.message.source。
+ * DeepSeek 官方 API 没有按天用量接口。DSH token-meter 以
+ * `assistant/message.usage`(或 assistant/attempt 的 stream 末尾 usage)为样本,
+ * 按 turn/step 末次覆盖,`llm/retry-started` 清槽让重试累加(0.1.1-rc.2 起,
+ * 0.1.5-rc.1 实测未变;核对见 scripts/verify-usage-accounting.mjs);旧日志只有
+ * message.usage 时同样按条累计。模型归属取 assistant/message 的
+ * data.message.source。
  *
  * 响应形状(后向兼容:days 保持「日期 → 总 tokens」数值映射,
  * 新增 detail 承载分项/分模型,旧 client 读 days 不受影响):
@@ -71,24 +73,70 @@ const Config = Schema.object({
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
 
 /**
- * 官方价格表(人民币/百万 token):DeepSeek 官网现行定价,含峰谷两档。
- * 高峰时段 = 北京时间 9:00-12:00 / 14:00-18:00,价格为空闲的 2 倍。
- * 来源:https://api-docs.deepseek.com/zh-cn/quick_start/pricing(2026-08-17 核对)。
- * 键为裸模型名,自动匹配日志里的 deepseek-official/deepseek-v4-* 等归属。
+ * DeepSeek 官方价(人民币/百万 token),含峰谷两档。
+ *
+ * 高峰时段 = 北京时间周一至周五 9:00-12:00 / 14:00-18:00,价格为空闲的 2 倍;
+ * 其余时段(含周末)为空闲价。
+ * 来源:https://api-docs.deepseek.com/zh-cn/quick_start/pricing(2026-09-15 核对)
+ *
+ * | 模型(api 名)      | 版本                 | 缓存命中 空闲/高峰 | 缓存未命中 空闲/高峰 | 输出 空闲/高峰 |
+ * | deepseek-flash     | DeepSeek-V4.1-Flash  | 0.02 / 0.04       | 1 / 2                | 4 / 8          |
+ * | deepseek-v4-pro    | DeepSeek-V4-Pro-0813 | 0.15 / 0.30       | 4.5 / 9              | 13.5 / 27      |
+ *
+ * 键必须是**官方现行 api 名**;日志里出现过的历史名(`deepseek-v4-flash`、
+ * `deepseek-v4-flash-vision-exp`)走 OFFICIAL_PRICE_ALIASES 归一到同一档
+ * —— 官方明确说明这些旧名仍可调用,由 V4.1-Flash 提供服务并按 Flash 价格计费。
  */
 const OFFICIAL_PRICES = {
-  'deepseek-v4-flash': {
-    inputPerM: 1.5, outputPerM: 4.5, cachePerM: 0.05,
-    peak: { inputPerM: 3.0, outputPerM: 9.0, cachePerM: 0.10 },
+  'deepseek-flash': {
+    inputPerM: 1, outputPerM: 4, cachePerM: 0.02,
+    peak: { inputPerM: 2, outputPerM: 8, cachePerM: 0.04 },
   },
   'deepseek-v4-pro': {
     inputPerM: 4.5, outputPerM: 13.5, cachePerM: 0.15,
-    peak: { inputPerM: 9.0, outputPerM: 27.0, cachePerM: 0.30 },
+    peak: { inputPerM: 9, outputPerM: 27, cachePerM: 0.3 },
   },
 }
 
-/** 北京时间(Asia/Shanghai)是否为高峰时段(9-12 / 14-18,含端点)。 */
+/** 官方价只适用于 DeepSeek 官方路由;同一模型经第三方网关(如 opencode-go)走聚合价。 */
+const OFFICIAL_PROVIDER = 'deepseek-official'
+
+/**
+ * 历史/变体模型名 → 现行官方价条目。长名优先匹配,避免
+ * `deepseek-v4-flash-vision-exp` 被更短的 `deepseek-v4-flash` 抢走。
+ */
+const OFFICIAL_PRICE_ALIASES = [
+  ['deepseek-v4-flash-vision-exp', 'deepseek-flash'],
+  ['deepseek-v4-flash', 'deepseek-flash'],
+  ['deepseek-v4-pro-0813', 'deepseek-v4-pro'],
+  ['deepseek-v3.2', 'deepseek-flash'],
+]
+
+function peakHour(entry, base) {
+  return entry.peak ?? {
+    inputPerM: base.inputPerM * 2,
+    outputPerM: base.outputPerM * 2,
+    cachePerM: base.cachePerM * 2,
+  }
+}
+
+/**
+ * 把日志里的 provider/model 键归一到官方价条目;不是官方路由、或名字不认识
+ * 时返回 undefined(交给本地价 / OpenRouter 兜底)。
+ */
+function officialPriceFor(provider, bareModel) {
+  if (provider !== OFFICIAL_PROVIDER) return undefined
+  if (Object.hasOwn(OFFICIAL_PRICES, bareModel)) return OFFICIAL_PRICES[bareModel]
+  for (const [alias, canonical] of OFFICIAL_PRICE_ALIASES) {
+    if (bareModel === alias || bareModel.startsWith(`${alias}-`)) return OFFICIAL_PRICES[canonical]
+  }
+  return undefined
+}
+
+/** 北京时间(Asia/Shanghai)是否为高峰时段(周一~周五 9-12 / 14-18,含端点)。 */
 function isPeakHour(date) {
+  const weekday = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', weekday: 'short' }).format(date)
+  if (weekday === 'Sat' || weekday === 'Sun') return false
   const hour = Number(new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Shanghai', hour12: false, hour: '2-digit',
   }).format(date))
@@ -208,26 +256,29 @@ async function fetchOpenRouterPrices() {
 }
 
 /**
- * 解析某个模型键的价格:本地 prices → 官方价表 → OpenRouter(先精确 id,
- * 再按裸 model 名兜底)。返回
+ * 解析某个模型键的价格:本地 prices → DeepSeek 官方价(仅官方路由)→
+ * OpenRouter(先精确 id,再按裸 model 名兜底)。返回
  * { inputPerM, outputPerM, cachePerM, peak?, source: 'local'|'official'|'openrouter'|'none' }。
  *
- * 本地与官方均按裸名兜底:用户键可写 provider/model 或裸 model 名,两种写法
- * 都能命中日志里的 provider/model(即使 provider 前缀不同,
- * 如 deepseek-official/deepseek-chat ↔ deepseek/deepseek-chat)。
+ * 本地价按裸名兜底:用户键可写 provider/model 或裸 model 名,两种写法都能命中
+ * 日志里的 provider/model(即使 provider 前缀不同)。
+ * 官方价则**必须** provider 是 `deepseek-official` —— 同一模型经第三方网关
+ * 跑的时候按网关的价算,不能套官方价。
  * OpenRouter 价为美元,按 fxRate 换算成 currency 计价。
  */
 function priceFor(modelKey, localPrices, openRouter, fxRate) {
-  const bareModel = modelKey.split('/').pop()
+  const slash = modelKey.indexOf('/')
+  const provider = slash < 0 ? '' : modelKey.slice(0, slash)
+  const bareModel = slash < 0 ? modelKey : modelKey.slice(slash + 1)
   const local = localPrices[modelKey]
     ?? localPrices[bareModel]
     ?? Object.entries(localPrices).find(([key]) => key.split('/').pop() === bareModel)?.[1]
   if (local !== undefined) {
     return { ...local, source: 'local' }
   }
-  const official = OFFICIAL_PRICES[bareModel]
+  const official = officialPriceFor(provider, bareModel)
   if (official !== undefined) {
-    return { ...official, source: 'official' }
+    return { ...official, peak: peakHour(official, official), source: 'official' }
   }
   const rate = fxRate ?? 1
   const scale = (entry) => entry === undefined ? undefined : {
@@ -343,12 +394,17 @@ function usageBuckets(usage) {
 /**
  * Fold one session log into per-day aggregates.
  *
- * DSH 0.1.1-rc.2 token accounting (token-meter) reads per-step
- * `assistant/chunk { type: 'usage' }` first, then treats
- * `assistant/message.usage` as the committed-step replacement for the same
- * turn/step — so a chunk plus an identical final message is not counted
- * twice, and a failed request that only left a chunk still counts. Older
- * logs with only `assistant/message.usage` keep working (anon keys when
+ * DSH token accounting (token-meter) folds `assistant/attempt` /
+ * `assistant/message` samples with a last-wins slot keyed by turn/step:
+ * a sample for the same turn/step replaces the previous one, and
+ * `llm/retry-started` clears that slot so the retried attempt ADDS to the
+ * total instead of replacing the failed one. A chunk sample and an identical
+ * final message are therefore not counted twice, while a failed request that
+ * only left a chunk still counts. This fold mirrors that rule against the
+ * session log: every `assistant/chunk { type: 'usage' }` is one sample (the
+ * same value the attempt carries in its stream), `assistant/message.usage`
+ * commits the same key, and `llm/retry-started` drops the key. Older logs
+ * with only `assistant/message.usage` keep working (anonymous keys when
  * turn/step are missing).
  */
 function parseSessionText(text) {
@@ -367,7 +423,14 @@ function parseSessionText(text) {
     if (data === null || data === undefined) continue
     const turn = data.turn
     const step = data.step
-    const stepKey = Number.isFinite(turn) && Number.isFinite(step) ? `${turn}/${step}` : `anon:${anon++}`
+    const hasKey = Number.isFinite(turn) && Number.isFinite(step)
+    const stepKey = hasKey ? `${turn}/${step}` : `anon:${anon++}`
+
+    // 重试:官方 token-meter 清掉该 turn/step 的覆盖槽,让重试的尝试累加。
+    if (event.type === 'llm/retry-started') {
+      if (hasKey) byStep.delete(stepKey)
+      continue
+    }
 
     if (event.type === 'assistant/chunk' && data.chunk !== null && typeof data.chunk === 'object' && data.chunk.type === 'usage') {
       const usage = usageBuckets(data.chunk.usage)
@@ -425,13 +488,39 @@ export default {
     // 全部可变聚合状态都属于本 fiber:卸载/重挂后从干净的缓存重新开始。
     const fileStates = new Map() // path -> { key, days: Map<'YYYY-MM-DD', DayAgg> }
     let dayTotals = new Map()    // 'YYYY-MM-DD' -> DayAgg
-    let scanAt = 0
+    // 纯数字索引:'YYYY-MM-DD' -> token 合计。增量只从这里算 —— 它与
+    // dayTotals 同步写入,但结构简单(只装数字),不会和聚合对象混淆。
+    let dayTokenTotals = new Map()
+    let scanAt = 0               // 上次真正汇总完成的时刻
+    let previousScanAt = 0       // 再上一次汇总完成的时刻
+    let scanDeltaTokens = 0      // 本轮汇总相对上一次新增的 token
     let scanErrors = 0
+    let lastScanFresh = false    // 本次请求是否真的跑了汇总(被节流跳过则为 false)
 
-    // 增量扫描:只重读 (mtime, size) 变化的文件,其余沿用缓存的分日结果
+    /** 从一份 dayTotals 派生纯数字索引。 */
+    function tokenIndexOf(totals) {
+      const out = new Map()
+      for (const [day, agg] of totals) out.set(day, aggTotal(agg))
+      return out
+    }
+
+    /**
+     * 增量扫描:只重读 (mtime, size) 变化的文件,其余沿用缓存的分日结果。
+     *
+     * 「增量」有两层含义,本函数把两层都记下来:
+     *   - 文件层:缓存 key 未变的文件直接用上一次的分日结果,不重新解压;
+     *   - 汇总层:本轮 dayTotals 与上一轮逐日相减,得到新增 token
+     *     (只增不减,因此差值非负),作为「上次汇总 → 现在」的增量。
+     */
     async function refreshUsage() {
       const cfg = current()
-      if (Date.now() - scanAt < cfg.scanThrottleMs) return
+      if (Date.now() - scanAt < cfg.scanThrottleMs) {
+        // 节流窗口内:沿用上一次汇总结果。标记为「非新鲜」,让路由不要把
+        // 同一批增量反复报成「本轮新增」。
+        lastScanFresh = false
+        return false
+      }
+      const beforeTokens = dayTokenTotals
       const totals = new Map()
       let errors = 0
       const seen = new Set()
@@ -454,15 +543,38 @@ export default {
           }
           if (!areaStat.isDirectory()) continue
           for (const sessionId of await readdir(areaPath)) {
-            for (const name of ['session.jsonl.zstd', 'session.jsonl']) {
-              const file = join(areaPath, sessionId, name)
+            const sessionPath = join(areaPath, sessionId)
+            let entries
+            try {
+              entries = await readdir(sessionPath, { withFileTypes: true })
+            } catch {
+              continue
+            }
+            // 会话日志的文件名随内核版本变:老的是 session.jsonl.zstd,
+            // DSH 0.1.5 起是 session.v3.jsonl.zstd。**不能写死白名单** ——
+            // 曾因此漏掉整个九月的会话(只有 v3 日志)。这里按后缀认,
+            // 显式排除备份/单帧修复产物(*.bak、*.singleframe-*、*.old)。
+            const candidates = []
+            for (const entry of entries) {
+              if (!entry.isFile()) continue
+              const name = entry.name
+              if (!name.startsWith('session') || !name.includes('.jsonl')) continue
+              if (name.endsWith('.bak') || name.includes('.singleframe-') || name.endsWith('.old')) continue
               let fileStat
               try {
-                fileStat = await stat(file)
+                fileStat = await stat(join(sessionPath, name))
               } catch {
                 continue
               }
               if (!fileStat.isFile()) continue
+              candidates.push({ file: join(sessionPath, name), stat: fileStat })
+            }
+            // 一个会话目录理论上只有一个日志;若并存(迁移期)取 mtime 最新的那个,
+            // 绝不把同一会话的两份日志叠加计费。
+            candidates.sort((left, right) => right.stat.mtimeMs - left.stat.mtimeMs)
+            for (const candidate of candidates) {
+              const file = candidate.file
+              const fileStat = candidate.stat
               seen.add(file)
               const key = `${fileStat.mtimeMs}:${fileStat.size}`
               const cached = fileStates.get(file)
@@ -470,12 +582,17 @@ export default {
                 for (const [day, agg] of cached.days) mergeInto(day, agg)
                 break
               }
+              // 先取旧值:解析失败时保留它,让下次请求还能重试这个文件。
+              const previousDays = cached === undefined ? undefined : cached.days
               try {
                 const days = await parseSessionFile(file)
                 fileStates.set(file, { key, days })
                 for (const [day, agg] of days) mergeInto(day, agg)
               } catch {
                 errors += 1
+                if (previousDays !== undefined) {
+                  for (const [day, agg] of previousDays) mergeInto(day, agg)
+                }
               }
               break
             }
@@ -486,14 +603,27 @@ export default {
         // 错误计数计入本次已累积 errors + 本次顶层失败
         scanErrors = errors + 1
         scanAt = Date.now()
-        return
+        scanDeltaTokens = 0
+        return true
       }
       for (const file of fileStates.keys()) {
         if (!seen.has(file)) fileStates.delete(file)
       }
+      // 增量 = 本轮逐日 token 合计 − 上一轮同一索引;只增不减,差值非负。
+      // 首次汇总(没有上一轮索引)不算增量 —— 那不是「自上次汇总以来的新增」。
+      const afterTokens = tokenIndexOf(totals)
+      let delta = 0
+      if (beforeTokens.size > 0) {
+        for (const [day, tokens] of afterTokens) delta += tokens - (beforeTokens.get(day) ?? 0)
+      }
+      previousScanAt = scanAt
+      scanDeltaTokens = delta > 0 ? delta : 0
+      lastScanFresh = true
       dayTotals = totals
+      dayTokenTotals = afterTokens
       scanAt = Date.now()
       scanErrors = errors
+      return true
     }
 
     // 配置热应用:日志根或节流间隔变化 → 重置缓存,下次请求按新配置全量重扫。
@@ -502,6 +632,7 @@ export default {
       : scope.watch(() => {
           fileStates.clear()
           dayTotals = new Map()
+          dayTokenTotals = new Map()
           scanAt = 0
         })
 
@@ -556,12 +687,50 @@ export default {
         await ensureOpenRouterPrices()
         const cfg = current()
 
+        // 请求月没有任何用量时,往前翻到最近一个有用量的月。这是**默认行为**
+        // (像编辑器打开最近一次编辑的位置),界面上不做标注,只把回跳按钮
+        // 换成「相邻的有数据月」。
+        // 只在「请求月不早于当前月」时启用 —— 用户手点日历翻到某个空的过去
+        // 月份时,应当尊重他的选择(显示 0),而不是把视图弹去别的月。
+        const nowMonth = localDayKey(new Date()).slice(0, 7)
+        const tokensOfMonth = (value) => {
+          let sum = 0
+          for (const [day, agg] of dayTotals) {
+            if (day.startsWith(`${value}-`)) sum += aggTotal(agg)
+          }
+          return sum
+        }
+        const shiftMonth = (value, delta) => {
+          const [year, monthNo] = value.split('-').map(Number)
+          const date = new Date(year, monthNo - 1 + delta, 1)
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        }
+        const monthsWithData = []
+        for (const day of dayTotals.keys()) {
+          const value = day.slice(0, 7)
+          if (!monthsWithData.includes(value)) monthsWithData.push(value)
+        }
+        monthsWithData.sort()
+
+        let resolvedMonth = month
+        let backScan = false
+        if (month >= nowMonth) {
+          let cursor = month
+          for (let i = 0; i < 24 && tokensOfMonth(cursor) <= 0; i += 1) {
+            const previous = shiftMonth(cursor, -1)
+            if (previous < '2000-01') break
+            cursor = previous
+          }
+          backScan = cursor !== month
+          resolvedMonth = cursor
+        }
+
         // 查看月:逐日总量(兼容旧 client)+ 输入/输出/缓存分项(悬浮弹窗)
         const days = {}
         const detailDays = {}
         let total = 0
         for (const [day, agg] of dayTotals) {
-          if (!day.startsWith(`${month}-`)) continue
+          if (!day.startsWith(`${resolvedMonth}-`)) continue
           const tokens = aggTotal(agg)
           if (tokens <= 0) continue
           days[day] = tokens
@@ -617,7 +786,7 @@ export default {
         let monthCost = 0
         let monthPriced = 0
         for (const [day, agg] of dayTotals) {
-          if (!day.startsWith(`${month}-`)) continue
+          if (!day.startsWith(`${resolvedMonth}-`)) continue
           if (aggTotal(agg) <= 0) continue
           const summary = summarizeCost(agg)
           monthCost += summary.total
@@ -629,7 +798,10 @@ export default {
           'cache-control': 'no-store',
         })
         res.end(JSON.stringify({
-          month,
+          month: resolvedMonth,
+          requestedMonth: month,
+          backScan,
+          monthsWithData,
           days,
           total,
           detail: {
@@ -649,7 +821,14 @@ export default {
             localCount: Object.keys(cfg.prices).length,
             error: openRouterError,
           },
+          // 汇总标记 + 增量:scannedAt 是本轮汇总完成的时刻,previousScannedAt
+          // 是上一轮;deltaTokens 是「上一轮 → 本轮」新增的 token(非负)。
           scannedAt: scanAt,
+          previousScannedAt: previousScanAt,
+          // 本次请求真的重扫过才报增量;被节流跳过时报 0(不是「没变化」,
+          // 而是「本轮没有新的汇总」)。
+          deltaTokens: lastScanFresh ? scanDeltaTokens : 0,
+          scanFresh: lastScanFresh,
           errors: scanErrors,
         }))
       },
@@ -675,8 +854,23 @@ export default {
           // 目录 = 官方表 + OpenRouter 目录 + 本地覆盖(本地标记 source local)
           const catalog = []
           const seen = new Set()
+          // 官方表只列现行 api 名(峰谷已在 peak 里,这里给设置页看基准价);
+          // 历史别名在响应末尾单独列出,避免设置页出现一堆同价条目。
+          const aliases = {}
+          for (const [alias, canonical] of OFFICIAL_PRICE_ALIASES) {
+            aliases[alias] = canonical
+          }
           for (const [id, price] of Object.entries(OFFICIAL_PRICES)) {
-            catalog.push({ key: id, name: id, source: 'official', ...price })
+            catalog.push({
+              key: id,
+              name: id,
+              source: 'official',
+              provider: OFFICIAL_PROVIDER,
+              inputPerM: price.inputPerM,
+              outputPerM: price.outputPerM,
+              cachePerM: price.cachePerM,
+              peak: peakHour(price, price),
+            })
             seen.add(id)
           }
           for (const [id, price] of openRouterPrices) {
@@ -715,6 +909,8 @@ export default {
             currency: cfg.currency,
             fxRate: cfg.fxRate,
             prices: catalog,
+            // 历史模型名 → 现行官方条目(设置页展示用)。
+            aliases,
           }))
           return
         }

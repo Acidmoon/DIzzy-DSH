@@ -139,7 +139,7 @@ describe('parseCreditsResponse', () => {
 })
 
 describe('parseStoredToken', () => {
-  it('accepts subscription-auth JSON and rejects junk', () => {
+  it('accepts stored Grok OAuth token JSON and rejects junk', () => {
     const ok = parseStoredToken(JSON.stringify({
       refresh: 'r',
       access: 'a',
@@ -187,7 +187,7 @@ describe('formatQuotaText', () => {
     assert.doesNotMatch(text, /周额度/)
   })
 
-  it('points unauthenticated users at subscription settings', () => {
+  it('points unauthenticated users at the Grok credential', () => {
     const text = formatQuotaText({
       status: 'unauthenticated',
       creditUsagePercent: null,
@@ -195,9 +195,9 @@ describe('formatQuotaText', () => {
       periodEnd: null,
       subscriptionTier: null,
       products: [],
-      error: '未登录 Grok 订阅',
+      error: '未登录 Grok(缺少 GROK_SUBSCRIPTION_TOKEN 凭据)',
     })
-    assert.match(text, /设置 → 订阅服务/)
+    assert.match(text, /GROK_SUBSCRIPTION_TOKEN/)
   })
 
   it('keeps reauth wording when the session expired', () => {
@@ -208,7 +208,7 @@ describe('formatQuotaText', () => {
       periodEnd: null,
       subscriptionTier: null,
       products: [],
-      error: '登录已失效,请在设置 → 订阅服务重新登录 Grok',
+      error: 'Grok 登录已失效:请重新写入 GROK_SUBSCRIPTION_TOKEN 凭据',
     })
     assert.match(text, /登录已失效/)
   })

@@ -9,9 +9,12 @@
 ## 1. 架构总览
 
 Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 npm 发布,
-重启后依然生效。**每个功能 = 一个独立子包插件**(与 third-party 收录的插件
-同构):独立 host 插件、独立 client bundle、独立挂载/卸载,互不引用;
-主包只是聚合根(依赖声明 + patch 层)。
+重启后依然生效。**每个功能 = 一个独立子包插件**:独立 host 插件、独立
+client bundle、独立挂载/卸载,互不引用;主包只是聚合根(依赖声明 + patch 层)。
+
+> 合集自 2026-09 起**只收录自己写的插件**,不再收录第三方插件:原
+> `third-party/` 快照、`patches/` 本地补丁、第三方专属文档与安装脚本已全部
+> 删除。需要第三方能力请自行单独安装(如 `dsh plugin --profile web add <包名>`)。
 
 ```
 用户机器
@@ -21,28 +24,23 @@ Dizzy-DSH 是一个 **DSH bundle 层插件合集仓库**:"克隆即装",无需 n
 │   │                         # bundles 列表含 dizzy-dsh(自动加入)
 │   └── node_modules/
 │       ├── dizzy-dsh → Junction → store 快照(file: 安装时生成)
-│       ├── dizzy-dsh-balance / dizzy-dsh-usage-card /
-│       │   dizzy-dsh-agent-instructions / dizzy-dsh-kimi-webbridge
-│       └── dsh-better-sidebar / dsh-subscription-auth / dsh-gui-customization / @anionex/...
+│       └── dizzy-dsh-balance / dizzy-dsh-usage-card /
+│           dizzy-dsh-agent-instructions / dizzy-dsh-kimi-webbridge
 └── 仓库(本目录)
-    ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/* + 第三方)
+    ├── package.json          # 聚合根:main + dsh.bundle + file: 依赖(plugins/*)
     ├── cordis.patch.yml      # bundle 插件层(insert 条目,全部插件在此挂载)
     ├── index.js              # 聚合根空插件(无功能)
-    ├── plugins/              # 自有插件合集
-    │   ├── balance/          #   dizzy-dsh-balance:package.json + index.js(Host) + client.js(UI)
-    │   ├── usage-card/       #   dizzy-dsh-usage-card:同上
-    │   ├── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
-    │   └── kimi-webbridge/   #   dizzy-dsh-kimi-webbridge:Host 工具集
-    └── third-party/          # 收录的第三方插件(git subtree 跟随上游)
-        ├── dsh-subscription-auth/ # OAuth 订阅登录(上游快照 + 本地补丁)
-        ├── dsh-gui-customization/ # 界面设定/时装工坊(上游插件包子目录,sparse 覆盖)
-        └── …                  # genui / notification / vision-toolkit / anchored-standard(subtree)
+    └── plugins/              # 自有插件合集(合集只含这一层)
+        ├── balance/          #   dizzy-dsh-balance:package.json + index.js(Host) + client.js(UI)
+        ├── usage-card/       #   dizzy-dsh-usage-card:同上
+        ├── agent-instructions/ # dizzy-dsh-agent-instructions:package.json + index.js + prompts/
+        └── kimi-webbridge/   #   dizzy-dsh-kimi-webbridge:Host 工具集
 ```
 
 ### 安装与生命周期
 
 ```bash
-# 一条命令安装全部插件(自有子包 + 收录的第三方插件,见 §7.5)
+# 一条命令安装全部插件(4 个自有子包)
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -52,16 +50,14 @@ dsh plugin --profile web add file:<仓库绝对路径>
    而 `file:` 会**递归安装完整依赖树**(registry 依赖、file: 依赖全部解析,
    经 profile 的 `nodeLinker: hoisted` 提升到顶层 node_modules)
 2. 主插件 `package.json` 的 `dependencies` 声明自有子包
-   (`file:./plugins/*`)与收录的第三方插件(`dsh-better-sidebar@0.15.0`
-   走 registry、其余含 `dsh-subscription-auth` 走仓库快照)—— `file:`
-   安装时自动全部带上
+   (`file:./plugins/*`)—— `file:` 安装时自动全部带上
 3. 安装成功后 reconcile(`plugin-9h8shc4d.js` 的 `reconcilePlugins`):
    **遍历 profile 顶层 `dependencies`**,凡是解析到的包声明了
    `dsh.bundle.patch` 就自动加入 `dsh.profile.bundles` 层列表(顶层只会有
-   主插件一个,子包与第三方由主插件 patch 挂载,见第 4 步;
-   子包不带 `dsh.bundle.patch`,add 时会提示 "plain dependency",属预期)
+   主插件一个,子包由主插件 patch 挂载,见第 4 步;子包不带
+   `dsh.bundle.patch`,add 时会提示 "plain dependency",属预期)
 4. 下次启动 dsh web 时,loader 读取主插件 bundle 的 `cordis.patch.yml`,
-   其中的 `- insert:` 条目列出全部插件行(自有子包 + 收录的第三方),
+   其中的 `- insert:` 条目列出全部插件行(4 个自有子包),
    entry 的 name 是包名,从 profile 顶层 node_modules 按包加载:
    - Host 半区:`import('<包名>')` → 包 `main`(index.js)→ 挂载插件
    - Client 半区:`client-modules` 按 entry 的包名扫描 `dsh.client` 声明 +
@@ -71,7 +67,7 @@ dsh plugin --profile web add file:<仓库绝对路径>
    `pnpm-workspace.yaml` 的 `allowBuilds` 里将两者设为 `true` 后重跑
    (pnpm v11 会自动生成占位 `node-pty: set this to true or false`)
 
-**卸载**:`dsh plugin --profile web remove dizzy-dsh`(子包与第三方随依赖一起移除)
+**卸载**:`dsh plugin --profile web remove dizzy-dsh`(4 个子包随依赖一起移除)
 **更新**:`cd <仓库> && git pull` 后**强制同步** file: 快照 —— pnpm 对
 `file:` 依赖只检测 `package.json` 是否变化,仓库内其他文件(如
 `plugins/agent-instructions/prompts/agent-instructions.md`)改了不会同步到
@@ -85,13 +81,8 @@ Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-balance -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-usage-card -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-agent-instructions -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dizzy-dsh-kimi-webbridge -Recurse -Force
-Remove-Item ~/.dsh/profiles/web/node_modules/dsh-subscription-auth -Recurse -Force
-Remove-Item ~/.dsh/profiles/web/node_modules/dsh-gui-customization -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/dsh-plugin-memory-tencentdb -Recurse -Force
 Remove-Item ~/.dsh/profiles/web/node_modules/@tencentdb-agent-memory -Recurse -Force
-Remove-Item ~/.dsh/profiles/web/node_modules/@anionex -Recurse -Force
-Remove-Item ~/.dsh/profiles/web/node_modules/@dsh-external -Recurse -Force
-Remove-Item ~/.dsh/profiles/web/node_modules/@omdsh-dev -Recurse -Force
 dsh plugin --profile web add file:<仓库绝对路径>
 ```
 
@@ -424,21 +415,16 @@ git add -A && git commit -m "feat: ..." && git push
 ### 验证清单
 
 - [ ] `dsh --dump-config` 输出包含 `# == dizzy-dsh` 段,且该段出现全部
-      entry(balance / usage-card / dizzy-agent-instructions / kimi-webbridge /
-      dsh-subscription-auth / better-sidebar / dsh-vision-toolkit /
-      genui / dsh-notification / ui-gui-customization)
+      4 个 entry(balance / usage-card / dizzy-agent-instructions /
+      kimi-webbridge)
 - [ ] Host:每个子包可加载且 name/inject 正确:
       `node --input-type=module -e "import('dizzy-dsh-balance')"`,
       `import('dizzy-dsh-usage-card')`、`import('dizzy-dsh-agent-instructions')`、
-      `import('dizzy-dsh-kimi-webbridge')`、
-      `import('dsh-subscription-auth')`
+      `import('dizzy-dsh-kimi-webbridge')`
 - [ ] `node --test plugins/balance/grok-parse.test.js` 全绿
-- [ ] 收录的第三方可加载(依赖齐全):
-      `import('dsh-better-sidebar')`、
-      `import('@anionex/dsh-vision-toolkit')` 与
-      `import('dsh-gui-customization')` 均不报
-      `Cannot find package ...`(link: 安装的典型症状);
-      `dsh-gui-customization` 是空 Host(`typeof apply === 'function'`),无 name/inject
+- [ ] profile 顶层 `node_modules` 不再有第三方包(合集只在
+      `plugins/` 下分发自有子包;装置里出现 `dsh-better-sidebar` /
+      `@anionex` / `@omdsh-dev` 说明有残留,按 §1「更新」删副本重装)
 - [ ] 每个有 UI 的子包 Client:`exports["./client"]` 指向的文件存在,含
       `window.__ModuleLoader__.load` 且 id 等于包名
 - [ ] 浏览器:目标 Slot 出现 UI,数据路由返回正确 JSON
@@ -448,42 +434,23 @@ git add -A && git commit -m "feat: ..." && git push
 
 ---
 
-## 7.5 收录第三方插件(third-party)
+## 7.5 合集边界:只收自有插件
 
-仓库收录他人已做好的 DSH 插件快照,供"克隆即装",同时**明确保留上游
-地址与来源标注**。规范:
+本仓库是**自有插件合集**:`plugins/` 下的子包加主包聚合层,就是全部内容。
+2026-09 起不再收录第三方插件,原 `third-party/` 快照、`patches/` 本地补丁、
+第三方专属文档(`THIRD-PARTY-*.md`)与安装脚本均已删除,`package.json`
+也不再声明任何第三方依赖。
 
-- 目录:`third-party/<包名>/`,包名与插件 `package.json` 的 `name` 一致
-  (如 `DSH-better-sidebar` 对应 `dsh-better-sidebar`)
-- 每个目录必须有 `UPSTREAM.md`:`上游仓库`、`收录版本`、`上游 commit`、
-  `License`、`收录方式`、`更新方式`、`本地安装` 命令
-- **快照不改**:收录内容与上游一致(允许整文件格式层同步),功能修改
-  一律提交到上游;本地有未提交补丁时在 UPSTREAM.md 中注明
-- 排除 `.git`、`node_modules`、`__pycache__`、`*.tgz`(.gitignore 已兜底)
-- README「收录的第三方插件」表格同步登记:插件名 / 上游链接 / 版本 /
-  收录位置 / 说明
+这样做的取舍(踩过的坑都在这里):
 
-安装收录的插件**不需要单独 add**:主插件 `package.json` 的 `dependencies`
-声明了它们(`dsh-better-sidebar@0.15.0` registry + `@anionex/dsh-vision-toolkit`
-`file:./third-party/...` 快照),一条 `dsh plugin add file:<仓库>` 全部安装
-并随主插件 patch 一起挂载:
-
-```bash
-dsh plugin --profile web add file:<仓库>
-dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-gui-customization)
-```
-
-> 已验证(`tmp-file*` 临时 profile 完整实测):`file:` 安装主插件时 pnpm
-> 递归解析其 dependencies —— better-sidebar 及其全部运行时依赖
-> (ws/codemirror/xterm/node-pty 等)从 registry 安装,vision-toolkit 快照
-> 及其依赖 saxes 一并装入,hoisted 提升到顶层 node_modules,自有与收录
-> entry 全部 import 成功、dump-config 全部出现。`link:` 方案则不行(不装依赖,
-> better-sidebar 缺 ws 直接 import 失败)。首次安装记得配置
-> `pnpm-workspace.yaml` 的 `allowBuilds`(node-pty/protobufjs → true),
-> 否则 pnpm 以 `ERR_PNPM_IGNORED_BUILDS` 非零退出、reconcile 不执行。
-
-更新上游快照:重新获取发布包/同步 checkout(见各 UPSTREAM.md),更新版本
-与 commit 记录后提交。
+- **不再替第三方背书**:快照跟着上游漂,上游改 peer 范围 / 加运行时依赖
+  (node-pty、ws、xterm…)就会让本合集安装失败或启动失败,而排查成本落在
+  本仓库;第三方插件与 DSH 内核的版本兼容性问题同样如此。
+- **自有代码保持干净**:`plugins/agent-instructions` 的提示词不再点名
+  某个视觉插件,而是说明「是否可用取决于会话里装了什么」。
+- **需要第三方能力就单独装**:`dsh plugin --profile web add <包名>`,
+  由使用者自己承担版本对齐。撞 `duplicate loader entry id` 时说明两边都
+  insert 了同一 id,删掉一边即可。
 
 ---
 
@@ -495,7 +462,8 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 | 面 | 实现 |
 |---|---|
-| 数据 | Host 扫描 `~/.dsh/sessions/**/session.jsonl.zstd`。DSH 0.1.1-rc.2 起按 token-meter:每步 `assistant/chunk { type: 'usage' }` 先入账,同 turn/step 的 `assistant/message.usage` 覆盖(失败请求只留 chunk 也计入);旧日志只有 message.usage 时按条累计。模型归属取 message 的 `data.message.source`(provider/model,缺省 `unknown`)。金额按本地价 > DeepSeek 官网峰谷价 > OpenRouter 聚合价。增量刷新(文件 mtime+size 变化才重读,30s TTL) |
+| 数据 | Host 扫描 `~/.dsh/sessions/**/session*.jsonl*`(按后缀认名字,见 §10 第一条)。按 token-meter 口径:每步 `assistant/message.usage`(或 assistant/attempt 的 stream 末尾 usage)按 turn/step 末次覆盖,`llm/retry-started` 清槽让重试累加(0.1.1-rc.2 起,0.1.5-rc.1 实测未变);旧日志只有 message.usage 时按条累计。模型归属取 message 的 `data.message.source`(provider/model,缺省 `unknown`)。金额按本地价 > DeepSeek 官网峰谷价 > OpenRouter 聚合价。增量刷新(文件 mtime+size 变化才重读,30s TTL)。口径核对:`node scripts/verify-usage-accounting.mjs YYYY-MM` |
+| 价格表 | 官方价(人民币/百万 token,2026-09-15 核对 [官网定价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)):`deepseek-flash` 空闲 1 / 4 / 0.02,高峰 2 / 8 / 0.04;`deepseek-v4-pro` 空闲 4.5 / 13.5 / 0.15,高峰 9 / 27 / 0.3(输入未命中 / 输出 / 缓存命中)。**两条硬规则**:①官方价只适用于 `provider === 'deepseek-official'` —— 同一模型走 `opencode-go` 等第三方网关时套官方价会算错,那种情况落到 OpenRouter 或按 0 计;②历史模型名(`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro-0813`)按 `OFFICIAL_PRICE_ALIASES` 归一到现行条目,长名优先匹配。峰谷时段 = 北京时间**周一至周五** 9:00-12:00 / 14:00-18:00(周末全为空闲);`costOf` 按每条事件是否高峰拆成 peak/off-peak 分段计价。设置页价目表由 `GET /dizzy/usage-prices` 供数,响应带 `aliases` |
 | 路由 | `GET /dizzy/usage?month=YYYY-MM` → `{ month, days, total, detail, scannedAt, errors }`:`days` 保持「日期 → 总 tokens」(后向兼容),`detail` = `{ days: 逐日 input/output/cacheRead 分项, recent7: 近 7 天(与查看月无关,含零用量天), today: 今日分模型 }`;`errors` > 0 时副标题提示「N 个日志文件解析失败,用量可能被低估」。旧 Host(无 `detail`)下 client 自动退化:弹窗只显总量、今日明细显重启提示 |
 | 挂载 | Client 注册 `conversation.view` list 插槽(`id: 'usage'`、`order: 20`、`label: '用量'`;chat=0、trajectory=10)。宿主把每个 entry 投影为页头 Tab,`renderSlot(..., { only: activeId })` 一次只渲染激活视图;选中状态存于宿主每会话 store(`persist: dsh.conversation.chat`),刷新页面保持;插件卸载后宿主 `resolveActiveView` 自动回退 chat。视图本身是普通整页流,不需要 portal;悬浮读数是视图内的 `position:fixed` 弹窗,跟鼠标并避让视口边缘 |
 | 热力图 | 周一起始 `7 × 周数` 网格(34px 格,行=周一~周日、列=周),格内日期数字;DeepSeek 蓝阶四档(lv1–lv4,按当月峰值比例分档),月外 `visibility:hidden`;今日描边+脉冲;hover/focus 浮层显示日期 + 总量 + 输入(未命中)/输入(命中缓存)/输出 |
@@ -505,13 +473,14 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 | 时钟 | 独立 `PeakClock`(不拖整页重绘);底栏小圆点 + `HH:MM` + 峰谷标签;色从 `--dsw-static-green-500` / `--dsw-static-red-500` 读 rgb 再渐变 |
 | 外观 | 居中栏(max-width 860px),全部吃宿主 `--dsw-*` token(明暗主题跟随);纵向滚动由宿主 scrollBody 提供,视图只管内容流;scrollBody 与对话共用,激活时主动 `scrollTop = 0` 回顶(对话自身有每会话滚动位置存档,不受影响) |
 
-> 注意:DeepSeek 官方 API 无按天用量接口。DSH 0.1.1-rc.2 token-meter 以
-> 每步 `assistant/chunk { type: 'usage' }` 为样本,同 turn/step 的
-> `assistant/message.usage` 覆盖该步;本视图按同一规则聚合本地会话日志,
-> 与官方控制台「用量」页口径可能不同。
+> 注意:DeepSeek 官方 API 无按天用量接口。DSH token-meter 以每会话日志里的
+> usage 样本按 turn/step 末次覆盖来记账;本视图按同一规则聚合本地会话日志
+> (逐会话独立 fold,与内核 per-session 投影一致),与官方控制台「用量」页
+> 口径可能不同。
 > zstd 多帧解压逻辑复刻自 `@deepseek-ai/dsh-session-persistence-jsonl`
 > 的 `scanZstdFrames`(按 block 遍历,不依赖 FCS),插件不能 import
-> 该包(profile 的 node_modules 里没有 @deepseek-ai/*)。
+> 该包(profile 的 node_modules 里没有 @deepseek-ai/*;自有的 schemastery
+> 走 plugins/* 的 dependencies 单独装)。
 
 ---
 
@@ -523,7 +492,7 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 | 面 | 实现 |
 |---|---|
-| 凭证 | 读订阅插件写入的 `GROK_SUBSCRIPTION_TOKEN`(JSON:`refresh`/`access`/`expires`);过期或 401 时 `POST https://auth.x.ai/oauth2/token` 续期,写回前再读盘合并,热登录换了 refresh 不覆盖 |
+| 凭证 | 读 credentials 里的 `GROK_SUBSCRIPTION_TOKEN`(JSON:`refresh`/`access`/`expires`);过期或 401 时 `POST https://auth.x.ai/oauth2/token` 续期,写回前再读盘合并,热登录换了 refresh 不覆盖。本合集不含 OAuth 登录插件,令牌由使用者自行写入(或用第三方的订阅登录插件) |
 | 上游 | `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`,头 `Authorization: Bearer` + `X-XAI-Token-Auth: xai-grok-cli` + `x-grok-client-mode: interactive`。可选再打 `/v1/settings` 取 `subscription_tier_display` |
 | 账本 | 只用 `config.creditUsagePercent` + `config.currentPeriod`;省略 percent 且有 period = 真实 0%;**禁止**用 `monthlyLimit`/`used` 反推。展示已用 `floor`,剩余 `100 - floor(已用)` |
 | 路由 | `GET /dizzy/grok-quota` → `{ status, remainingPercent, creditUsagePercent, periodEnd, subscriptionTier, error, at }`。同源校验;响应不含 token / email / accountId |
@@ -541,16 +510,14 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 | 客户端 UI 不加载 | entry name 不是包名 / `exports["./client"]` 缺失 / client.js 文件缺失 | 对照 §6.5 扫描链逐环检查 |
 | `export default` 语法错误 | 缺 `"type": "module"` | package.json 补声明 |
 | 余额显示 `…` 不更新 | Host 路由未注册 / 缓存未刷新 | 检查 webServer 路由与 interval |
-| Grok 徽章不出现 / 一直「未登录」 | 当前模型不是 `provider === grok`,或尚未走订阅登录,或 file: 快照未同步 | 切到 Grok 模型;设置 → 订阅服务登录;删 `node_modules/dizzy-dsh-balance` 后重装合集 |
+| Grok 徽章不出现 / 一直「未登录」 | 当前模型不是 `provider === grok`,或 credentials 里没有 `GROK_SUBSCRIPTION_TOKEN`,或 file: 快照未同步 | 切到 Grok 模型;往 credentials 写入 `GROK_SUBSCRIPTION_TOKEN`(JSON:`refresh`/`access`/`expires`;可由第三方订阅登录插件或手工写入);删 `node_modules/dizzy-dsh-balance` 后重装合集 |
 | 401 授权失败 | 敏感 env 被 scrub / key 未配置 | 用 credentials + fetch,检查 `DEEPSEEK_API_KEY` |
 | patch 不生效 | 改完没重启 / link 指向旧路径 | 重启 dsh web;确认 bundles 列表 |
 | 重复路由报错 | (kind, path) 重复注册 | 换路径或复用已有注册 |
 | `duplicate loader entry id: agent-instructions` | patch 里用了官方已占用的 entry id | 改成 `dizzy-agent-instructions`;官方 id 即使用 `disabled: true` 也仍占着 |
 | `single slot "conversation.session.header" already has a registration at priority 0` | 误占宿主 single 槽 | 改挂 `conversation.session.header.utilities`(list);不要用换 priority 去 shadow 整条页头 |
 | `corrupt Zstandard session log: first frame is not exactly one header line` | 某份 `session.jsonl.zstd` 的第一帧明文不是单独一行 header(常见于把多帧日志解压后再一次性压回);官方 workspace `list()` 对这类文件零容忍,整棵插件树起不来。**不是** Dizzy-DSH 插件运行时逻辑错误 | 从仓库根跑 `node scripts/repair-zstd-header-frame.mjs` 先 dry-run(只报 `session.jsonl.zstd`,不改盘);确认 `actionable` 后加 `--apply`。解压明文与 `.bak` 完全一致才还原多帧备份,否则拆成「header 一帧 + 其余一帧」(能过 list,不等于恢复官方逐批追加的帧布局)。空文件/撕坏首帧官方会跳过,脚本也 leave,除非旁边有可用 `.bak`。修完仍可能因同目录残留 `session.jsonl`、重复 session id、header 路径对不上而起不来 |
-| `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0` | 订阅插件(Kimi Anthropic)曾把净增量 `input_tokens` 再减 cache,写出负 usage;DSH tokenUsage schema 非负校验会让 `session.history` 整页失败 | 已在 `third-party/dsh-subscription-auth` 写入侧 `mapUsage` 钳零,读路径 `projection-guard` 按 unit 钳非负(本地补丁,见 THIRD-PARTY-PATCHES.md)。不要改 DSH 内核。旧日志仍炸则换新会话;改完重启 `dsh --profile web` |
-| `duplicate loader entry id: dsh-subscription-auth` | profile 的 `cordis.patch.yml` 仍单独 insert 了试装行,与合集 bundle patch 撞 id | 删掉 `~/.dsh/profiles/web/cordis.patch.yml` 里那条 insert,并去掉指向仓库外的 junction |
-| `duplicate loader entry id: ui-gui-customization` | 本机曾单独 `dsh plugin add dsh-gui-customization`,与合集 bundle patch 撞同一 id | 先 `dsh plugin --profile web remove dsh-gui-customization`,再重装合集 |
+| `history unavailable` + `uncachedInputTokens` / `Too small: expected number to be >=0` | 旧会话日志里有负 usage(历史上由 Kimi Anthropic 路径把净增量 `input_tokens` 再减 cache 写出);DSH tokenUsage schema 非负校验会让 `session.history` 整页失败 | 用 `node scripts/patch-dsh-history-projections.mjs --apply` 给本机内核打补丁(`dsh-token-meter` 钳非负 + `dsh-host-apiproxy` 投影失败降级),它只改本机安装、不是本仓库的插件代码;旧日志仍炸则换新会话。写盘前会自动备份 `.bak-dsh-history` |
 
 ---
 
@@ -569,5 +536,87 @@ dsh --profile web --dump-config   # # == dizzy-dsh 段出现全部 entry(含 ui-
 
 ---
 
-*文档版本:1.1(2026-08-22,对齐 DSH 0.1.1-rc.2)。所有机制均经实际验证;修改架构前请先在
-创造模式用 `cordis_inspect_query` 确认当前运行时契约,再更新本文档。*
+## 10. 适配 DSH 0.1.5-rc.1(Windows 侧实测版本)
+
+本合集原先按 0.1.1-rc.2 写。在 0.1.5-rc.1 上逐项核对公开契约后,**四处真的
+坏了**,已在 `balance` / `usage-card` 中修掉:
+
+| 问题 | 旧写法 | 新写法 | 影响 |
+|---|---|---|---|
+| 会话日志改文件名 | 只认 `session.jsonl.zstd` / `session.jsonl` | 按后缀认 `session*.jsonl*`,排除 `.bak` / `.singleframe-` / `.old` | **最隐蔽也最严重的一处**:0.1.5 的日志叫 `session.v3.jsonl.zstd`,旧白名单把新版会话整月漏掉 —— 症状是「今天 9/15,用量页却只有 8 月的数据」。同一会话目录若并存新旧名(迁移期),取 mtime 最新的那份,**不叠加计费** |
+| 凭证变更事件改名 | `ctx.on('credentials/updated', …)` | `ctx.on('credentials/reference-updated', …)` | 该监听其实早在 0.1.1-rc.2 就已失效(0.1.0-rc.8 才叫旧名),凭证更新后只能等 60s 轮询或工具调用才刷新。**注意事件签名是 `(ref)`,不是对象** |
+| `dsh.client.inject` 里有已删包 | `@deepseek-ai/dsh-client-runtime` | 删掉该条 | 内核 0.1.5-rc.2 已无此包(共享层里的同名目录是**悬空 junction**)。插件的 `factory` 本来就没 `require` 它,删掉即可,留着只会在模块图解析时报错 |
+| 徽章整个不渲染 | 客户端 `ctx.get('modelDirectories')` + `directoryFor(sessionId)` | `props.useProjection('modelSelection')` 读 `next`/`lastUsed` 的 `provider` | `modelDirectories` 是 `dsh-client-ui-model-selection` 的**客户端服务**,不在 slot occupant 的可见范围里 —— 拿到 `undefined` 就在 `apply` 顶部早退,于是「徽章从来不注册、`conversation.input.right` occupants 恒为空」。渲染侧读会话状态的官方入口是 standardProps 的 `useProjection`(键 `modelSelection`,形状 `{ next, lastUsed }`,均为 `{provider,model,reasoningEffort}`) |
+
+> 第四条是「静默失败」的典型:`slots.inject` 没跑、路由没注册、**没有任何
+> 报错**,只有 `cordis_inspect_query Slots.listSubTree(root:'conversation.input.right')`
+> 的 `occupants: []` 能看出来。以后排查「UI 没出现」,先用这一条确认
+> occupant 到底注册上没有。
+>
+> 第一条的教训同样通用:**不要用文件名白名单去认内核产物**。名字里带版本号
+> (`session.v3.…`)本身就是内核的迁移手段,插件侧按「前缀 + 后缀 + 排除备份」
+> 认更稳;真要收窄就同时接受若干代名字。连带影响:`scripts/verify-usage-accounting.mjs`
+> 当时用的是同一份白名单,所以它此前的「IDENTICAL」只覆盖了 90 个旧日志 ——
+> 修完两边共计 103 个文件、12.9 亿 token 仍然 `divergence 0`。
+
+其余全部**未变**,包括最容易误判的几处:客户端模块装载仍是
+`window.__ModuleLoader__.load({ id, factory })`;`ctx.settings.register`
+返回的 scope 仍有 `get`/`watch`/`update`/`replace`;`WebRoute` 三字段
+(`kind`/`path`/`handler`)与 `handler(req, res)` 原样;`ToolDefinition` 与
+`output.render` 原样;`Config`(schemastery)仍是 loader 读取的配置入口;
+三个 Slot key(`conversation.input.right` / `conversation.view` /
+`settings.section`)都还在,且 `dsh-client-ui-conversation` /
+`-settings` 未改名。
+
+两个要点值得记下来,免得下次踩:
+
+- `conversation.input.right` 的 occupant **没有 owner props**,但 standardProps
+  里有 `sessionId`(还有 `useConversation` / `useInput` / `inputActions` /
+  `useProjection`)。`conversation.view` 的 owner props 是
+  `{ viewRequest, openView, completeViewRequest }` —— 本项目不消费它,
+  用量视图只用自己的 state,因此不受影响。
+- 0.1.5-rc.1 的 `/api` 信任围栏只作用于 `/api`,不覆盖 `ctx.webServer`
+  注册的路由;`fetch('/dizzy/...')` 的同源取数照旧,插件里那层
+  `sec-fetch-site` / Origin 校验是我们的自有防线,不是内核要求。
+
+### 怎么复验(不要只在纸面上对)
+
+1. **隔离实例实跑**(强烈推荐,改动前先做):
+   ```powershell
+   $probe = Join-Path $env:TEMP 'dizzy-probe'
+   $env:DSH_HOME = $probe
+   dsh plugin --profile probe add file:E:\vibecoding\Dizzy-DSH
+   # 新 profile 模板只带 dsh-base,必须补 web bundle 层,否则插件会
+   # pending: waiting for service: webServer。直接编辑
+   # $probe\profiles\probe\package.json 的 dsh.profile.bundles,插入
+   # "@deepseek-ai/dsh-web-app"。注意该包**不在 npm registry**,不要
+   # 用 `dsh plugin add @deepseek-ai/dsh-web-app`。
+   dsh --profile probe --port 3099 --no-open   # 注意 --profile 必须在最前
+   ```
+   然后打三个路由:`/dizzy/balance`、`/dizzy/grok-quota`、`/dizzy/usage?month=YYYY-MM`,
+   并拉首页看 `/plugins/??…dizzy…` 是否出现在注入列表里。
+2. **记账口径核对**:`node scripts/verify-usage-accounting.mjs 2026-08`
+   —— 独立于插件实现直接读会话日志,把插件的聚合规则与内核 `token-meter`
+   的折叠规则逐会话比对,输出 `IDENTICAL` / `DIVERGENT` 并以退出码表态。
+   ⚠️ 必须**按会话日志文件各自 fold**:把所有日志串成一条流会得到假差异
+   (官方 `tokenUsage` 投影是 per-session 的)。
+3. **构造级契约核对**:创造模式里 `cordis_inspect_query` 查
+   `Slots.listSubTree`(`root` 传具体 slot key)能看到 ownerProps /
+   standardProps 的真实形状,以及 `occupants` —— 后者是判断「客户端到底
+   注册上没有」的唯一可靠手段;这比读 d.ts 更贴近运行时。
+4. **插件行为回归**:`node scripts/test-usage-scan.mjs` 直接 apply 已安装的
+   usage-card 副本(不 mock 聚合),用真实 `webServer` 路由契约驱动
+   `/dizzy/usage`,覆盖:增量标记(基线/追加/节流跳过)与「倒着找」
+   (不早于当前月的空月回跳、显式过去空月尊重选择)。改了 usage-card
+   记得先走「更新」仪式再跑它 —— 它刻意 import 安装副本,因为仓库根没有
+   `node_modules`,`schemastery` 只在 profile 里能解析。
+
+---
+
+*文档版本:1.5(2026-09,移除全部第三方插件;DSH 0.1.5-rc.1 适配:凭证事件
+改名、`dsh-client-runtime` 移除、徽章改用 `useProjection('modelSelection')`、
+会话日志改名 `session.v3.jsonl.zstd`;usage-card 增加汇总标记与增量汇总 + 空月
+就近;官方价表按 2026-09-15 官网定价更新 Flash 全档、改为按 provider 门控、
+历史模型名归一。`balance` / `usage-card` 已实测,`agent-instructions` /
+`kimi-webbridge` 待实测)。所有机制均经实际验证;修改架构前请先在创造模式用
+`cordis_inspect_query` 确认当前运行时契约,再更新本文档。*

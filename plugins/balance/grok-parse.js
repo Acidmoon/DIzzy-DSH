@@ -177,7 +177,7 @@ export function parseCreditsResponse(body, extra = {}) {
 }
 
 /**
- * 订阅插件写入 credentials 的 JSON。损坏或缺字段视为未登录。
+ * Grok 订阅令牌(写在 credentials 里的 JSON)。损坏或缺字段视为未登录。
  * @param {string} value
  * @returns {{ refresh: string, access: string, expires: number, accountId?: string, email?: string } | undefined}
  */
@@ -211,7 +211,7 @@ export function parseStoredToken(value) {
 export function formatQuotaText(cache) {
   if (cache.status === 'unauthenticated') {
     if (typeof cache.error === 'string' && cache.error.includes('失效')) return cache.error
-    return 'Grok 未登录。请在 设置 → 订阅服务 完成 Grok 授权后再查额度。'
+    return 'Grok 未登录。credentials 里缺少 GROK_SUBSCRIPTION_TOKEN(JSON:refresh/access/expires),配置后再查额度。'
   }
   if (cache.error && cache.creditUsagePercent === null) {
     return `Grok 额度查询失败: ${cache.error}`

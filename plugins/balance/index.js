@@ -4,7 +4,7 @@
  * 职责:
  *   1. 按 refreshIntervalMs 刷新 DeepSeek 官方 CNY 余额
  *      (credentials 取 credentialName 指定的引用)
- *   2. 从订阅插件写入的 GROK_SUBSCRIPTION_TOKEN 取 OAuth 令牌,
+ *   2. 从 credentials 的 GROK_SUBSCRIPTION_TOKEN 取 OAuth 令牌,
  *      刷新 CLI `GET {proxy}/billing?format=credits`(周额度,与人民币余额分账)
  *   3. GET /dizzy/balance、GET /dizzy/grok-quota —— Client 同源取数
  *   4. 模型可见工具 balance_check / grok_quota_check
@@ -23,13 +23,13 @@ import {
 const Config = Schema.object({
   /** DeepSeek credentials 引用名。 */
   credentialName: Schema.string().default('DEEPSEEK_API_KEY'),
-  /** Grok 订阅令牌引用名;默认对接订阅插件 grok 渠道。 */
+  /** Grok 订阅令牌引用名;令牌由使用者写入 credentials(本合集不含登录插件)。 */
   grokCredentialName: Schema.string().default('GROK_SUBSCRIPTION_TOKEN'),
   /** 刷新间隔(毫秒),5s ~ 1h。DeepSeek 与 Grok 共用。 */
   refreshIntervalMs: Schema.number().min(5000).max(3600000).default(60000),
   /** CLI chat-proxy 根(含 /v1);企业部署可覆盖。 */
   grokBillingBaseURL: Schema.string().default('https://cli-chat-proxy.grok.com/v1'),
-  /** 公开 OIDC client id;与订阅插件 grok 渠道一致。 */
+  /** 公开 OIDC client id(xAI Grok CLI 渠道)。 */
   grokOidcClientId: Schema.string().default('b1a00492-073a-47ea-816f-4c329264a828'),
 })
 
@@ -267,7 +267,7 @@ export default {
       try {
         const token0 = await readGrokToken()
         if (token0 === undefined) {
-          grokCache = { ...emptyGrok(), error: '未登录 Grok 订阅', at: Date.now() }
+          grokCache = { ...emptyGrok(), error: '未登录 Grok(缺少 GROK_SUBSCRIPTION_TOKEN 凭据)', at: Date.now() }
           return
         }
         let token = await ensureAccess(token0)
@@ -281,7 +281,7 @@ export default {
           if (res.status === 401) {
             grokCache = {
               ...emptyGrok(),
-              error: '登录已失效,请在设置 → 订阅服务重新登录 Grok',
+              error: 'Grok 登录已失效:请重新写入 GROK_SUBSCRIPTION_TOKEN 凭据',
               at: Date.now(),
             }
             return
@@ -300,7 +300,7 @@ export default {
           ...emptyGrok(),
           status: reauth ? 'unauthenticated' : 'error',
           error: reauth
-            ? '登录已失效,请在设置 → 订阅服务重新登录 Grok'
+            ? 'Grok 登录已失效:请重新写入 GROK_SUBSCRIPTION_TOKEN 凭据'
             : String(err === null || err === undefined ? '' : err.message ?? err),
           at: Date.now(),
         }
@@ -357,8 +357,10 @@ export default {
           previous = next
         })
 
+    // 凭证变更即时刷新:事件名是 `credentials/reference-updated`
+    // (DSH ≤0.1.0-rc.8 的 `credentials/updated` 已不存在,写了也是死监听)。
     const stopCredWatch = typeof ctx.on === 'function'
-      ? ctx.on('credentials/updated', (ref) => {
+      ? ctx.on('credentials/reference-updated', (ref) => {
           const name = String(ref)
           const cfg = current()
           if (name === cfg.credentialName) void refreshDeepSeek()
@@ -414,7 +416,7 @@ export default {
 
     const disposeGrokTool = ctx.tools.register({
       name: 'grok_quota_check',
-      description: '查询当前 Grok 订阅账户的额度(已用/剩余百分比与重置时间;统一账本多为周额度)。凭证来自设置里的 Grok 订阅登录,不消耗额度。',
+      description: '查询当前 Grok 订阅账户的额度(已用/剩余百分比与重置时间;统一账本多为周额度)。凭证读 credentials 里的 GROK_SUBSCRIPTION_TOKEN,不消耗额度。',
       parameters: {
         type: 'object',
         properties: {},

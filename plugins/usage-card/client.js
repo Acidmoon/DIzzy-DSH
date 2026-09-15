@@ -41,6 +41,17 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
 
+    // DeepSeek 官方现行模型名 + 仍在用的历史名(与 Host 的 OFFICIAL_PRICES /
+    // OFFICIAL_PRICE_ALIASES 对齐;只用于价格来源提示文案)。
+    const OFFICIAL_MODEL_NAMES = [
+      'deepseek-flash',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+      'deepseek-v4-pro-0813',
+      'deepseek-v3.2',
+    ]
+
     const apply = (ctx) => {
       const slots = ctx.get('slots')
       if (slots === undefined) return
@@ -222,11 +233,16 @@ window.__ModuleLoader__.load({
         const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
         return (currency === undefined || currency === '' ? '' : currency) + text
       }
-      // 价格来源提示文本(Host 每模型 price.source:local/official/openrouter/none)
-      function priceSourceLabel(source) {
+      // 价格来源提示文本(Host 每模型 price.source:local/official/openrouter/none)。
+      // modelKey 用来把「官方模型名但走了第三方网关」与「真·无价格」说清楚 ——
+      // 后者若显示成「OpenRouter 聚合目录」会误导。
+      function priceSourceLabel(source, modelKey) {
+        const bare = typeof modelKey === 'string' ? modelKey.split('/').pop() : ''
+        const officialName = OFFICIAL_MODEL_NAMES.includes(bare)
         if (source === 'local') return '价格来自本地配置(dizzy-usage-card.prices)'
         if (source === 'official') return '价格来自 DeepSeek 官网(含峰谷两档)'
         if (source === 'openrouter') return '价格来自 OpenRouter 聚合目录'
+        if (officialName) return 'DeepSeek 官方模型名,但这次没走官方路由;该网关价目表里没有对应条目,按 0 计'
         return '该模型无价格,按 0 计'
       }
       // 北京时间(Asia/Shanghai)的 时/分/秒
@@ -543,6 +559,10 @@ window.__ModuleLoader__.load({
 
         // 拉取:月份切换 / 手动刷新 / 60s 自动。查看月份已有数据时静默
         // 刷新(保留旧数不闪骨架);无数据时失败才进错误态。
+        const stamp = (r) => {
+          r.requested = month
+          return r
+        }
         React.useEffect(() => {
           let alive = true
           const ctrl = new AbortController()
@@ -558,7 +578,7 @@ window.__ModuleLoader__.load({
               if (r === null || typeof r !== 'object' || typeof r.total !== 'number') {
                 throw new Error('usage shape')
               }
-              setData(r)
+              setData(stamp(r))
               setError(null)
               setLoading(false)
             })
@@ -603,11 +623,26 @@ window.__ModuleLoader__.load({
           if (scroller !== null) scroller.scrollTop = 0
         }, [])
 
-        const parts = month.split('-').map(Number)
+        // 只展示与「请求月」匹配的数据:切月瞬间旧月数据立即视为未加载,
+        // 同月静默刷新则继续展示旧数直到新数到达。请求月没有任何用量时
+        // Host 会回落到最近一个有数据的月,那时用返回的 month 渲染,而
+        // `requested` 一直保留请求月,所以不用改本地 month 状态。
+        // 这个回落是**默认行为**(就像编辑器打开最近一次编辑的位置),
+        // 不在界面上标注。
+        const viewData = data !== null && data !== undefined
+          && (data.month === month || data.requested === month)
+          ? data
+          : null
+        const shownMonth = viewData !== null && typeof viewData.month === 'string' ? viewData.month : month
+        const monthsWithData = viewData !== null && Array.isArray(viewData.monthsWithData)
+          ? viewData.monthsWithData
+          : []
+        // 当前月没有用量时,给出前后最近的有数据月,供一键跳转。
+        const hasData = monthsWithData.includes(shownMonth)
+        const newerMonth = hasData ? null : (monthsWithData.find((value) => value > shownMonth) ?? null)
+        const olderMonth = hasData ? null : ([...monthsWithData].reverse().find((value) => value < shownMonth) ?? null)
+        const parts = shownMonth.split('-').map(Number)
         const weeks = monthWeeks(parts[0], parts[1] - 1)
-        // 只展示与查看月份匹配的数据:切月瞬间旧月数据立即视为未加载,
-        // 同月静默刷新则继续展示旧数直到新数到达
-        const viewData = data !== null && data !== undefined && data.month === month ? data : null
         const days = viewData !== null && viewData.days !== null && typeof viewData.days === 'object'
           ? viewData.days
           : null
@@ -662,18 +697,38 @@ window.__ModuleLoader__.load({
           monthButtons.push(React.createElement('button', {
             key: value,
             type: 'button',
-            className: 'dsh-usage-mbtn' + (value === month ? ' is-on' : ''),
+            className: 'dsh-usage-mbtn' + (value === shownMonth ? ' is-on' : ''),
             onClick: () => {
               setMonth(value)
               setPickerOpen(false)
             },
           }, String(m)))
         }
+        // ── 汇总标记:上次汇总于何时 + 上次汇总到现在的增量 ────────────
+        // Host 每次真要重扫才推进 scannedAt;被节流跳过时 scannedAt 与
+        // deltaTokens 都留在上一轮,所以这里的标记始终对应一次真实汇总。
+        const fmtTime = (value) => new Date(value).toLocaleString('zh-CN', {
+          month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+        })
+        const scanMark = viewData === null || typeof viewData.scannedAt !== 'number' || viewData.scannedAt <= 0
+          ? null
+          : {
+              at: viewData.scannedAt,
+              previous: typeof viewData.previousScannedAt === 'number' && viewData.previousScannedAt > 0
+                ? viewData.previousScannedAt
+                : null,
+              delta: typeof viewData.deltaTokens === 'number' && viewData.deltaTokens > 0 ? viewData.deltaTokens : 0,
+            }
         const subtitle = loading && viewData === null
           ? '正在汇总本地会话…'
-          : viewData !== null && typeof viewData.scannedAt === 'number'
-            ? '本地会话 token 汇总 · 更新于 ' + new Date(viewData.scannedAt).toLocaleTimeString() + (typeof viewData.errors === 'number' && viewData.errors > 0 ? ' · ⚠ ' + viewData.errors + ' 个日志文件解析失败,用量可能被低估' : '')
-            : '本地会话 token 汇总'
+          : scanMark === null
+            ? '本地会话 token 汇总'
+            : '上次汇总于 ' + fmtTime(scanMark.at)
+              + (scanMark.previous !== null ? '(上一轮 ' + fmtTime(scanMark.previous) + ')' : '')
+              + ' · 较上次新增 ' + fmtTokens(scanMark.delta)
+              + (typeof viewData.errors === 'number' && viewData.errors > 0
+                ? ' · ⚠ ' + viewData.errors + ' 个日志文件解析失败,用量可能被低估'
+                : '')
 
         const topbar = React.createElement('div', { key: 'topbar', className: 'dsh-usage-topbar' }, [
           React.createElement('div', { key: 'title' }, [
@@ -681,6 +736,32 @@ window.__ModuleLoader__.load({
             React.createElement('div', { key: 's', className: 'dsh-usage-subtitle' }, subtitle),
           ]),
           React.createElement('div', { key: 'nav', className: 'dsh-usage-nav', ref: pickerRef }, [
+            newerMonth !== null
+              ? React.createElement('button', {
+                  key: 'newer',
+                  type: 'button',
+                  className: 'dsh-usage-btn dsh-usage-latest',
+                  title: '这个月没有用量,跳到更近的有数据月份',
+                  onClick: () => {
+                    setMonth(newerMonth)
+                    setPickerYear(Number(newerMonth.slice(0, 4)))
+                    setPickerOpen(false)
+                  },
+                }, '› ' + newerMonth)
+              : null,
+            olderMonth !== null
+              ? React.createElement('button', {
+                  key: 'older',
+                  type: 'button',
+                  className: 'dsh-usage-btn dsh-usage-latest',
+                  title: '这个月没有用量,跳到更早的有数据月份',
+                  onClick: () => {
+                    setMonth(olderMonth)
+                    setPickerYear(Number(olderMonth.slice(0, 4)))
+                    setPickerOpen(false)
+                  },
+                }, '‹ ' + olderMonth)
+              : null,
             React.createElement('button', {
               key: 'prev',
               type: 'button',
@@ -720,7 +801,24 @@ window.__ModuleLoader__.load({
               className: 'dsh-usage-btn dsh-usage-refresh' + (loading ? ' is-spinning' : ''),
               'aria-label': '刷新',
               title: '刷新',
-              onClick: () => setTick((n) => n + 1),
+              onClick: () => {
+                setLoading(true)
+                fetch('/dizzy/usage?month=' + encodeURIComponent(month), { credentials: 'same-origin' })
+                  .then((response) => {
+                    if (!response.ok) throw new Error('usage ' + response.status)
+                    return response.json()
+                  })
+                  .then((r) => {
+                    if (r === null || typeof r !== 'object' || typeof r.total !== 'number') throw new Error('usage shape')
+                    setData(stamp(r))
+                    setError(null)
+                    setLoading(false)
+                  })
+                  .catch(() => {
+                    setLoading(false)
+                    setError('用量拉取失败')
+                  })
+              },
             }, React.createElement(RefreshIcon)),
             pickerOpen ? React.createElement('div', {
               key: 'pop',
@@ -969,7 +1067,7 @@ window.__ModuleLoader__.load({
                     key: 'c',
                     className: 'dsh-usage-rowcost',
                     title: row.price !== null && typeof row.price === 'object'
-                      ? priceSourceLabel(row.price.source)
+                      ? priceSourceLabel(row.price.source, row.key)
                       : undefined,
                   }, fmtCost(row.cost, currency))
                 : null

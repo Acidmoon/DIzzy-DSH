@@ -163,7 +163,7 @@ async function testBalance() {
   await grokRoute.handler({ url: '/dizzy/grok-quota', headers: {} }, grokRes)
   check('Grok 未登录状态', JSON.parse(grokRes.body).status === 'unauthenticated')
   const grokReply = await tools.registered.get('grok_quota_check').execute()
-  check('未登录 Grok 工具指向订阅服务', typeof grokReply === 'string' && grokReply.includes('订阅服务'))
+  check('未登录 Grok 工具指向凭据配置', typeof grokReply === 'string' && grokReply.includes('GROK_SUBSCRIPTION_TOKEN'))
 
   grokRes = mockRes()
   await grokRoute.handler({ url: '/dizzy/grok-quota', headers: { 'sec-fetch-site': 'cross-site' } }, grokRes)

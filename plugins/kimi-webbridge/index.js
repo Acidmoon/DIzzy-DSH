@@ -2,12 +2,12 @@
  * dizzy-dsh-kimi-webbridge 插件(Host 端)
  *
  * 把 Kimi WebBridge(本地 daemon + 浏览器扩展)封装为 DSH 原生工具集,
- * 采用渐进式披露(参考 dsh-vision-toolkit 的 exposure 模式):
+ * 采用渐进式披露(DSH 社区常见的 exposure 模式):
  *
  *   - 全局仅注册一个引导工具 kimi_browser_activate(所有会话可见);
  *   - 模型调用引导工具后,全套 kimi_browser_* 工具注册进该 agent 的作用域;
  *     live 会话等到 step/end 再 restrict 隐藏引导工具,避免同一步里
- *     仍在飞行的激活调用变成 UNKNOWN_TOOL(与 vision-toolkit 同款);
+ *     仍在飞行的激活调用变成 UNKNOWN_TOOL;
  *   - agent 销毁时工具随作用域释放。
  *
  * 配置化(与 dsh 官方插件同一模式):
@@ -224,7 +224,7 @@ export default {
 
     const screenshot = {
       name: 'kimi_browser_screenshot',
-      description: '截取当前页面(或指定元素)为图片,返回文件路径。拿到路径后用 read_image / vision_glance 查看图片内容。',
+      description: '截取当前页面(或指定元素)为图片,返回文件路径。本合集不含视觉插件;拿到路径后交给会话里可用的读图能力,或直接给用户。',
       parameters: {
         type: 'object',
         properties: {
@@ -317,8 +317,8 @@ export default {
 
     /**
      * 向一个 agent 注入全套浏览器工具。引导工具的隐藏延到 step/end:
-     * DSH 0.1.1-rc.2 起,同一模型步骤里立刻 restrict 会把仍在飞行的
-     * kimi_browser_activate 变成 UNKNOWN_TOOL(与 vision-toolkit 同款)。
+     * DSH 0.1.1-rc.2 起(0.1.5-rc.1 同样),同一模型步骤里立刻 restrict 会把仍在飞行的
+     * kimi_browser_activate 变成 UNKNOWN_TOOL。
      * @param agent - 目标 agent。
      * @returns { activated, tools }。
      */
@@ -359,7 +359,7 @@ export default {
     function hideActivation(agent) {
       const state = states.get(agent)
       if (state === undefined || state.hidden) return
-      // restrict 成功后再闩 hidden:失败时下次 step/end 还能重试(对齐 vision-toolkit)。
+      // restrict 成功后再闩 hidden:失败时下次 step/end 还能重试。
       const lift = agent.ctx.tools.restrict({ deny: [ACTIVATE_NAME] })
       state.hidden = true
       state.disposers.push(lift)

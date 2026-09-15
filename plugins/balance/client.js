@@ -18,7 +18,6 @@ window.__ModuleLoader__.load({
     const apply = (ctx) => {
       const slots = ctx.get('slots')
       if (slots === undefined) return
-      const models = ctx.get('modelDirectories')
 
       const style = document.createElement('style')
       style.textContent =
@@ -29,30 +28,40 @@ window.__ModuleLoader__.load({
         return String(Math.floor(Math.min(100, Math.max(0, n))))
       }
 
+      /**
+       * 当前模型所属 provider。
+       *
+       * 读 `useProjection('modelSelection')`(slot occupant 的 standardProps,
+       * DSH 会话投影 `modelSelection.next`/`lastUsed`)—— 这是官方给渲染侧
+       * 的读法。**不要**用 `ctx.get('modelDirectories')`:那是
+       * dsh-client-ui-model-selection 的服务,不在本 fiber 的可见范围里,
+       * 拿不到会让整个徽章静默不渲染。
+       */
+      function providerOf(props) {
+        const useProjection = props.useProjection
+        if (typeof useProjection === 'function') {
+          let projection
+          try {
+            projection = useProjection('modelSelection')
+          } catch (err) {
+            projection = undefined
+          }
+          if (projection !== null && typeof projection === 'object') {
+            const picked = projection.next ?? projection.lastUsed ?? null
+            if (picked !== null && typeof picked.provider === 'string') return picked.provider
+          }
+        }
+        return null
+      }
+
       function BalanceBadge(props) {
-        const sessionId = props.session?.sessionId ?? props.sessionId
-        const [selection, setSelection] = React.useState(null)
         const [balance, setBalance] = React.useState(null)
         const [dsError, setDsError] = React.useState(null)
         const [grok, setGrok] = React.useState(null)
 
-        React.useEffect(() => {
-          if (models === undefined) return
-          let directory
-          try {
-            directory = models.directoryFor(sessionId)
-          } catch (err) {
-            return
-          }
-          const update = () => {
-            const snap = directory.store.getSnapshot()
-            setSelection(snap === null || snap === undefined ? null : snap.current ?? null)
-          }
-          update()
-          return directory.store.subscribe(update)
-        }, [sessionId, models])
-
-        const provider = selection === null || selection === undefined ? null : selection.provider ?? null
+        // provider 来自会话投影;第三方视觉插件会把 provider 包成
+        // `vision-toolkit-<provider>`,归一后再判断,否则徽章对这类渠道不显示。
+        const provider = providerOf(props)
         const baseProvider = typeof provider === 'string' && provider.startsWith('vision-toolkit-')
           ? provider.slice('vision-toolkit-'.length)
           : provider
@@ -121,7 +130,7 @@ window.__ModuleLoader__.load({
             if (grok.status === 'unauthenticated') {
               title = (grok.error && String(grok.error).includes('失效'))
                 ? grok.error
-                : '请在设置 → 订阅服务登录 Grok'
+                : '请在 credentials 配置 GROK_SUBSCRIPTION_TOKEN'
             } else if (grok.error && typeof grok.remainingPercent !== 'number') {
               title = 'Grok 额度获取失败: ' + grok.error
             } else {
