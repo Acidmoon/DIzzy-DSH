@@ -11,7 +11,7 @@
 #   - Client 半区:client-modules 按包名扫描 dsh.client 声明 + exports["./client"],
 #     自动把 client bundle 注入浏览器
 # 自有子包(plugins/*)经主包 dependencies 的 file: 依赖安装并提升到
-# profile 顶层 node_modules,与 @anionex/dsh-vision-toolkit 同构。
+# profile 顶层 node_modules,loader 按包名即可 import。
 #
 # 新增插件:在 plugins/ 下建子包(自己的 package.json/main/client bundle),
 # 主包 package.json 加 file: 依赖,再在本文件加一行 entry。
@@ -39,43 +39,20 @@
 
     # Kimi WebBridge 浏览器控制:控制用户真实浏览器(daemon 127.0.0.1:10086 +
     # 浏览器扩展)。渐进式披露:全局仅暴露 kimi_browser_activate 引导工具,
-    # 模型调用后才注入全套 kimi_browser_* 工具(参考 vision-toolkit 做法)。
+    # 模型调用后才注入全套 kimi_browser_* 工具(渐进式披露)。
     - id: kimi-webbridge
       name: 'dizzy-dsh-kimi-webbridge'
 
-    # ── 收录的第三方插件(随主包依赖安装,见 package.json)────────
-    # 说明:下列包通过主包 dependencies(registry / file:./third-party/...)
-    # 随主包安装,profile 的 pnpm-workspace.yaml 为 hoisted 模式,传递依赖
-    # 提升到顶层 node_modules,loader 按包名即可 import。无需单独 dsh plugin add。
-    - id: better-sidebar
-      name: 'dsh-better-sidebar'
-    - id: dsh-vision-toolkit
-      name: '@anionex/dsh-vision-toolkit'
-
-    # GenUI:模型在回答正文内输出 dsh-ui 围栏(JSON 规格),浏览器端渲染
-    # 为可交互组件(卡片/图表/表单/quiz/mermaid/3D),action 事件环回传模型。
-    - id: genui
-      name: '@omdsh-dev/dsh-genui'
-
-    # 桌面通知:会话跑完一轮任务时弹系统通知(设置 > 通知 可配状态/关键词
-    # 规则)。纯 UI,对模型零影响(无工具、无提示词、无日志写入)。
-    - id: dsh-notification
-      name: 'dsh-notification'
-
-    # 订阅会员 OAuth 登录(第三方,有本地补丁):设置 → 订阅服务 登录
-    # ChatGPT / Claude / Grok / Kimi,按登录状态注册提供商与适配器。
-    # 包名保持 dsh-subscription-auth,与已有 credential / settings
-    # 命名空间一致;勿改成 dizzy-dsh-* 以免冲掉本机登录态。
-    - id: dsh-subscription-auth
-      name: 'dsh-subscription-auth'
-
-    # 界面设定(时装工坊):Nous 蓝默认配色 / 氛围光 / 图片与视频背景。
-    # 纯 Client,Host apply 为空;设置走 localStorage,背景走 IndexedDB。
-    # 入口在「设置 → 界面设定」。id 与上游自带 patch 一致,本机若还留着
-    # 单独安装会撞 duplicate loader entry id,先 remove 那份再挂本行。
-    - id: ui-gui-customization
-      name: 'dsh-gui-customization'
-
+    # ── 唯一收录的第三方插件(随主包依赖安装,见 package.json)────────
+    # 说明:本包通过主包 dependencies(file:./third-party/...)随主包安装,
+    # profile 的 pnpm-workspace.yaml 为 hoisted 模式,传递依赖提升到顶层
+    # node_modules,loader 按包名即可 import。无需单独 dsh plugin add。
+    #
+    # 除它之外,本合集 2026-09 起不再收录第三方插件:曾收录的
+    # dsh-better-sidebar / dsh-vision-toolkit / dsh-genui / dsh-notification /
+    # dsh-subscription-auth / dsh-gui-customization 已连同快照与本地补丁删除
+    # (快照跟随上游漂移,上游改 peer 范围就会让合集装不上,排查成本落在这里)。
+    #
     # TencentDB Agent Memory 个人记忆插件(适配层 + 内置 MemoryCore/MemoryKnowledge)。
     # 上游:https://github.com/TencentCloud/TencentDB-Agent-Memory
     # 能力:L0-L3 记忆工具 + Wiki/CodeGraph 工具 + 自动捕获/召回/画像

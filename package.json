@@ -6,12 +6,6 @@
     "dizzy-dsh-usage-card": "file:./plugins/usage-card",
     "dizzy-dsh-agent-instructions": "file:./plugins/agent-instructions",
     "dizzy-dsh-kimi-webbridge": "file:./plugins/kimi-webbridge",
-    "dsh-better-sidebar": "0.15.0",
-    "@anionex/dsh-vision-toolkit": "file:./third-party/dsh-vision-toolkit",
-    "@omdsh-dev/dsh-genui": "file:./third-party/dsh-genui",
-    "dsh-notification": "file:./third-party/dsh-notification",
-    "dsh-subscription-auth": "file:./third-party/dsh-subscription-auth",
-    "dsh-gui-customization": "file:./third-party/dsh-gui-customization",
     "dsh-plugin-memory-tencentdb": "file:./third-party/dsh-plugin-memory-tencentdb"
   },
   "version": "0.4.2",
