@@ -208,8 +208,12 @@
         enableRunInBackground: false
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # 工作流引擎的实现行随内核版本变:
+    #   DSH ≤0.1.5-rc.*  = @deepseek-ai/dsh-workflow-worker-thread
+    #   DSH 0.1.6-alpha.1 = @deepseek-ai/dsh-workflow-ptc(该包已移除)
+    # 跟官方 standard 预设保持一致(官方也是在这一行做替换)。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 

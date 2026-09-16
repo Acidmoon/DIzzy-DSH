@@ -338,4 +338,7 @@ dizzy-usage-card:
 | `scripts/install-diy-preset.ps1` | 安装「DIY 模式」agent preset(含从本机部署同步官方创作手册快照) |
 | `scripts/repair-zstd-header-frame.mjs` | 修复首帧损坏的 `session.jsonl.zstd` |
 | `scripts/patch-dsh-history-projections.mjs` | 给本机内核打历史投影补丁(可选,非插件代码) |
+| `scripts/patch-dsh-subagent-reasoning.mjs` | 修 0.1.6-alpha.1 的「子代理完成通知带 reasoning 块 → 会话永久卡死」:让 DeepSeek 适配器丢掉无法表达的块而不是整轮失败 |
+
+> 两个 `patch-dsh-*.mjs` 都是**给本机内核打的补丁**,不是插件代码;`npm i -g` 重装 dsh 后需要重跑(默认 dry-run,加 `--apply` 写盘并备份)。
 
