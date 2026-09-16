@@ -106,6 +106,56 @@ dsh plugin --profile web add file:<仓库绝对路径>
 > **不会同步 patch 文件与子包内容**——只跑 `pnpm install` 会导致插件挂载不上
 > (实测:改了 `cordis.patch.yml` 只 `pnpm install`,重启后新 entry 完全不生效)。
 
+## 装完起不来?恢复到纯净状态
+
+装完合集后 `dsh web` 起不来(或其他插件把环境搞坏)时,不用重装 DSH,也不用删数据 ——
+故障面只在 profile 目录的三处:`package.json`(依赖 + bundles)、`cordis.patch.yml`(用户 patch 层)、
+`node_modules/`(已安装副本)。**会话日志、凭证、设置、技能都在 `$DSH_HOME` 顶层,与 profile 无关,一律不动。**
+
+按严重程度三级递进(脚本 `scripts/restore-clean-profile.ps1`,默认 dry 风格只做减法):
+
+```powershell
+# 第 1 级(默认):把合集从 profile 移除。保留同一 profile 与全部数据。
+#   dsh plugin remove 会同时清 dependencies 与 dsh.profile.bundles(已实测)
+powershell -ExecutionPolicy Bypass -File scripts\restore-clean-profile.ps1
+
+# 第 2 级:profile 的配置 / node_modules 已损坏时,按官方模板重建同名 profile
+#   先整目录备份到 $DSH_HOME\.backup-restore-<时间戳>\ ,可随时复制回来回滚
+powershell -ExecutionPolicy Bypass -File scripts\restore-clean-profile.ps1 -RebuildProfile
+
+# 第 3 级:另起一个纯净救援 profile(不碰原 profile),先确认「DSH 本身没问题」
+powershell -ExecutionPolicy Bypass -File scripts\restore-clean-profile.ps1 -RescueProfile
+dsh --profile rescue --port 3081        # 能起来 = 内核没问题,故障在原 profile
+```
+
+手工等价操作(不想用脚本时):
+
+```powershell
+# A. 只想去掉合集
+dsh plugin --profile web remove dizzy-dsh
+
+# B. profile 坏到连 remove 都跑不动:把配置清成纯净再让它自愈
+'[]' | Set-Content ~/.dsh/profiles/web/cordis.patch.yml            # 清空用户 patch 层
+'{ "name":"dsh-profile-web","private":true }' | Set-Content ~/.dsh/profiles/web/package.json
+dsh --profile web --dump-config    # 确认组合干净(应只有 dsh-base + dsh-web-app)
+dsh web
+
+# C. 最彻底:重建 profile 目录(数据不受影响)
+Rename-Item ~/.dsh/profiles/web web.broken                         # 别删,改名留证据
+dsh --profile web --dump-config                                     # 按内置模板重新落盘
+dsh web
+```
+
+几个实测要点:
+
+- **`--from-default-profile web` 不能用于 `web` 自己** —— 内置 profile 名会报
+  `profile "web" is shipped and cannot be a custom profile target`;要恢复 `web`
+  就直接跑 `dsh --profile web --dump-config`,它会按内置模板落盘。该 flag 只用于
+  **新建**自定义 profile(如 `--profile rescue --from-default-profile web`)。
+- `~/.dsh/.backup-20260911-211654/` 那个旧备份**不是纯净版**(里面就装着 dizzy-dsh),别拿它当"干净还原点"。
+- 恢复后重启 `dsh web` + 硬刷新浏览器;`node_modules` 里若有孤儿目录(如已不再引用的
+  第三方实验包),删掉即可 —— 没被任何层引用就是死代码。
+
 ### 启用 DIY 模式预设(可选)
 
 `diy` 是 **agent preset,不走 `dsh plugin add` 机制**,安装 = 把仓库
